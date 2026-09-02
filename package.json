@@ -1,0 +1,13 @@
+{
+  "name": "sih26036",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Online Verification System for Weighing and Measuring Instruments (SIH 26036)",
+  "scripts": {
+    "dev": "node start-dev.js",
+    "start": "node start-dev.js",
+    "client": "npm --prefix client run dev",
+    "server": "npm --prefix server start"
+  }
+}
