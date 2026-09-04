@@ -424,9 +424,9 @@ async function initSqliteDatabase() {
   const isProduction = process.env.NODE_ENV === 'production';
   const shouldSeedDemo = !isProduction || process.env.SEED_DEMO_USERS === 'true';
   if (shouldSeedDemo) {
-    seedDemoData();
     const { seedDemoUsers } = await import('./seed-demo-users.js');
     await seedDemoUsers();
+    await seedDemoData();
   }
 }
 
@@ -475,11 +475,12 @@ async function initStatutoryReferenceData() {
   `).run(mpeRules, checklistSchema);
 }
 
-function seedDemoData() {
+async function seedDemoData() {
   const now = new Date().toISOString();
+  const validUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   // Demo Organizations
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO organizations (id, name, type, jurisdiction, created_at)
     VALUES 
       ('ORG_TRADER_01', 'Apex Retail Traders Pvt Ltd', 'TRADER_ORG', 'Central District, Delhi', ?),
@@ -487,13 +488,80 @@ function seedDemoData() {
     ON CONFLICT (id) DO NOTHING
   `).run(now, now);
 
-  // Demo Instrument
-  const instCount = db.prepare('SELECT COUNT(*) as count FROM instruments').get();
-  const count = instCount ? parseInt(instCount.count || 0, 10) : 0;
+  // Check existing instruments count
+  const instCountRes = await db.prepare('SELECT COUNT(*) as count FROM instruments').get();
+  const count = instCountRes ? parseInt(instCountRes.count || 0, 10) : 0;
+
   if (count === 0) {
-    db.prepare(`
+    // 1. Demo Instruments for Demo Trader (Ramesh Sharma)
+    await db.prepare(`
       INSERT INTO instruments (id, owner_id, category_id, manufacturer, model, serial_number, max_capacity, min_capacity, verification_scale_interval_e, location, status, created_at)
-      VALUES ('INST_001', 'USR_TRADER_01', 'CAT_NAWI_III', 'Precision Weigher India', 'PW-3000 Eco', 'SN-2026-9941', '30 kg', '100 g', '5 g', 'Counter 1, Main Grocery Section, Connaught Place, New Delhi', 'REGISTERED', ?)
-    `).run(now);
+      VALUES 
+        ('INST_001', 'USR_TRADER_01', 'CAT_NAWI_III', 'Precision Weigher India', 'PW-3000 Eco', 'SN-2026-9941', '30 kg', '100 g', '5 g', 'Counter 1, Main Grocery Section, Connaught Place, New Delhi', 'UNDER_VERIFICATION', ?),
+        ('INST_002', 'USR_TRADER_01', 'CAT_NAWI_III', 'Avery Weigh-Tronix', 'ZK830 High Precision', 'SN-CERT-PASS-8801', '30 kg', '100 g', '5 g', 'Depot 4, Okhla Phase III, New Delhi', 'VERIFIED', ?),
+        ('INST_003', 'USR_TRADER_01', 'CAT_NAWI_III', 'Mettler Toledo', 'b-Plus Dual Range', 'SN-S4-QR-9902', '15 kg', '40 g', '2 g', 'Store 18, Terminal 3, IGI Airport, New Delhi', 'VERIFIED', ?),
+        ('INST_004', 'USR_TRADER_01', 'CAT_NAWI_III', 'Essae Teraoka', 'DS-215 Bench Scale', 'SN-EXP-2026-4410', '20 kg', '50 g', '2 g', 'Billing Counter 3, South Extension Part II, New Delhi', 'EXPIRING', ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, now, now, now);
+
+    // 2. Demo Applications
+    await db.prepare(`
+      INSERT INTO applications (id, application_no, instrument_id, trader_id, request_type, status, documents_json, fee_status, created_at, updated_at)
+      VALUES 
+        ('APP_DEMO_01', 'APP-2026-2641', 'INST_001', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'IN_PROGRESS', '[]', 'PAID', ?, ?),
+        ('APP_DEMO_02', 'APP-2026-8506', 'INST_002', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'VERIFICATION_COMPLETED', '[]', 'PAID', ?, ?),
+        ('APP_DEMO_03', 'APP-2026-1311', 'INST_003', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'VERIFICATION_COMPLETED', '[]', 'PAID', ?, ?),
+        ('APP_DEMO_04', 'APP-2026-9022', 'INST_004', 'USR_TRADER_01', 'RE_VERIFICATION', 'SUBMITTED', '[]', 'PAID', ?, ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, now, now, now, now, now, now, now);
+
+    // 3. Demo Assignments
+    await db.prepare(`
+      INSERT INTO assignments (id, application_id, assigned_type, assigned_id, recommended_id, is_override, override_reason, assigned_by, created_at)
+      VALUES 
+        ('ASN_DEMO_01', 'APP_DEMO_01', 'VERIFIER', 'USR_VERIFIER_01', 'USR_VERIFIER_01', 0, NULL, 'USR_AUTHORITY_01', ?),
+        ('ASN_DEMO_02', 'APP_DEMO_02', 'VERIFIER', 'USR_VERIFIER_01', 'USR_VERIFIER_01', 0, NULL, 'USR_AUTHORITY_01', ?),
+        ('ASN_DEMO_03', 'APP_DEMO_03', 'GATC', 'USR_GATC_01', 'USR_GATC_01', 0, NULL, 'USR_AUTHORITY_01', ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, now, now);
+
+    // 4. Demo Appointments
+    await db.prepare(`
+      INSERT INTO appointments (id, assignment_id, scheduled_date, time_slot, arrangement_type, status, created_at)
+      VALUES 
+        ('APT_DEMO_01', 'ASN_DEMO_01', '2026-09-05', '10:00 AM - 01:00 PM', 'ON_SITE', 'SCHEDULED', ?),
+        ('APT_DEMO_02', 'ASN_DEMO_02', '2026-09-02', '02:00 PM - 05:00 PM', 'ON_SITE', 'COMPLETED', ?),
+        ('APT_DEMO_03', 'ASN_DEMO_03', '2026-09-03', '11:00 AM - 02:00 PM', 'LAB_DISPATCH', 'COMPLETED', ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, now, now);
+
+    // 5. Demo Verifications
+    await db.prepare(`
+      INSERT INTO verifications (id, application_id, appointment_id, verifier_id, status, result, remarks, started_at, completed_at, created_at, updated_at)
+      VALUES 
+        ('VERIF_DEMO_01', 'APP_DEMO_01', 'APT_DEMO_01', 'USR_VERIFIER_01', 'IN_PROGRESS', NULL, 'Physical inspection started. Platter integrity verified.', ?, NULL, ?, ?),
+        ('VERIF_DEMO_02', 'APP_DEMO_02', 'APT_DEMO_02', 'USR_VERIFIER_01', 'COMPLETED', 'PASS', 'Instrument conforms to NAWI Class III MPE statutory limits.', ?, ?, ?, ?),
+        ('VERIF_DEMO_03', 'APP_DEMO_03', 'APT_DEMO_03', 'USR_GATC_01', 'COMPLETED', 'PASS', 'Laboratory verification passed. Stamping intact.', ?, ?, ?, ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, now, now, now, now, now, now, now, now, now, now);
+
+    // 6. Demo Certificates (Form 6)
+    await db.prepare(`
+      INSERT INTO certificates (id, certificate_no, verification_id, instrument_id, public_token, issue_date, valid_until, status, issuing_officer, issuing_authority, created_at)
+      VALUES 
+        ('CERT_DEMO_01', 'LM-2026-54715-DL', 'VERIF_DEMO_02', 'INST_002', '8a94dd11-9af0-41d5-a986-cbf70bffdecf', ?, ?, 'VALID', 'Vikram Singh (LMO)', 'Department of Consumer Affairs - Legal Metrology Division', ?),
+        ('CERT_DEMO_02', 'LM-2026-74750-DL', 'VERIF_DEMO_03', 'INST_003', '15fcaf47-2be8-463a-bb34-97781d333771', ?, ?, 'VALID', 'Vikram Singh (LMO)', 'Department of Consumer Affairs - Legal Metrology Division', ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, validUntil, now, now, validUntil, now);
+
+    // 7. Demo Audit Logs
+    await db.prepare(`
+      INSERT INTO audit_logs (id, entity_name, entity_id, action, actor_id, actor_role, details_json, created_at)
+      VALUES 
+        ('LOG_DEMO_01', 'Certificate', 'CERT_DEMO_01', 'CERTIFICATE_GENERATED', 'USR_VERIFIER_01', 'VERIFIER', '{"certificate_no":"LM-2026-54715-DL","instrument_id":"INST_002"}', ?),
+        ('LOG_DEMO_02', 'Certificate', 'CERT_DEMO_02', 'CERTIFICATE_GENERATED', 'USR_GATC_01', 'GATC', '{"certificate_no":"LM-2026-74750-DL","instrument_id":"INST_003"}', ?),
+        ('LOG_DEMO_03', 'Application', 'APP_DEMO_01', 'ASSIGNMENT_CREATED', 'USR_AUTHORITY_01', 'AUTHORITY', '{"application_id":"APP_DEMO_01","assigned_to":"USR_VERIFIER_01"}', ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(now, now, now);
   }
 }
