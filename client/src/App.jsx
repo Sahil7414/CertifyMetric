@@ -86,7 +86,17 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      refreshAllData(currentUser);
+      api.getMe().then(res => {
+        if (!res || !res.user) {
+          // Stale session or expired token from old database: clean up and show login
+          handleLogout();
+        } else {
+          setCurrentUser(res.user);
+          refreshAllData(res.user);
+        }
+      }).catch(() => {
+        handleLogout();
+      });
     } else {
       setLoading(false);
     }

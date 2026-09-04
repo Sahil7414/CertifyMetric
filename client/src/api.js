@@ -86,6 +86,12 @@ export const api = {
   }).then(() => {
     setApiUser(null);
   }),
+  getMe: () => fetch(`${API_BASE}/auth/me`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return r.ok ? data : null;
+  }).catch(() => null),
 
   // Instruments (Trader)
   getInstruments: (ownerId) => fetch(`${API_BASE}/instruments${ownerId ? `?owner_id=${ownerId}` : ''}`, {

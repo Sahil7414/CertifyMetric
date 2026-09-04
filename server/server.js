@@ -235,6 +235,20 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token, user: safeUser, organization: org });
 });
 
+app.get('/api/auth/me', async (req, res) => {
+  const actor = getActor(req);
+  if (!actor || actor.role === 'ANONYMOUS') {
+    return res.status(401).json({ error: 'Unauthorized or session expired' });
+  }
+  const user = await User.findOne({ id: actor.id }).lean();
+  if (!user) {
+    return res.status(401).json({ error: 'User not found' });
+  }
+  const org = user.organization_id ? await Organization.findOne({ id: user.organization_id }).lean() : null;
+  const { password_hash, _id, ...safeUser } = user;
+  res.json({ user: safeUser, organization: org });
+});
+
 app.post('/api/auth/logout', async (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader ? authHeader.replace('Bearer ', '').trim() : req.headers['x-auth-token'];
