@@ -157,9 +157,174 @@ export async function seedDemoUsers() {
   console.log('✔ Successfully seeded demo accounts with scrypt hashed passwords.');
 }
 
+export async function seedDemoData() {
+  const now = new Date().toISOString();
+  const validUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Ensure category and ruleset exist
+  await db.prepare(`
+    INSERT INTO instrument_categories (id, code, name, description, active)
+    VALUES (
+      'CAT_NAWI_III', 
+      'NAWI_CLASS_III', 
+      'Commercial Non-Automatic Weighing Instrument (Class III)', 
+      'Counter scale, retail computing balance, digital platform scale up to 30kg used in retail trade',
+      1
+    )
+    ON CONFLICT (id) DO NOTHING
+  `).run();
+
+  const checklistSchema = JSON.stringify([
+    { id: 'CHK_01', title: 'Physical Condition & Body Integrity', description: 'Inspect casing, platter, and display for physical damage, cracks, or unauthorized alterations.', required: true },
+    { id: 'CHK_02', title: 'Stamping & Nameplate Legibility', description: 'Verify manufacturer name, model, serial number, and class designation are clearly stamped.', required: true },
+    { id: 'CHK_03', title: 'Level Indicator & Zero Setting', description: 'Confirm zero indication returns within ±0.25e and bubble level is properly centered on the counter.', required: true },
+    { id: 'CHK_04', title: 'Lead/Wire Tamper-Evident Seals', description: 'Check that calibration adjustment port seals and wire lead seals are intact.', required: true },
+    { id: 'CHK_05', title: 'Environmental Suitability', description: 'Verify the weighing instrument is placed away from heavy drafts, vibration, or direct thermal interference.', required: false }
+  ]);
+
+  const mpeRules = JSON.stringify({
+    step1: { min_e: 0, max_e: 500, mpe_e: 0.5 },
+    step2: { min_e: 501, max_e: 2000, mpe_e: 1.0 },
+    step3: { min_e: 2001, max_e: 10000, mpe_e: 1.5 }
+  });
+
+  await db.prepare(`
+    INSERT INTO rule_sets (id, category_id, name, validity_period_months, mpe_rules_json, checklist_schema_json)
+    VALUES ('RULE_NAWI_DEFAULT', 'CAT_NAWI_III', 'Legal Metrology Standard (General Rules 2011 - NAWI Class III)', 12, ?, ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(mpeRules, checklistSchema);
+
+  // 1. Seed Demo Instruments (for Demo Trader USR_TRADER_01)
+  await db.prepare(`
+    INSERT INTO instruments (id, owner_id, category_id, manufacturer, model, serial_number, max_capacity, min_capacity, verification_scale_interval_e, location, status, created_at)
+    VALUES 
+      ('INST_001', 'USR_TRADER_01', 'CAT_NAWI_III', 'Precision Weigher India', 'PW-3000 Eco', 'SN-2026-9941', '30 kg', '100 g', '5 g', 'Counter 1, Main Grocery Section, Connaught Place, New Delhi', 'UNDER_VERIFICATION', ?),
+      ('INST_002', 'USR_TRADER_01', 'CAT_NAWI_III', 'Avery Weigh-Tronix', 'ZK830 High Precision', 'SN-CERT-PASS-8801', '30 kg', '100 g', '5 g', 'Depot 4, Okhla Phase III, New Delhi', 'VERIFIED', ?),
+      ('INST_003', 'USR_TRADER_01', 'CAT_NAWI_III', 'Mettler Toledo', 'b-Plus Dual Range', 'SN-S4-QR-9902', '15 kg', '40 g', '2 g', 'Store 18, Terminal 3, IGI Airport, New Delhi', 'VERIFIED', ?),
+      ('INST_004', 'USR_TRADER_01', 'CAT_NAWI_III', 'Essae Teraoka', 'DS-215 Bench Scale', 'SN-EXP-2026-4410', '20 kg', '50 g', '2 g', 'Billing Counter 3, South Extension Part II, New Delhi', 'EXPIRING', ?),
+      ('INST_005', 'USR_TRADER_01', 'CAT_NAWI_III', 'CAS Corporation', 'SW-1 Plus Digital', 'SN-CAS-2026-1024', '30 kg', '100 g', '5 g', 'Fruit Market Stall 12, Azadpur Mandi, Delhi', 'REGISTERED', ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, now, now, now, now);
+
+  // 2. Seed Demo Applications
+  await db.prepare(`
+    INSERT INTO applications (id, application_no, instrument_id, trader_id, request_type, status, documents_json, fee_status, created_at, updated_at)
+    VALUES 
+      ('APP_DEMO_01', 'APP-2026-2641', 'INST_001', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'IN_PROGRESS', '[]', 'PAID', ?, ?),
+      ('APP_DEMO_02', 'APP-2026-8506', 'INST_002', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'VERIFICATION_COMPLETED', '[]', 'PAID', ?, ?),
+      ('APP_DEMO_03', 'APP-2026-1311', 'INST_003', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'VERIFICATION_COMPLETED', '[]', 'PAID', ?, ?),
+      ('APP_DEMO_04', 'APP-2026-9022', 'INST_004', 'USR_TRADER_01', 'RE_VERIFICATION', 'SUBMITTED', '[]', 'PAID', ?, ?),
+      ('APP_DEMO_05', 'APP-2026-3398', 'INST_005', 'USR_TRADER_01', 'INITIAL_VERIFICATION', 'ASSIGNED', '[]', 'PAID', ?, ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, now, now, now, now, now, now, now, now, now);
+
+  // 3. Seed Demo Assignments
+  await db.prepare(`
+    INSERT INTO assignments (id, application_id, assigned_type, assigned_id, recommended_id, is_override, override_reason, assigned_by, created_at)
+    VALUES 
+      ('ASN_DEMO_01', 'APP_DEMO_01', 'VERIFIER', 'USR_VERIFIER_01', 'USR_VERIFIER_01', 0, NULL, 'USR_AUTHORITY_01', ?),
+      ('ASN_DEMO_02', 'APP_DEMO_02', 'VERIFIER', 'USR_VERIFIER_01', 'USR_VERIFIER_01', 0, NULL, 'USR_AUTHORITY_01', ?),
+      ('ASN_DEMO_03', 'APP_DEMO_03', 'GATC', 'USR_GATC_01', 'USR_GATC_01', 0, NULL, 'USR_AUTHORITY_01', ?),
+      ('ASN_DEMO_05', 'APP_DEMO_05', 'GATC', 'USR_GATC_01', 'USR_GATC_01', 0, NULL, 'USR_AUTHORITY_01', ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, now, now, now);
+
+  // 4. Seed Demo Appointments
+  await db.prepare(`
+    INSERT INTO appointments (id, assignment_id, scheduled_date, time_slot, arrangement_type, status, created_at)
+    VALUES 
+      ('APT_DEMO_01', 'ASN_DEMO_01', '2026-09-05', '10:00 AM - 01:00 PM', 'ON_SITE', 'SCHEDULED', ?),
+      ('APT_DEMO_02', 'ASN_DEMO_02', '2026-09-02', '02:00 PM - 05:00 PM', 'ON_SITE', 'COMPLETED', ?),
+      ('APT_DEMO_03', 'ASN_DEMO_03', '2026-09-03', '11:00 AM - 02:00 PM', 'LAB_DISPATCH', 'COMPLETED', ?),
+      ('APT_DEMO_05', 'ASN_DEMO_05', '2026-09-06', '02:00 PM - 05:00 PM', 'LAB_DISPATCH', 'SCHEDULED', ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, now, now, now);
+
+  // 5. Seed Demo Verifications
+  await db.prepare(`
+    INSERT INTO verifications (id, application_id, appointment_id, verifier_id, status, result, remarks, started_at, completed_at, created_at, updated_at)
+    VALUES 
+      ('VERIF_DEMO_01', 'APP_DEMO_01', 'APT_DEMO_01', 'USR_VERIFIER_01', 'IN_PROGRESS', NULL, 'Physical inspection started. Platter integrity verified.', ?, NULL, ?, ?),
+      ('VERIF_DEMO_02', 'APP_DEMO_02', 'APT_DEMO_02', 'USR_VERIFIER_01', 'COMPLETED', 'PASS', 'Instrument conforms to NAWI Class III MPE statutory limits.', ?, ?, ?, ?),
+      ('VERIF_DEMO_03', 'APP_DEMO_03', 'APT_DEMO_03', 'USR_GATC_01', 'COMPLETED', 'PASS', 'Laboratory verification passed. Stamping intact.', ?, ?, ?, ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, now, now, now, now, now, now, now, now, now, now);
+
+  // 6. Seed Checklist Responses for Completed & In-Progress Verifications
+  const checklistResponses = [
+    { id: 'CHK_RES_01_1', verifId: 'VERIF_DEMO_01', itemId: 'CHK_01', status: 'PASS', note: 'Enclosure in good condition.' },
+    { id: 'CHK_RES_01_2', verifId: 'VERIF_DEMO_01', itemId: 'CHK_02', status: 'PASS', note: 'Nameplate clear.' },
+    { id: 'CHK_RES_01_3', verifId: 'VERIF_DEMO_01', itemId: 'CHK_03', status: 'PASS', note: 'Level indicator centered.' },
+    { id: 'CHK_RES_02_1', verifId: 'VERIF_DEMO_02', itemId: 'CHK_01', status: 'PASS', note: 'Body integrity verified.' },
+    { id: 'CHK_RES_02_2', verifId: 'VERIF_DEMO_02', itemId: 'CHK_02', status: 'PASS', note: 'Stamping intact.' },
+    { id: 'CHK_RES_02_3', verifId: 'VERIF_DEMO_02', itemId: 'CHK_03', status: 'PASS', note: 'Zero setting confirmed.' },
+    { id: 'CHK_RES_02_4', verifId: 'VERIF_DEMO_02', itemId: 'CHK_04', status: 'PASS', note: 'Lead wire seals verified.' },
+    { id: 'CHK_RES_02_5', verifId: 'VERIF_DEMO_02', itemId: 'CHK_05', status: 'PASS', note: 'Environment suitable.' },
+    { id: 'CHK_RES_03_1', verifId: 'VERIF_DEMO_03', itemId: 'CHK_01', status: 'PASS', note: 'Laboratory inspection pass.' },
+    { id: 'CHK_RES_03_2', verifId: 'VERIF_DEMO_03', itemId: 'CHK_02', status: 'PASS', note: 'Nameplate legible.' },
+    { id: 'CHK_RES_03_3', verifId: 'VERIF_DEMO_03', itemId: 'CHK_03', status: 'PASS', note: 'Zero indicator exact.' },
+    { id: 'CHK_RES_03_4', verifId: 'VERIF_DEMO_03', itemId: 'CHK_04', status: 'PASS', note: 'Calibration ports sealed.' },
+    { id: 'CHK_RES_03_5', verifId: 'VERIF_DEMO_03', itemId: 'CHK_05', status: 'PASS', note: 'Lab conditions controlled.' }
+  ];
+
+  for (const c of checklistResponses) {
+    await db.prepare(`
+      INSERT INTO verification_checklist_responses (id, verification_id, item_id, status, note, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (verification_id, item_id) DO NOTHING
+    `).run(c.id, c.verifId, c.itemId, c.status, c.note, now);
+  }
+
+  // 7. Seed Verification Readings
+  const readings = [
+    { id: 'RDG_DEMO_01_1', verifId: 'VERIF_DEMO_01', point: 'Initial Test Load', ref: 5.0, obs: 5.0, unit: 'kg', res: 'PASS' },
+    { id: 'RDG_DEMO_02_1', verifId: 'VERIF_DEMO_02', point: 'Minimum Load (100g)', ref: 0.1, obs: 0.1, unit: 'kg', res: 'PASS' },
+    { id: 'RDG_DEMO_02_2', verifId: 'VERIF_DEMO_02', point: 'Half Capacity (15kg)', ref: 15.0, obs: 15.001, unit: 'kg', res: 'PASS' },
+    { id: 'RDG_DEMO_02_3', verifId: 'VERIF_DEMO_02', point: 'Maximum Capacity (30kg)', ref: 30.0, obs: 30.002, unit: 'kg', res: 'PASS' },
+    { id: 'RDG_DEMO_03_1', verifId: 'VERIF_DEMO_03', point: 'Minimum Load (40g)', ref: 0.04, obs: 0.04, unit: 'kg', res: 'PASS' },
+    { id: 'RDG_DEMO_03_2', verifId: 'VERIF_DEMO_03', point: 'Half Capacity (7.5kg)', ref: 7.5, obs: 7.5, unit: 'kg', res: 'PASS' },
+    { id: 'RDG_DEMO_03_3', verifId: 'VERIF_DEMO_03', point: 'Maximum Capacity (15kg)', ref: 15.0, obs: 15.001, unit: 'kg', res: 'PASS' }
+  ];
+
+  for (const r of readings) {
+    await db.prepare(`
+      INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO NOTHING
+    `).run(r.id, r.verifId, r.point, r.ref, r.obs, r.unit, r.res, now);
+  }
+
+  // 8. Seed Demo Certificates (Form 6)
+  await db.prepare(`
+    INSERT INTO certificates (id, certificate_no, verification_id, instrument_id, public_token, issue_date, valid_until, status, issuing_officer, issuing_authority, created_at)
+    VALUES 
+      ('CERT_DEMO_01', 'LM-2026-54715-DL', 'VERIF_DEMO_02', 'INST_002', '8a94dd11-9af0-41d5-a986-cbf70bffdecf', ?, ?, 'VALID', 'Vikram Singh (LMO)', 'Department of Consumer Affairs - Legal Metrology Division', ?),
+      ('CERT_DEMO_02', 'LM-2026-74750-DL', 'VERIF_DEMO_03', 'INST_003', '15fcaf47-2be8-463a-bb34-97781d333771', ?, ?, 'VALID', 'Vikram Singh (LMO)', 'Department of Consumer Affairs - Legal Metrology Division', ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, validUntil, now, now, validUntil, now);
+
+  // 9. Seed Demo Audit Logs
+  await db.prepare(`
+    INSERT INTO audit_logs (id, entity_name, entity_id, action, actor_id, actor_role, details_json, created_at)
+    VALUES 
+      ('LOG_DEMO_01', 'Certificate', 'CERT_DEMO_01', 'CERTIFICATE_GENERATED', 'USR_VERIFIER_01', 'VERIFIER', '{"certificate_no":"LM-2026-54715-DL","instrument_id":"INST_002"}', ?),
+      ('LOG_DEMO_02', 'Certificate', 'CERT_DEMO_02', 'CERTIFICATE_GENERATED', 'USR_GATC_01', 'GATC', '{"certificate_no":"LM-2026-74750-DL","instrument_id":"INST_003"}', ?),
+      ('LOG_DEMO_03', 'Application', 'APP_DEMO_01', 'ASSIGNMENT_CREATED', 'USR_AUTHORITY_01', 'AUTHORITY', '{"application_id":"APP_DEMO_01","assigned_to":"USR_VERIFIER_01"}', ?),
+      ('LOG_DEMO_04', 'Instrument', 'INST_001', 'REGISTER', 'USR_TRADER_01', 'TRADER', '{"serial_number":"SN-2026-9941","model":"PW-3000 Eco"}', ?)
+    ON CONFLICT (id) DO NOTHING
+  `).run(now, now, now, now);
+
+  console.log('✔ Successfully seeded demo business data (instruments, applications, verifications, certificates).');
+}
+
+export async function seedAllDemoData() {
+  await seedDemoUsers();
+  await seedDemoData();
+}
+
 // Execute directly if run via CLI: node server/seed-demo-users.js
 if (process.argv[1] && (process.argv[1] === fileURLToPath(import.meta.url) || process.argv[1].endsWith('seed-demo-users.js'))) {
-  seedDemoUsers().catch(err => {
+  seedAllDemoData().catch(err => {
     console.error('Seed error:', err);
     process.exit(1);
   });

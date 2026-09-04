@@ -13,7 +13,8 @@
     "client": "npm --prefix client run dev",
     "server": "npm --prefix server start",
     "test:prod": "node scripts/verify-production.js",
-    "test:pg": "node scripts/verify-postgres.js"
+    "test:pg": "node scripts/verify-postgres.js",
+    "verify:neon": "node scripts/verify-live-neon.js"
   },
   "dependencies": {
     "@neon/config": "^1.3.0",

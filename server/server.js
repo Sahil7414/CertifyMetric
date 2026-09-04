@@ -781,7 +781,7 @@ app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
 
   // Save measurement readings
   if (Array.isArray(readings)) {
-    db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verif.id);
+    await db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verif.id);
     const insertReading = await db.prepare(`
       INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -817,7 +817,7 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), asyn
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot attach evidence.` });
   }
 
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.id, a.status, asn.assigned_id 
     FROM applications a 
     JOIN assignments asn ON asn.application_id = a.id 
@@ -999,7 +999,7 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   }
 
   // Persist readings
-  db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verifId);
+  await db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verifId);
   const insertReading = await db.prepare(`
     INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -1021,7 +1021,7 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   const nextAppStatus = result === 'PASS' ? 'VERIFICATION_COMPLETED' : 'VERIFICATION_FAILED';
   const nextInstStatus = result === 'PASS' ? 'VERIFIED' : 'REJECTED';
 
-  db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ?").run(nextAppStatus, now, req.params.appId);
+  await db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ?").run(nextAppStatus, now, req.params.appId);
   await db.prepare("UPDATE instruments SET status = ? WHERE id = ?").run(nextInstStatus, appItem.instrument_id);
 
   logAudit('Verification', verifId, 'VERIFICATION_RESULT_SUBMITTED', actorId, role, {

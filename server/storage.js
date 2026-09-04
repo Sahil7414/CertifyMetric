@@ -12,15 +12,29 @@ const __dirname = path.dirname(__filename);
 // -----------------------------------------------------------------------------
 // In production with a persistent volume (e.g., Render Disk, Railway Volume),
 // STORAGE_DIR should be pointed to the mounted volume path, e.g., /data/uploads.
-export const STORAGE_DIR = process.env.STORAGE_DIR
+// On Render Free (no persistent disk), fallback to application-local uploads directory.
+export let STORAGE_DIR = process.env.STORAGE_DIR
   ? path.resolve(process.env.STORAGE_DIR)
   : path.join(__dirname, 'uploads');
 
-export const EVIDENCE_DIR = path.join(STORAGE_DIR, 'evidence');
+export let EVIDENCE_DIR = path.join(STORAGE_DIR, 'evidence');
 
 export function initStorage() {
-  if (!fs.existsSync(EVIDENCE_DIR)) {
-    fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(EVIDENCE_DIR)) {
+      fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn(`[Storage Warning] Could not initialize configured STORAGE_DIR '${STORAGE_DIR}': ${err.message}. Falling back to application-local uploads directory.`);
+    STORAGE_DIR = path.join(__dirname, 'uploads');
+    EVIDENCE_DIR = path.join(STORAGE_DIR, 'evidence');
+    try {
+      if (!fs.existsSync(EVIDENCE_DIR)) {
+        fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+      }
+    } catch (fallbackErr) {
+      console.error('[Storage Error] Failed to initialize fallback storage:', fallbackErr.message);
+    }
   }
 }
 
