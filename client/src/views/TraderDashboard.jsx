@@ -3,9 +3,9 @@ import StatusBadge from '../components/StatusBadge';
 
 export default function TraderDashboard({
   currentUser,
-  instruments,
-  applications,
-  certificates,
+  instruments = [],
+  applications = [],
+  certificates = [],
   onOpenAddModal,
   onSelectInstrument,
   onSelectApplication,
@@ -14,9 +14,13 @@ export default function TraderDashboard({
   onOpenQR,
   onViewAllInstruments
 }) {
-  const expiring = instruments.filter(i => i.status === 'EXPIRING');
-  const verifiedCount = instruments.filter(i => i.status === 'VERIFIED').length;
-  const pendingApps = applications.filter(a => !['CERTIFICATE_ISSUED', 'FAILED'].includes(a.status));
+  const safeInstruments = Array.isArray(instruments) ? instruments : [];
+  const safeApplications = Array.isArray(applications) ? applications : [];
+  const safeCertificates = Array.isArray(certificates) ? certificates : [];
+
+  const expiring = safeInstruments.filter(i => i.status === 'EXPIRING');
+  const verifiedCount = safeInstruments.filter(i => i.status === 'VERIFIED').length;
+  const pendingApps = safeApplications.filter(a => !['CERTIFICATE_ISSUED', 'FAILED'].includes(a.status));
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -45,11 +49,11 @@ export default function TraderDashboard({
               Register New Instrument
             </button>
             <button
-              onClick={onViewAllInstruments || (() => onSelectInstrument(instruments[0]?.id))}
+              onClick={onViewAllInstruments || (() => onSelectInstrument(safeInstruments[0]?.id))}
               className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-xs transition-all border border-white/20 flex items-center gap-2"
             >
               <span className="material-symbols-outlined text-sm">inventory_2</span>
-              View All Instruments ({instruments.length})
+              View All Instruments ({safeInstruments.length})
             </button>
           </div>
         </div>
@@ -116,7 +120,7 @@ export default function TraderDashboard({
             <span className="text-xs font-semibold uppercase tracking-wider">Certificates</span>
             <span className="material-symbols-outlined text-sky-600 text-xl">workspace_premium</span>
           </div>
-          <div className="text-2xl font-extrabold text-sky-600">{certificates.length}</div>
+          <div className="text-2xl font-extrabold text-sky-600">{safeCertificates.length}</div>
           <p className="text-[11px] text-slate-500 mt-1">Total certificates issued</p>
         </div>
       </div>
@@ -150,9 +154,9 @@ export default function TraderDashboard({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
-              {instruments.map((inst) => {
+              {safeInstruments.map((inst) => {
                 // Find latest active application for this instrument
-                const relatedApp = applications.find(a => a.instrument_id === inst.id);
+                const relatedApp = safeApplications.find(a => a.instrument_id === inst.id);
 
                 // Differentiate verification pending, under review, assigned, verification in progress, verified, failed, expired, application rejected
                 let complianceStatus = inst.status;

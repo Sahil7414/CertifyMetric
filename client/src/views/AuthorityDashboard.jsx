@@ -3,15 +3,16 @@ import StatusBadge from '../components/StatusBadge';
 
 export default function AuthorityDashboard({
   currentUser,
-  applications,
+  applications = [],
   stats,
   onReviewApplication,
   onViewWorkload
 }) {
-  const pendingReview = applications.filter(a => a.status === 'SUBMITTED');
-  const awaitingAssign = applications.filter(a => a.status === 'UNDER_REVIEW');
-  const activeTesting = applications.filter(a => ['ASSIGNED', 'SCHEDULED', 'VERIFICATION_IN_PROGRESS'].includes(a.status));
-  const completed = applications.filter(a => a.status === 'CERTIFICATE_ISSUED');
+  const safeApplications = Array.isArray(applications) ? applications : [];
+  const pendingReview = safeApplications.filter(a => a.status === 'SUBMITTED');
+  const awaitingAssign = safeApplications.filter(a => a.status === 'UNDER_REVIEW');
+  const activeTesting = safeApplications.filter(a => ['ASSIGNED', 'SCHEDULED', 'VERIFICATION_IN_PROGRESS'].includes(a.status));
+  const completed = safeApplications.filter(a => a.status === 'CERTIFICATE_ISSUED');
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">

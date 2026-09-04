@@ -67,7 +67,10 @@ const getHeaders = (extra = {}) => {
 
 export const api = {
   // Auth
-  getUsers: () => fetch(`${API_BASE}/auth/users`).then(r => r.json()),
+  getUsers: () => fetch(`${API_BASE}/auth/users`).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
   login: (email, password) => fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -87,7 +90,10 @@ export const api = {
   // Instruments (Trader)
   getInstruments: (ownerId) => fetch(`${API_BASE}/instruments${ownerId ? `?owner_id=${ownerId}` : ''}`, {
     headers: getHeaders()
-  }).then(r => r.json()),
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
   getInstrument: (id) => fetch(`${API_BASE}/instruments/${id}`, {
     headers: getHeaders()
   }).then(r => r.json()),
@@ -106,7 +112,10 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return fetch(`${API_BASE}/applications${query ? `?${query}` : ''}`, {
       headers: getHeaders()
-    }).then(r => r.json());
+    }).then(async r => {
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    }).catch(() => []);
   },
   getApplication: (id) => fetch(`${API_BASE}/applications/${id}`, {
     headers: getHeaders()
@@ -227,7 +236,10 @@ export const api = {
   }),
   getCertificates: (ownerId) => fetch(`${API_BASE}/certificates${ownerId ? `?owner_id=${ownerId}` : ''}`, {
     headers: getHeaders()
-  }).then(r => r.json()),
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
   getCertificate: (id) => fetch(`${API_BASE}/certificates/${id}`, {
     headers: getHeaders()
   }).then(async r => {
@@ -245,8 +257,14 @@ export const api = {
   // Governance
   getAuditLogs: () => fetch(`${API_BASE}/audit-logs`, {
     headers: getHeaders()
-  }).then(r => r.json()),
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
   getStats: () => fetch(`${API_BASE}/stats`, {
     headers: getHeaders()
-  }).then(r => r.json())
+  }).then(async r => {
+    const data = await r.json();
+    return r.ok ? data : null;
+  }).catch(() => null)
 };

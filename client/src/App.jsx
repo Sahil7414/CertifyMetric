@@ -70,12 +70,15 @@ export default function App() {
         api.getStats()
       ]);
 
-      setInstruments(instList);
-      setApplications(appList);
-      setCertificates(certList);
-      setStats(statData);
+      setInstruments(Array.isArray(instList) ? instList : []);
+      setApplications(Array.isArray(appList) ? appList : []);
+      setCertificates(Array.isArray(certList) ? certList : []);
+      setStats(statData && !statData.error ? statData : null);
     } catch (err) {
       console.error('Failed to load application data:', err);
+      setInstruments([]);
+      setApplications([]);
+      setCertificates([]);
     } finally {
       setLoading(false);
     }
