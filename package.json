@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "node start-dev.js",
     "start": "node start-dev.js",
+    "build": "npm --prefix client run build",
+    "seed": "npm --prefix server run seed",
+    "seed:prod": "npm --prefix server run seed:prod",
     "client": "npm --prefix client run dev",
-    "server": "npm --prefix server start"
+    "server": "npm --prefix server start",
+    "test:prod": "node scripts/verify-production.js"
   }
 }

@@ -1,13 +1,36 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { seedDemoUsers } from './seed-demo-users.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbPath = path.join(__dirname, 'metrology.db');
+
+// Configurable database path (e.g. persistent volume mount at /data/metrology.db)
+export const dbPath = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : path.join(__dirname, 'metrology.db');
+
+// Ensure parent directory exists on disk / volume mount
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 export const db = new DatabaseSync(dbPath);
+
+// Configure SQLite production pragmas for concurrency, safety, and durability
+try {
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 5000;
+    PRAGMA foreign_keys = ON;
+    PRAGMA synchronous = NORMAL;
+  `);
+} catch (e) {
+  console.warn('Could not set all SQLite pragmas:', e.message);
+}
 
 export function initDatabase() {
   db.exec(`
@@ -180,40 +203,31 @@ export function initDatabase() {
     console.error('Migration error:', e);
   }
 
-  seedData();
-  seedDemoUsers();
+  // Always initialize statutory categories and rules required for system operation
+  initStatutoryReferenceData();
+
+  // Seed demo data and demo users ONLY in development/staging or when explicitly requested
+  const isProduction = process.env.NODE_ENV === 'production';
+  const shouldSeedDemo = !isProduction || process.env.SEED_DEMO_USERS === 'true';
+
+  if (shouldSeedDemo) {
+    seedDemoData();
+    seedDemoUsers();
+  }
 }
 
-function seedData() {
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-  if (userCount.count > 0) return;
-
+function initStatutoryReferenceData() {
   const now = new Date().toISOString();
 
-  // 1. Organizations
+  // Baseline Directorate Organization
   db.prepare(`
-    INSERT INTO organizations (id, name, type, jurisdiction, created_at)
-    VALUES 
-      ('ORG_TRADER_01', 'Apex Retail Traders Pvt Ltd', 'TRADER_ORG', 'Central District, Delhi', ?),
-      ('ORG_GOV_DOCA', 'Department of Consumer Affairs - Legal Metrology Division', 'GOV_DIRECTORATE', 'National Capital Territory', ?),
-      ('ORG_GATC_01', 'National Metrology Testing Centre (GATC Lab 04)', 'TEST_CENTRE', 'Northern Region', ?)
-  `).run(now, now, now);
+    INSERT OR IGNORE INTO organizations (id, name, type, jurisdiction, created_at)
+    VALUES ('ORG_GOV_DOCA', 'Department of Consumer Affairs - Legal Metrology Division', 'GOV_DIRECTORATE', 'National Capital Territory', ?)
+  `).run(now);
 
-  // 2. Users (Roles: TRADER, AUTHORITY, VERIFIER, GATC, PLATFORM_ADMIN)
+  // Baseline Instrument Category (NAWI Class III)
   db.prepare(`
-    INSERT INTO users (id, email, full_name, role, organization_id, phone, avatar, created_at)
-    VALUES
-      ('USR_TRADER_01', 'trader@demo.gov.in', 'Ramesh Sharma', 'TRADER', 'ORG_TRADER_01', '+91 98110 23456', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', ?),
-      ('USR_AUTHORITY_01', 'authority@demo.gov.in', 'Dr. S. K. Verma', 'AUTHORITY', 'ORG_GOV_DOCA', '+91 94120 78901', 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150', ?),
-      ('USR_VERIFIER_01', 'verifier@demo.gov.in', 'Vikram Singh (LMO)', 'VERIFIER', 'ORG_GOV_DOCA', '+91 98230 45678', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150', ?),
-      ('USR_VERIFIER_02', 'verifier2@demo.gov.in', 'Priya Patel (LMO)', 'VERIFIER', 'ORG_GOV_DOCA', '+91 98230 99887', 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', ?),
-      ('USR_GATC_01', 'gatc@demo.gov.in', 'Apex Testing Laboratory (GATC)', 'GATC', 'ORG_GATC_01', '+91 99340 11223', 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', ?),
-      ('USR_ADMIN_01', 'admin@demo.gov.in', 'Rajesh Nair (SysAdmin)', 'PLATFORM_ADMIN', 'ORG_GOV_DOCA', '+91 99990 00001', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150', ?)
-  `).run(now, now, now, now, now, now);
-
-  // 3. Instrument Category
-  db.prepare(`
-    INSERT INTO instrument_categories (id, code, name, description, active)
+    INSERT OR IGNORE INTO instrument_categories (id, code, name, description, active)
     VALUES (
       'CAT_NAWI_III', 
       'NAWI_CLASS_III', 
@@ -223,7 +237,7 @@ function seedData() {
     )
   `).run();
 
-  // 4. Rule Set
+  // Statutory Verification Rule Set
   const checklistSchema = JSON.stringify([
     { id: 'CHK_01', title: 'Physical Condition & Body Integrity', description: 'Inspect casing, platter, and display for physical damage, cracks, or unauthorized alterations.', required: true },
     { id: 'CHK_02', title: 'Stamping & Nameplate Legibility', description: 'Verify manufacturer name, model, serial number, and class designation are clearly stamped.', required: true },
@@ -239,13 +253,28 @@ function seedData() {
   });
 
   db.prepare(`
-    INSERT INTO rule_sets (id, category_id, name, validity_period_months, mpe_rules_json, checklist_schema_json)
+    INSERT OR IGNORE INTO rule_sets (id, category_id, name, validity_period_months, mpe_rules_json, checklist_schema_json)
     VALUES ('RULE_NAWI_DEFAULT', 'CAT_NAWI_III', 'Legal Metrology Standard (General Rules 2011 - NAWI Class III)', 12, ?, ?)
   `).run(mpeRules, checklistSchema);
+}
 
-  // 5. Seed Instruments
+function seedDemoData() {
+  const now = new Date().toISOString();
+
+  // Demo Organizations
   db.prepare(`
-    INSERT INTO instruments (id, owner_id, category_id, manufacturer, model, serial_number, max_capacity, min_capacity, verification_scale_interval_e, location, status, created_at)
-    VALUES ('INST_001', 'USR_TRADER_01', 'CAT_NAWI_III', 'Precision Weigher India', 'PW-3000 Eco', 'SN-2026-9941', '30 kg', '100 g', '5 g', 'Counter 1, Main Grocery Section, Connaught Place, New Delhi', 'REGISTERED', ?)
-  `).run(now);
+    INSERT OR IGNORE INTO organizations (id, name, type, jurisdiction, created_at)
+    VALUES 
+      ('ORG_TRADER_01', 'Apex Retail Traders Pvt Ltd', 'TRADER_ORG', 'Central District, Delhi', ?),
+      ('ORG_GATC_01', 'National Metrology Testing Centre (GATC Lab 04)', 'TEST_CENTRE', 'Northern Region', ?)
+  `).run(now, now);
+
+  // Demo Instrument
+  const instCount = db.prepare('SELECT COUNT(*) as count FROM instruments').get();
+  if (instCount.count === 0) {
+    db.prepare(`
+      INSERT INTO instruments (id, owner_id, category_id, manufacturer, model, serial_number, max_capacity, min_capacity, verification_scale_interval_e, location, status, created_at)
+      VALUES ('INST_001', 'USR_TRADER_01', 'CAT_NAWI_III', 'Precision Weigher India', 'PW-3000 Eco', 'SN-2026-9941', '30 kg', '100 g', '5 g', 'Counter 1, Main Grocery Section, Connaught Place, New Delhi', 'REGISTERED', ?)
+    `).run(now);
+  }
 }

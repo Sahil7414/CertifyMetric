@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { api } from '../api';
 
 export default function AddInstrumentModal({ currentUser, onClose, onCreated }) {
   const [formData, setFormData] = useState({
@@ -24,20 +25,11 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
     setError('');
 
     try {
-      const res = await fetch('http://localhost:4000/api/instruments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          owner_id: currentUser?.id,
-          category_id: 'CAT_NAWI_III'
-        })
+      const data = await api.createInstrument({
+        ...formData,
+        owner_id: currentUser?.id,
+        category_id: 'CAT_NAWI_III'
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to register instrument');
-      }
 
       onCreated(data.id);
       onClose();

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import StatusBadge from '../components/StatusBadge';
-import { api } from '../api';
+import { api, getFileUrl } from '../api';
 
 export default function VerificationWorkspace({
   applicationId,
@@ -968,7 +968,7 @@ export default function VerificationWorkspace({
                           <div className="h-32 bg-slate-100 flex items-center justify-center overflow-hidden relative">
                             {isImage ? (
                               <img
-                                src={`http://localhost:4000${ev.file_path}`}
+                                src={getFileUrl(ev.file_path)}
                                 alt={ev.caption || ev.file_name}
                                 className="w-full h-full object-cover"
                               />
@@ -992,7 +992,7 @@ export default function VerificationWorkspace({
 
                           <div className="px-3 pb-3 pt-1 border-t border-slate-100 flex items-center justify-between">
                             <a
-                              href={`http://localhost:4000${ev.file_path}`}
+                              href={getFileUrl(ev.file_path)}
                               target="_blank"
                               rel="noreferrer"
                               className="text-[11px] text-primary hover:underline font-semibold"

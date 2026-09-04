@@ -6,7 +6,9 @@ import { hashPassword } from './auth-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const dbPath = path.join(__dirname, 'metrology.db');
+const dbPath = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : path.join(__dirname, 'metrology.db');
 const workspaceRoot = path.join(__dirname, '..');
 
 export const DEMO_ACCOUNTS = [
@@ -142,13 +144,15 @@ export function seedDemoUsers() {
    \`\`\`
 `;
 
-  try {
-    fs.writeFileSync(path.join(workspaceRoot, 'DEMO_CREDENTIALS.md'), credsMarkdown, 'utf-8');
-  } catch (err) {
-    console.error('Failed to write DEMO_CREDENTIALS.md:', err);
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      fs.writeFileSync(path.join(workspaceRoot, 'DEMO_CREDENTIALS.md'), credsMarkdown, 'utf-8');
+    } catch (err) {
+      console.error('Failed to write DEMO_CREDENTIALS.md:', err);
+    }
   }
 
-  console.log('✔ Successfully seeded 5 demo accounts with scrypt hashed passwords.');
+  console.log('✔ Successfully seeded demo accounts with scrypt hashed passwords.');
 }
 
 // Execute directly if run via CLI: node server/seed-demo-users.js

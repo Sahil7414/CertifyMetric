@@ -1,4 +1,23 @@
-const API_BASE = 'http://localhost:4000/api';
+const getApiBase = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl) {
+    const trimmed = envUrl.trim().replace(/\/+$/, '');
+    return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+  }
+  return import.meta.env.DEV ? 'http://localhost:4000/api' : '/api';
+};
+
+export const API_BASE = getApiBase();
+
+export const getFileUrl = (filePath) => {
+  if (!filePath) return '';
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    return filePath;
+  }
+  const serverOrigin = API_BASE.replace(/\/api\/?$/, '');
+  const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+  return `${serverOrigin}${cleanPath}`;
+};
 
 let activeUser = null;
 let authToken = null;
@@ -160,18 +179,25 @@ export const api = {
     if (!r.ok) throw new Error(json.error || 'Failed to save draft');
     return json;
   }),
-  uploadEvidence: (appId, formData) => fetch(`${API_BASE}/verifications/cases/${appId}/evidence`, {
-    method: 'POST',
-    headers: {
-      'x-user-role': activeUser.role,
-      'x-user-id': activeUser.id
-    },
-    body: formData
-  }).then(async r => {
-    const json = await r.json();
-    if (!r.ok) throw new Error(json.error || 'Failed to upload evidence');
-    return json;
-  }),
+  uploadEvidence: (appId, formData) => {
+    const headers = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    if (activeUser) {
+      headers['x-user-id'] = activeUser.id;
+      headers['x-user-role'] = activeUser.role;
+    }
+    return fetch(`${API_BASE}/verifications/cases/${appId}/evidence`, {
+      method: 'POST',
+      headers,
+      body: formData
+    }).then(async r => {
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed to upload evidence');
+      return json;
+    });
+  },
   deleteEvidence: (appId, evidenceId) => fetch(`${API_BASE}/verifications/cases/${appId}/evidence/${evidenceId}`, {
     method: 'DELETE',
     headers: getHeaders()

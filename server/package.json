@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "seed": "node seed-demo-users.js",
+    "seed:prod": "node seed-demo-users.js --prod"
   },
   "dependencies": {
     "cors": "^2.8.5",

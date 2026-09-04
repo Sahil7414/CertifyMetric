@@ -1,45 +1,77 @@
 import express from 'express';
 import cors from 'cors';
-import multer from 'multer';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { db, initDatabase } from './db.js';
 import { ROLES, hasPermission } from './permissions.js';
+import { upload, STORAGE_DIR, deleteStoredFile, initStorage } from './storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize DB schema & seed data
+// Initialize DB schema & statutory baseline data
 initDatabase();
 
-const app = express();
-const PORT = process.env.PORT || 4000;
+// Initialize persistent storage directory
+initStorage();
 
-app.use(cors());
+const app = express();
+const PORT = parseInt(process.env.PORT || '4000', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+
+// Configure Production CORS
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000'
+];
+const envOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(',').map(u => u.trim())
+  : [];
+const allowedOrigins = new Set([...defaultOrigins, ...envOrigins]);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser requests, same-origin, or whitelisted frontend origins
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(origin) || process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'x-user-id', 'x-user-role']
+}));
+
 app.use(express.json());
 
-// Set up static uploads folder for evidence
-const uploadDir = path.join(__dirname, 'uploads');
-const evidenceDir = path.join(uploadDir, 'evidence');
-if (!fs.existsSync(evidenceDir)) {
-  fs.mkdirSync(evidenceDir, { recursive: true });
-}
-app.use('/uploads', express.static(uploadDir));
+// Serve static evidence files from persistent storage
+app.use('/uploads', express.static(STORAGE_DIR));
 
-// Configure Multer for Evidence Storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, evidenceDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `ev_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`;
-    cb(null, uniqueName);
+// -----------------------------------------------------------------------------
+// System Health Check Endpoint
+// -----------------------------------------------------------------------------
+app.get('/api/health', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      environment: process.env.NODE_ENV || 'development'
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: 'Database connectivity probe failed'
+    });
   }
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
 // Helper: Audit Logger
@@ -81,12 +113,14 @@ function getActor(req) {
     }
   }
 
-  // Fallback for API integration tests with x-user-id: Lookup real user role in DB
-  const userId = req.headers['x-user-id'];
-  if (userId) {
-    const user = db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(userId);
-    if (user) {
-      return { id: user.id, role: user.role, email: user.email };
+  // Development-only bypass: strictly prohibited in production
+  if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true') {
+    const userId = req.headers['x-user-id'];
+    if (userId) {
+      const user = db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(userId);
+      if (user) {
+        return { id: user.id, role: user.role, email: user.email };
+      }
     }
   }
 
@@ -844,11 +878,8 @@ app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', (req, res) =>
 
   db.prepare('DELETE FROM verification_evidence WHERE id = ?').run(req.params.evidenceId);
 
-  // Optional: Remove physical file if on disk
-  try {
-    const fullPath = path.join(__dirname, ev.file_path);
-    if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
-  } catch (e) {}
+  // Safely remove physical file from persistent storage
+  deleteStoredFile(ev.file_path);
 
   logAudit('Verification', ev.verification_id, 'EVIDENCE_REMOVED', actorId, role, {
     evidence_id: req.params.evidenceId
@@ -1284,6 +1315,51 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Legal Metrology Server running on port ${PORT}`);
+// ==========================================
+// 9. PRODUCTION ERROR & LIFECYCLE HANDLING
+// ==========================================
+
+// 404 Handler for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ error: `Not Found: ${req.method} ${req.originalUrl}` });
 });
+
+// Centralized production error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled API Error:', err);
+  const status = err.status || (err.message && err.message.includes('CORS') ? 403 : 500);
+  const safeMessage = (process.env.NODE_ENV === 'production' && status === 500)
+    ? 'An unexpected internal server error occurred'
+    : err.message || 'Internal server error';
+
+  res.status(status).json({ error: safeMessage });
+});
+
+// Start Server listening on HOST and PORT
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Legal Metrology Server listening on http://${HOST}:${PORT} [NODE_ENV=${process.env.NODE_ENV || 'development'}]`);
+});
+
+// Graceful Shutdown on SIGTERM / SIGINT
+const gracefulShutdown = (signal) => {
+  console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  server.close(() => {
+    console.log('HTTP server closed.');
+    try {
+      db.close();
+      console.log('Database connection closed.');
+    } catch (e) {
+      console.error('Error closing database:', e.message);
+    }
+    process.exit(0);
+  });
+
+  // Force exit after 10 seconds if connections hang
+  setTimeout(() => {
+    console.error('Forced shutdown timeout reached.');
+    process.exit(1);
+  }, 10000).unref();
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
