@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Initialize DB schema & statutory baseline data
-initDatabase();
+await initDatabase();
 
 // Initialize persistent storage directory
 initStorage();
@@ -52,12 +52,23 @@ app.use(express.json());
 // Serve static evidence files from persistent storage
 app.use('/uploads', express.static(STORAGE_DIR));
 
+function parseJson(val, fallback) {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'object') return val;
+  try {
+    return JSON.parse(val);
+  } catch (e) {
+    return fallback;
+  }
+}
+
+
 // -----------------------------------------------------------------------------
 // System Health Check Endpoint
 // -----------------------------------------------------------------------------
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   try {
-    db.prepare('SELECT 1').get();
+    await db.prepare('SELECT 1').get();
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -75,9 +86,9 @@ app.get('/api/health', (req, res) => {
 });
 
 // Helper: Audit Logger
-function logAudit(entityName, entityId, action, actorId, actorRole, details) {
+async function logAudit(entityName, entityId, action, actorId, actorRole, details) {
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_logs (id, entity_name, entity_id, action, actor_id, actor_role, details_json, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -97,17 +108,16 @@ function logAudit(entityName, entityId, action, actorId, actorRole, details) {
 
 import { verifyPassword } from './auth-utils.js';
 
-// Helper: Enforce Role from Database (Strict Server-Side Authorization)
-function getActor(req) {
+// Helper: Resolve Actor for Request (Strict Server-Side Authorization)
+async function resolveActor(req) {
   const authHeader = req.headers['authorization'];
   const token = authHeader ? authHeader.replace('Bearer ', '').trim() : req.headers['x-auth-token'];
 
   if (token) {
-    const session = db.prepare('SELECT * FROM user_sessions WHERE token = ?').get(token);
+    const session = await db.prepare('SELECT * FROM user_sessions WHERE token = ?').get(token);
     if (session && new Date(session.expires_at) > new Date()) {
-      const user = db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(session.user_id);
+      const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(session.user_id);
       if (user) {
-        // Enforce authoritative role from database
         return { id: user.id, role: user.role, email: user.email };
       }
     }
@@ -117,14 +127,13 @@ function getActor(req) {
   if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true') {
     const userId = req.headers['x-user-id'];
     if (userId) {
-      const user = db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(userId);
+      const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(userId);
       if (user) {
         return { id: user.id, role: user.role, email: user.email };
       }
     }
   }
 
-  // System actions (only when explicitly from system background tasks)
   if (req.headers['x-user-role'] === 'SYSTEM') {
     return { id: 'SYSTEM', role: 'SYSTEM' };
   }
@@ -132,18 +141,32 @@ function getActor(req) {
   return { id: 'ANONYMOUS', role: 'ANONYMOUS' };
 }
 
+// Actor resolution middleware
+app.use(async (req, res, next) => {
+  try {
+    req.actor = await resolveActor(req);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+function getActor(req) {
+  return req.actor || { id: 'ANONYMOUS', role: 'ANONYMOUS' };
+}
+
 // ==========================================
 // 1. AUTHENTICATION & DEMO USERS
 // ==========================================
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
+  const user = await db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -155,7 +178,7 @@ app.post('/api/auth/login', (req, res) => {
 
   // Generate real session token
   const token = `tok_${user.id}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO user_sessions (token, user_id, role, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?)
   `).run(
@@ -166,7 +189,7 @@ app.post('/api/auth/login', (req, res) => {
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   );
 
-  const org = db.prepare('SELECT * FROM organizations WHERE id = ?').get(user.organization_id);
+  const org = await db.prepare('SELECT * FROM organizations WHERE id = ?').get(user.organization_id);
 
   logAudit('UserAuth', user.id, 'USER_LOGGED_IN', user.id, user.role, { email: user.email });
 
@@ -174,17 +197,17 @@ app.post('/api/auth/login', (req, res) => {
   res.json({ token, user: safeUser, organization: org });
 });
 
-app.post('/api/auth/logout', (req, res) => {
+app.post('/api/auth/logout', async (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader ? authHeader.replace('Bearer ', '').trim() : req.headers['x-auth-token'];
   if (token) {
-    db.prepare('DELETE FROM user_sessions WHERE token = ?').run(token);
+    await db.prepare('DELETE FROM user_sessions WHERE token = ?').run(token);
   }
   res.json({ success: true });
 });
 
-app.get('/api/auth/users', (req, res) => {
-  const users = db.prepare(`
+app.get('/api/auth/users', async (req, res) => {
+  const users = await db.prepare(`
     SELECT u.id, u.email, u.full_name, u.role, u.organization_id, u.phone, u.avatar, u.is_demo,
            o.name as organization_name 
     FROM users u 
@@ -197,7 +220,7 @@ app.get('/api/auth/users', (req, res) => {
 // 2. INSTRUMENT REGISTRY (TRADER ONLY)
 // ==========================================
 
-app.get('/api/instruments', (req, res) => {
+app.get('/api/instruments', async (req, res) => {
   const { owner_id } = req.query;
   let query = `
     SELECT i.*, c.name as category_name, c.code as category_code
@@ -210,12 +233,12 @@ app.get('/api/instruments', (req, res) => {
     params.push(owner_id);
   }
   query += ' ORDER BY i.created_at DESC';
-  const instruments = db.prepare(query).all(...params);
+  const instruments = await db.prepare(query).all(...params);
   res.json(instruments);
 });
 
-app.get('/api/instruments/:id', (req, res) => {
-  const instrument = db.prepare(`
+app.get('/api/instruments/:id', async (req, res) => {
+  const instrument = await db.prepare(`
     SELECT i.*, c.name as category_name, c.code as category_code,
            u.full_name as owner_name, o.name as owner_org
     FROM instruments i
@@ -228,7 +251,7 @@ app.get('/api/instruments/:id', (req, res) => {
   if (!instrument) return res.status(404).json({ error: 'Instrument not found' });
 
   // Fetch verifications & certificates history
-  const history = db.prepare(`
+  const history = await db.prepare(`
     SELECT v.*, a.application_no, a.request_type, u.full_name as verifier_name,
            c.id as certificate_id, c.certificate_no, c.public_token, c.issue_date, c.valid_until, c.status as certificate_status
     FROM verifications v
@@ -242,7 +265,7 @@ app.get('/api/instruments/:id', (req, res) => {
   res.json({ ...instrument, history });
 });
 
-app.post('/api/instruments', (req, res) => {
+app.post('/api/instruments', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'CREATE_INSTRUMENT')) {
@@ -265,7 +288,7 @@ app.post('/api/instruments', (req, res) => {
     return res.status(400).json({ error: 'Missing mandatory instrument details' });
   }
 
-  const existing = db.prepare('SELECT id FROM instruments WHERE serial_number = ?').get(serial_number);
+  const existing = await db.prepare('SELECT id FROM instruments WHERE serial_number = ?').get(serial_number);
   if (existing) {
     return res.status(400).json({ error: 'Instrument with this serial number is already registered' });
   }
@@ -273,7 +296,7 @@ app.post('/api/instruments', (req, res) => {
   const id = `INST_${Date.now()}`;
   const now = new Date().toISOString();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO instruments (id, owner_id, category_id, manufacturer, model, serial_number, max_capacity, min_capacity, verification_scale_interval_e, location, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REGISTERED', ?)
   `).run(id, owner_id, category_id || 'CAT_NAWI_III', manufacturer, model, serial_number, max_capacity || '30 kg', min_capacity || '100 g', verification_scale_interval_e || '5 g', location, now);
@@ -287,7 +310,7 @@ app.post('/api/instruments', (req, res) => {
 // 3. VERIFICATION APPLICATIONS (TRADER SUBMITS)
 // ==========================================
 
-app.get('/api/applications', (req, res) => {
+app.get('/api/applications', async (req, res) => {
   const { trader_id, status } = req.query;
   let query = `
     SELECT a.*, i.manufacturer, i.model, i.serial_number, i.location, c.name as category_name,
@@ -317,12 +340,12 @@ app.get('/api/applications', (req, res) => {
   }
   query += ' ORDER BY a.created_at DESC';
 
-  const applications = db.prepare(query).all(...params);
+  const applications = await db.prepare(query).all(...params);
   res.json(applications);
 });
 
-app.get('/api/applications/:id', (req, res) => {
-  const application = db.prepare(`
+app.get('/api/applications/:id', async (req, res) => {
+  const application = await db.prepare(`
     SELECT a.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
            i.verification_scale_interval_e, i.location, c.name as category_name,
            u.full_name as trader_name, u.phone as trader_phone, u.email as trader_email,
@@ -350,7 +373,7 @@ app.get('/api/applications/:id', (req, res) => {
   res.json(application);
 });
 
-app.post('/api/applications', (req, res) => {
+app.post('/api/applications', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'SUBMIT_APPLICATION')) {
@@ -362,13 +385,13 @@ app.post('/api/applications', (req, res) => {
     return res.status(400).json({ error: 'Missing instrument or trader ID' });
   }
 
-  const inst = db.prepare('SELECT id, status, owner_id FROM instruments WHERE id = ?').get(instrument_id);
+  const inst = await db.prepare('SELECT id, status, owner_id FROM instruments WHERE id = ?').get(instrument_id);
   if (!inst) return res.status(404).json({ error: 'Instrument not found' });
   if (inst.owner_id !== trader_id && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: 'Forbidden: You can only apply for your own registered instruments.' });
   }
 
-  const activeApp = db.prepare("SELECT id FROM applications WHERE instrument_id = ? AND status NOT IN ('VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')").get(instrument_id);
+  const activeApp = await db.prepare("SELECT id FROM applications WHERE instrument_id = ? AND status NOT IN ('VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')").get(instrument_id);
   if (activeApp) {
     return res.status(400).json({ error: 'An active verification application is already in progress for this instrument.' });
   }
@@ -377,12 +400,12 @@ app.post('/api/applications', (req, res) => {
   const appNo = `APP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
   const now = new Date().toISOString();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO applications (id, application_no, instrument_id, trader_id, request_type, status, documents_json, fee_status, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, 'SUBMITTED', '[]', 'PAID', ?, ?)
   `).run(id, appNo, instrument_id, trader_id, request_type || 'INITIAL_VERIFICATION', now, now);
 
-  db.prepare("UPDATE instruments SET status = 'UNDER_VERIFICATION' WHERE id = ?").run(instrument_id);
+  await db.prepare("UPDATE instruments SET status = 'UNDER_VERIFICATION' WHERE id = ?").run(instrument_id);
 
   logAudit('Application', id, 'SUBMIT', actorId, role, { application_no: appNo, instrument_id });
 
@@ -393,14 +416,14 @@ app.post('/api/applications', (req, res) => {
 // 4. AUTHORITY REVIEW & ASSIGNMENT
 // ==========================================
 
-app.post('/api/applications/:id/review', (req, res) => {
+app.post('/api/applications/:id/review', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'REVIEW_APPLICATION')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot review applications.` });
   }
 
-  const appItem = db.prepare('SELECT id, status FROM applications WHERE id = ?').get(req.params.id);
+  const appItem = await db.prepare('SELECT id, status FROM applications WHERE id = ?').get(req.params.id);
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   if (appItem.status !== 'SUBMITTED' && appItem.status !== 'UNDER_REVIEW') {
@@ -408,20 +431,20 @@ app.post('/api/applications/:id/review', (req, res) => {
   }
 
   const now = new Date().toISOString();
-  db.prepare("UPDATE applications SET status = 'UNDER_REVIEW', updated_at = ? WHERE id = ?").run(now, req.params.id);
+  await db.prepare("UPDATE applications SET status = 'UNDER_REVIEW', updated_at = ? WHERE id = ?").run(now, req.params.id);
 
   logAudit('Application', req.params.id, 'STATUTORY_REVIEW_OPENED', actorId, role, { previous_status: appItem.status });
 
   res.json({ message: 'Application is now under statutory review', status: 'UNDER_REVIEW' });
 });
 
-app.get('/api/applications/:id/candidates', (req, res) => {
+app.get('/api/applications/:id/candidates', async (req, res) => {
   const { role } = getActor(req);
   if (!hasPermission(role, 'ASSIGN_VERIFIER')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access verifier allocation engine.` });
   }
 
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.*, i.category_id, i.location, org.jurisdiction 
     FROM applications a
     JOIN instruments i ON a.instrument_id = i.id
@@ -432,7 +455,7 @@ app.get('/api/applications/:id/candidates', (req, res) => {
 
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  const candidates = db.prepare(`
+  const candidates = await db.prepare(`
     SELECT u.id, u.full_name, u.role, u.phone, o.name as organization_name, o.jurisdiction,
            (SELECT COUNT(*) FROM assignments WHERE assigned_id = u.id) as current_workload
     FROM users u
@@ -464,7 +487,7 @@ app.get('/api/applications/:id/candidates', (req, res) => {
   });
 });
 
-app.post('/api/applications/:id/assign', (req, res) => {
+app.post('/api/applications/:id/assign', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'ASSIGN_VERIFIER')) {
@@ -472,7 +495,7 @@ app.post('/api/applications/:id/assign', (req, res) => {
   }
 
   const applicationId = req.params.id;
-  const appItem = db.prepare('SELECT id, status FROM applications WHERE id = ?').get(applicationId);
+  const appItem = await db.prepare('SELECT id, status FROM applications WHERE id = ?').get(applicationId);
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   if (!['SUBMITTED', 'UNDER_REVIEW'].includes(appItem.status)) {
@@ -482,7 +505,7 @@ app.post('/api/applications/:id/assign', (req, res) => {
   const { assigned_id, recommended_id, is_override, override_reason, scheduled_date, time_slot, arrangement_type } = req.body;
   if (!assigned_id) return res.status(400).json({ error: 'Target assignee ID is required' });
 
-  const assignee = db.prepare('SELECT id, role, full_name FROM users WHERE id = ?').get(assigned_id);
+  const assignee = await db.prepare('SELECT id, role, full_name FROM users WHERE id = ?').get(assigned_id);
   if (!assignee) return res.status(404).json({ error: 'Assignee user not found' });
   if (![ROLES.VERIFIER, ROLES.GATC].includes(assignee.role)) {
     return res.status(400).json({ error: 'Assignee must have role VERIFIER or GATC' });
@@ -491,15 +514,15 @@ app.post('/api/applications/:id/assign', (req, res) => {
   const assignmentId = `ASN_${Date.now()}`;
   const now = new Date().toISOString();
 
-  const existingAsn = db.prepare('SELECT id FROM assignments WHERE application_id = ?').get(applicationId);
+  const existingAsn = await db.prepare('SELECT id FROM assignments WHERE application_id = ?').get(applicationId);
   if (existingAsn) {
-    db.prepare(`
+    await db.prepare(`
       UPDATE assignments 
       SET assigned_id = ?, assigned_type = ?, is_override = ?, override_reason = ?, assigned_by = ?
       WHERE id = ?
     `).run(assigned_id, assignee.role, is_override ? 1 : 0, override_reason || '', actorId, existingAsn.id);
   } else {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO assignments (id, application_id, assigned_type, assigned_id, recommended_id, is_override, override_reason, assigned_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(assignmentId, applicationId, assignee.role, assigned_id, recommended_id || assigned_id, is_override ? 1 : 0, override_reason || '', actorId, now);
@@ -508,22 +531,22 @@ app.post('/api/applications/:id/assign', (req, res) => {
   // Appointment scheduling if provided
   const targetAsnId = existingAsn ? existingAsn.id : assignmentId;
   const aptId = `APT_${Date.now()}`;
-  const existingApt = db.prepare('SELECT id FROM appointments WHERE assignment_id = ?').get(targetAsnId);
+  const existingApt = await db.prepare('SELECT id FROM appointments WHERE assignment_id = ?').get(targetAsnId);
   if (existingApt) {
-    db.prepare(`
+    await db.prepare(`
       UPDATE appointments 
       SET scheduled_date = ?, time_slot = ?, arrangement_type = ?
       WHERE id = ?
     `).run(scheduled_date || '', time_slot || 'MORNING_10_00', arrangement_type || 'FIELD_VISIT', existingApt.id);
   } else {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO appointments (id, assignment_id, scheduled_date, time_slot, arrangement_type, status, created_at)
       VALUES (?, ?, ?, ?, ?, 'SCHEDULED', ?)
     `).run(aptId, targetAsnId, scheduled_date || '', time_slot || 'MORNING_10_00', arrangement_type || 'FIELD_VISIT', now);
   }
 
   // Transition: -> ASSIGNED
-  db.prepare("UPDATE applications SET status = 'ASSIGNED', updated_at = ? WHERE id = ?").run(now, applicationId);
+  await db.prepare("UPDATE applications SET status = 'ASSIGNED', updated_at = ? WHERE id = ?").run(now, applicationId);
 
   logAudit('Application', applicationId, is_override ? 'ASSIGNMENT_OVERRIDE' : 'ASSIGNMENT_CONFIRMED', actorId, role, {
     assigned_id,
@@ -541,7 +564,7 @@ app.post('/api/applications/:id/assign', (req, res) => {
 // ==========================================
 
 // List Assigned Cases for Verifier
-app.get('/api/verifications/cases', (req, res) => {
+app.get('/api/verifications/cases', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'VIEW_ASSIGNED_CASES') && role !== ROLES.PLATFORM_ADMIN) {
@@ -573,19 +596,19 @@ app.get('/api/verifications/cases', (req, res) => {
   }
   query += ' ORDER BY a.updated_at DESC';
 
-  const cases = db.prepare(query).all(...params);
+  const cases = await db.prepare(query).all(...params);
   res.json(cases);
 });
 
 // Get Verification Workspace Context
-app.get('/api/verifications/cases/:appId', (req, res) => {
+app.get('/api/verifications/cases/:appId', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'OPEN_VERIFICATION_WORKSPACE') && role !== ROLES.PLATFORM_ADMIN && role !== ROLES.AUTHORITY) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot open verification workspace.` });
   }
 
-  const caseItem = db.prepare(`
+  const caseItem = await db.prepare(`
     SELECT a.id as application_id, a.application_no, a.status as application_status, a.request_type,
            i.id as instrument_id, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
            i.verification_scale_interval_e, i.location, c.name as category_name,
@@ -622,23 +645,23 @@ app.get('/api/verifications/cases/:appId', (req, res) => {
 
   // Load existing checklist responses
   const checklistResponses = caseItem.verification_id
-    ? db.prepare('SELECT * FROM verification_checklist_responses WHERE verification_id = ?').all(caseItem.verification_id)
+    ? await db.prepare('SELECT * FROM verification_checklist_responses WHERE verification_id = ?').all(caseItem.verification_id)
     : [];
 
   // Load existing readings
   const readings = caseItem.verification_id
-    ? db.prepare('SELECT * FROM verification_readings WHERE verification_id = ? ORDER BY reference_value ASC').all(caseItem.verification_id)
+    ? await db.prepare('SELECT * FROM verification_readings WHERE verification_id = ? ORDER BY reference_value ASC').all(caseItem.verification_id)
     : [];
 
   // Load existing evidence attachments
   const evidence = caseItem.verification_id
-    ? db.prepare('SELECT * FROM verification_evidence WHERE verification_id = ? ORDER BY created_at DESC').all(caseItem.verification_id)
+    ? await db.prepare('SELECT * FROM verification_evidence WHERE verification_id = ? ORDER BY created_at DESC').all(caseItem.verification_id)
     : [];
 
   res.json({
     ...caseItem,
-    checklist_schema: JSON.parse(caseItem.checklist_schema_json || '[]'),
-    mpe_rules: JSON.parse(caseItem.mpe_rules_json || '{}'),
+    checklist_schema: parseJson(caseItem.checklist_schema_json, []),
+    mpe_rules: parseJson(caseItem.mpe_rules_json, {}),
     checklist_responses: checklistResponses,
     readings,
     evidence
@@ -646,14 +669,14 @@ app.get('/api/verifications/cases/:appId', (req, res) => {
 });
 
 // Start Verification: ASSIGNED -> IN_PROGRESS
-app.post('/api/verifications/cases/:appId/start', (req, res) => {
+app.post('/api/verifications/cases/:appId/start', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot start verifications.` });
   }
 
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.id, a.status, asn.assigned_id 
     FROM applications a 
     JOIN assignments asn ON asn.application_id = a.id 
@@ -671,16 +694,16 @@ app.post('/api/verifications/cases/:appId/start', (req, res) => {
   }
 
   const now = new Date().toISOString();
-  let verif = db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
 
   if (!verif) {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO verifications (id, application_id, verifier_id, status, started_at, created_at, updated_at)
       VALUES (?, ?, ?, 'IN_PROGRESS', ?, ?, ?)
     `).run(verifId, req.params.appId, actorId, now, now, now);
   } else {
-    db.prepare(`
+    await db.prepare(`
       UPDATE verifications 
       SET status = 'IN_PROGRESS', started_at = COALESCE(started_at, ?), updated_at = ? 
       WHERE id = ?
@@ -688,7 +711,7 @@ app.post('/api/verifications/cases/:appId/start', (req, res) => {
   }
 
   // State Transition: -> IN_PROGRESS
-  db.prepare("UPDATE applications SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?").run(now, req.params.appId);
+  await db.prepare("UPDATE applications SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?").run(now, req.params.appId);
 
   logAudit('Verification', verifId, 'VERIFICATION_STARTED', actorId, role, {
     application_id: req.params.appId
@@ -698,14 +721,14 @@ app.post('/api/verifications/cases/:appId/start', (req, res) => {
 });
 
 // Save Draft (Checklist, Readings, Observations)
-app.post('/api/verifications/cases/:appId/draft', (req, res) => {
+app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot record verification draft.` });
   }
 
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.id, a.status, asn.assigned_id 
     FROM applications a 
     JOIN assignments asn ON asn.application_id = a.id 
@@ -723,16 +746,16 @@ app.post('/api/verifications/cases/:appId/draft', (req, res) => {
   const { checklist_responses, readings, observations } = req.body;
   const now = new Date().toISOString();
 
-  let verif = db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
   if (!verif) {
     const verifId = `VERIF_${Date.now()}`;
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO verifications (id, application_id, verifier_id, status, remarks, started_at, created_at, updated_at)
       VALUES (?, ?, ?, 'IN_PROGRESS', ?, ?, ?, ?)
     `).run(verifId, req.params.appId, actorId, observations || '', now, now, now);
     verif = { id: verifId };
   } else {
-    db.prepare(`
+    await db.prepare(`
       UPDATE verifications 
       SET remarks = ?, updated_at = ? 
       WHERE id = ?
@@ -741,7 +764,7 @@ app.post('/api/verifications/cases/:appId/draft', (req, res) => {
 
   // Save checklist responses
   if (Array.isArray(checklist_responses)) {
-    const upsertChk = db.prepare(`
+    const upsertChk = await db.prepare(`
       INSERT INTO verification_checklist_responses (id, verification_id, item_id, status, note, updated_at)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(verification_id, item_id) DO UPDATE SET
@@ -751,7 +774,7 @@ app.post('/api/verifications/cases/:appId/draft', (req, res) => {
     `);
     for (const chk of checklist_responses) {
       if (chk.item_id) {
-        upsertChk.run(`CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, verif.id, chk.item_id, chk.status || 'PASS', chk.note || '', now);
+        await upsertChk.run(`CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, verif.id, chk.item_id, chk.status || 'PASS', chk.note || '', now);
       }
     }
   }
@@ -759,12 +782,12 @@ app.post('/api/verifications/cases/:appId/draft', (req, res) => {
   // Save measurement readings
   if (Array.isArray(readings)) {
     db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verif.id);
-    const insertReading = db.prepare(`
+    const insertReading = await db.prepare(`
       INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const r of readings) {
-      insertReading.run(
+      await insertReading.run(
         `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         verif.id,
         r.test_point || 'Test Point',
@@ -787,7 +810,7 @@ app.post('/api/verifications/cases/:appId/draft', (req, res) => {
 });
 
 // Upload Evidence Attachment
-app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), (req, res) => {
+app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
@@ -814,10 +837,10 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), (req
   }
 
   const now = new Date().toISOString();
-  let verif = db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
   if (!verif) {
     const verifId = `VERIF_${Date.now()}`;
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO verifications (id, application_id, verifier_id, status, started_at, created_at, updated_at)
       VALUES (?, ?, ?, 'IN_PROGRESS', ?, ?, ?)
     `).run(verifId, req.params.appId, actorId, now, now, now);
@@ -829,7 +852,7 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), (req
   const category = req.body.category || 'DEVICE_SETUP';
   const caption = req.body.caption || req.file.originalname;
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO verification_evidence (id, verification_id, file_name, file_path, file_type, category, caption, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(evidenceId, verif.id, req.file.originalname, relativePath, req.file.mimetype, category, caption, now);
@@ -851,14 +874,14 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), (req
 });
 
 // Remove Evidence Attachment
-app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', (req, res) => {
+app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot delete evidence.` });
   }
 
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.id, a.status, asn.assigned_id 
     FROM applications a 
     JOIN assignments asn ON asn.application_id = a.id 
@@ -873,10 +896,10 @@ app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', (req, res) =>
     return res.status(400).json({ error: `Cannot modify evidence for application in status '${appItem.status}'. Must be 'IN_PROGRESS'.` });
   }
 
-  const ev = db.prepare('SELECT id, file_path, verification_id FROM verification_evidence WHERE id = ?').get(req.params.evidenceId);
+  const ev = await db.prepare('SELECT id, file_path, verification_id FROM verification_evidence WHERE id = ?').get(req.params.evidenceId);
   if (!ev) return res.status(404).json({ error: 'Evidence record not found' });
 
-  db.prepare('DELETE FROM verification_evidence WHERE id = ?').run(req.params.evidenceId);
+  await db.prepare('DELETE FROM verification_evidence WHERE id = ?').run(req.params.evidenceId);
 
   // Safely remove physical file from persistent storage
   deleteStoredFile(ev.file_path);
@@ -889,14 +912,14 @@ app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', (req, res) =>
 });
 
 // Submit Verification Result (PASS / FAIL)
-app.post('/api/verifications/cases/:appId/submit', (req, res) => {
+app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot submit verification outcomes.` });
   }
 
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.id, a.instrument_id, a.status, asn.assigned_id, r.checklist_schema_json
     FROM applications a 
     JOIN assignments asn ON asn.application_id = a.id 
@@ -926,7 +949,7 @@ app.post('/api/verifications/cases/:appId/submit', (req, res) => {
   }
 
   // 3. Checklist completeness check (all required items in schema must have status)
-  const checklistSchema = JSON.parse(appItem.checklist_schema_json || '[]');
+  const checklistSchema = parseJson(appItem.checklist_schema_json, []);
   const requiredItemIds = checklistSchema.filter(i => i.required).map(i => i.id);
   const providedResponses = Array.isArray(checklist_responses) ? checklist_responses : [];
 
@@ -943,17 +966,17 @@ app.post('/api/verifications/cases/:appId/submit', (req, res) => {
   }
 
   const now = new Date().toISOString();
-  let verif = db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
 
   // Persist final responses
   if (!verif) {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO verifications (id, application_id, verifier_id, status, result, remarks, started_at, completed_at, created_at, updated_at)
       VALUES (?, ?, ?, 'COMPLETED', ?, ?, ?, ?, ?, ?)
     `).run(verifId, req.params.appId, actorId, result, remarks || '', now, now, now, now);
   } else {
-    db.prepare(`
+    await db.prepare(`
       UPDATE verifications 
       SET status = 'COMPLETED', result = ?, remarks = ?, completed_at = ?, updated_at = ? 
       WHERE id = ?
@@ -961,7 +984,7 @@ app.post('/api/verifications/cases/:appId/submit', (req, res) => {
   }
 
   // Persist responses
-  const upsertChk = db.prepare(`
+  const upsertChk = await db.prepare(`
     INSERT INTO verification_checklist_responses (id, verification_id, item_id, status, note, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(verification_id, item_id) DO UPDATE SET
@@ -971,18 +994,18 @@ app.post('/api/verifications/cases/:appId/submit', (req, res) => {
   `);
   for (const chk of providedResponses) {
     if (chk.item_id) {
-      upsertChk.run(`CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, verifId, chk.item_id, chk.status, chk.note || '', now);
+      await upsertChk.run(`CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, verifId, chk.item_id, chk.status, chk.note || '', now);
     }
   }
 
   // Persist readings
   db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verifId);
-  const insertReading = db.prepare(`
+  const insertReading = await db.prepare(`
     INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const r of readings) {
-    insertReading.run(
+    await insertReading.run(
       `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       verifId,
       r.test_point || 'Test Point',
@@ -999,7 +1022,7 @@ app.post('/api/verifications/cases/:appId/submit', (req, res) => {
   const nextInstStatus = result === 'PASS' ? 'VERIFIED' : 'REJECTED';
 
   db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ?").run(nextAppStatus, now, req.params.appId);
-  db.prepare("UPDATE instruments SET status = ? WHERE id = ?").run(nextInstStatus, appItem.instrument_id);
+  await db.prepare("UPDATE instruments SET status = ? WHERE id = ?").run(nextInstStatus, appItem.instrument_id);
 
   logAudit('Verification', verifId, 'VERIFICATION_RESULT_SUBMITTED', actorId, role, {
     application_id: req.params.appId,
@@ -1022,7 +1045,7 @@ app.post('/api/verifications/cases/:appId/submit', (req, res) => {
 // ==========================================
 
 // Generate Certificate (Idempotent, requires PASS outcome)
-app.post('/api/certificates/generate/:appId', (req, res) => {
+app.post('/api/certificates/generate/:appId', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
   // Authority, Verifier, GATC or Admin can trigger certificate generation
@@ -1031,7 +1054,7 @@ app.post('/api/certificates/generate/:appId', (req, res) => {
   }
 
   const appId = req.params.appId;
-  const appItem = db.prepare(`
+  const appItem = await db.prepare(`
     SELECT a.*, i.id as inst_id, i.category_id, i.owner_id,
            r.validity_period_months,
            v.id as verification_id, v.result as verification_result, v.status as verification_status,
@@ -1055,7 +1078,7 @@ app.post('/api/certificates/generate/:appId', (req, res) => {
   }
 
   // 2. Idempotency Check: If certificate already exists, return it without creating duplicate
-  const existingCert = db.prepare(`
+  const existingCert = await db.prepare(`
     SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
            i.verification_scale_interval_e, i.location,
            cat.name as category_name, trader.full_name as owner_name, torg.name as owner_org
@@ -1090,7 +1113,7 @@ app.post('/api/certificates/generate/:appId', (req, res) => {
   const issuingOfficer = appItem.verifier_name || 'Vikram Singh (LMO)';
   const issuingAuthority = appItem.authority_name || 'Department of Consumer Affairs, Delhi';
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO certificates (
       id, certificate_no, verification_id, instrument_id, public_token,
       issue_date, valid_until, status, issuing_officer, issuing_authority, created_at
@@ -1109,7 +1132,7 @@ app.post('/api/certificates/generate/:appId', (req, res) => {
   );
 
   // Update instrument status to VERIFIED
-  db.prepare("UPDATE instruments SET status = 'VERIFIED' WHERE id = ?").run(appItem.inst_id);
+  await db.prepare("UPDATE instruments SET status = 'VERIFIED' WHERE id = ?").run(appItem.inst_id);
 
   logAudit('Certificate', certId, 'CERTIFICATE_GENERATED', actorId, role, {
     certificate_no: certNo,
@@ -1119,7 +1142,7 @@ app.post('/api/certificates/generate/:appId', (req, res) => {
     valid_until: validUntil.toISOString()
   });
 
-  const createdCert = db.prepare(`
+  const createdCert = await db.prepare(`
     SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
            i.verification_scale_interval_e, i.location,
            cat.name as category_name, trader.full_name as owner_name, torg.name as owner_org
@@ -1139,7 +1162,7 @@ app.post('/api/certificates/generate/:appId', (req, res) => {
 });
 
 // List Certificates (Filtered by Role and Owner)
-app.get('/api/certificates', (req, res) => {
+app.get('/api/certificates', async (req, res) => {
   const { role, id: actorId } = getActor(req);
   const { owner_id } = req.query;
 
@@ -1165,15 +1188,15 @@ app.get('/api/certificates', (req, res) => {
   }
 
   query += ' ORDER BY c.created_at DESC';
-  const certs = db.prepare(query).all(...params);
+  const certs = await db.prepare(query).all(...params);
   res.json(certs);
 });
 
 // Get Single Certificate
-app.get('/api/certificates/:id', (req, res) => {
+app.get('/api/certificates/:id', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  const cert = db.prepare(`
+  const cert = await db.prepare(`
     SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
            i.verification_scale_interval_e, i.location, i.owner_id,
            cat.name as category_name,
@@ -1209,7 +1232,7 @@ app.get('/api/certificates/:id', (req, res) => {
 // ==========================================
 
 // Public Unauthenticated Certificate Verification via QR / Public Token
-app.get('/api/public/verify/:token', (req, res) => {
+app.get('/api/public/verify/:token', async (req, res) => {
   const token = req.params.token;
 
   if (!token || typeof token !== 'string' || token.trim().length === 0) {
@@ -1220,7 +1243,7 @@ app.get('/api/public/verify/:token', (req, res) => {
   }
 
   // Query certificate by public_token (guaranteed unique, non-guessable UUID)
-  const cert = db.prepare(`
+  const cert = await db.prepare(`
     SELECT c.certificate_no, c.public_token, c.issue_date, c.valid_until, c.status as stored_status,
            c.issuing_officer, c.issuing_authority,
            i.manufacturer, i.model, i.serial_number, i.max_capacity, i.verification_scale_interval_e,
@@ -1290,21 +1313,21 @@ app.get('/api/public/verify/:token', (req, res) => {
 // 8. GOVERNANCE & STATS
 // ==========================================
 
-app.get('/api/audit-logs', (req, res) => {
+app.get('/api/audit-logs', async (req, res) => {
   const { role } = getActor(req);
   if (!hasPermission(role, 'VIEW_AUDIT_LOGS')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot view audit logs.` });
   }
-  const logs = db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50').all();
+  const logs = await db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50').all();
   res.json(logs);
 });
 
-app.get('/api/stats', (req, res) => {
-  const totalInstruments = db.prepare('SELECT COUNT(*) as count FROM instruments').get().count;
-  const pendingApplications = db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('SUBMITTED', 'UNDER_REVIEW')").get().count;
-  const assignedApplications = db.prepare("SELECT COUNT(*) as count FROM applications WHERE status = 'ASSIGNED'").get().count;
-  const inProgressApplications = db.prepare("SELECT COUNT(*) as count FROM applications WHERE status = 'IN_PROGRESS'").get().count;
-  const completedVerifications = db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')").get().count;
+app.get('/api/stats', async (req, res) => {
+  const totalInstruments = parseInt((await db.prepare('SELECT COUNT(*) as count FROM instruments').get()).count || 0, 10);
+  const pendingApplications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('SUBMITTED', 'UNDER_REVIEW')").get()).count || 0, 10);
+  const assignedApplications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status = 'ASSIGNED'").get()).count || 0, 10);
+  const inProgressApplications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status = 'IN_PROGRESS'").get()).count || 0, 10);
+  const completedVerifications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')").get()).count || 0, 10);
 
   res.json({
     totalInstruments,

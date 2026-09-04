@@ -12,6 +12,7 @@
     "seed:prod": "npm --prefix server run seed:prod",
     "client": "npm --prefix client run dev",
     "server": "npm --prefix server start",
-    "test:prod": "node scripts/verify-production.js"
+    "test:prod": "node scripts/verify-production.js",
+    "test:pg": "node scripts/verify-postgres.js"
   }
 }
