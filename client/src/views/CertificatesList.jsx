@@ -2,11 +2,13 @@ import React from 'react';
 import StatusBadge from '../components/StatusBadge';
 
 export default function CertificatesList({
-  certificates,
+  certificates = [],
   onSelectCertificate,
   onOpenQR,
   onVerifyPublicToken
 }) {
+  const safeCertificates = Array.isArray(certificates) ? certificates : [];
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -15,13 +17,13 @@ export default function CertificatesList({
           <p className="text-xs text-slate-500 mt-0.5">Official compliance credentials issued under the Legal Metrology Act</p>
         </div>
         <span className="text-xs font-semibold px-3 py-1 rounded-full bg-primary/10 text-primary self-start sm:self-auto">
-          {certificates.length} Total Issued
+          {safeCertificates.length} Total Issued
         </span>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[700px]">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
                 <th className="px-6 py-3.5">Certificate No</th>
@@ -33,7 +35,7 @@ export default function CertificatesList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
-              {certificates.map((cert) => (
+              {safeCertificates.map((cert) => (
                 <tr key={cert.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-6 py-4">
                     <div className="font-mono font-bold text-primary">{cert.certificate_no}</div>

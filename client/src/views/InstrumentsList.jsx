@@ -2,12 +2,14 @@ import React from 'react';
 import StatusBadge from '../components/StatusBadge';
 
 export default function InstrumentsList({
-  instruments,
+  instruments = [],
   onOpenAddModal,
   onSelectInstrument,
   onRequestVerification,
   onOpenQR
 }) {
+  const safeInstruments = Array.isArray(instruments) ? instruments : [];
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -26,7 +28,7 @@ export default function InstrumentsList({
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[720px]">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
                 <th className="px-6 py-3.5">Device & Model</th>
@@ -39,7 +41,7 @@ export default function InstrumentsList({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
-              {instruments.map((inst) => (
+              {safeInstruments.map((inst) => (
                 <tr key={inst.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-6 py-4">
                     <span className="font-bold text-slate-900">{inst.manufacturer}</span>

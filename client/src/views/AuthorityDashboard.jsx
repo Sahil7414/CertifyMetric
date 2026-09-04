@@ -91,12 +91,12 @@ export default function AuthorityDashboard({
             <p className="text-xs text-slate-500 mt-0.5">Review, verify statutory rule eligibility, and assign authorized verification personnel</p>
           </div>
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary self-start sm:self-auto">
-            {applications.length} Applications Total
+            {safeApplications.length} Applications Total
           </span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[720px]">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
                 <th className="px-6 py-3.5">Application No</th>
@@ -108,7 +108,7 @@ export default function AuthorityDashboard({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
-              {applications.map((app) => (
+              {safeApplications.map((app) => (
                 <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-6 py-4">
                     <span className="font-mono font-bold text-primary">{app.application_no}</span>

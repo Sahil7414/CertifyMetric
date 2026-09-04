@@ -162,6 +162,105 @@ export default function Navbar({
           </div>
         </div>
       </div>
+
+      {/* 3. Mobile Navigation Bar (Visible on small screens) */}
+      <div className="md:hidden border-t border-slate-200 bg-slate-50/90 px-3 py-1.5 overflow-x-auto flex items-center gap-1.5">
+        {currentRole === 'TRADER' && (
+          <>
+            <button
+              onClick={() => onSelectTab('dashboard')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'dashboard' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">dashboard</span>
+              Dashboard
+            </button>
+            <button
+              onClick={() => onSelectTab('instruments')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'instruments' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">scale</span>
+              Instruments
+            </button>
+            <button
+              onClick={() => onSelectTab('certificates')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'certificates' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">workspace_premium</span>
+              Certificates
+            </button>
+            {onOpenAddModal && (
+              <button
+                onClick={onOpenAddModal}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 bg-amber-400 text-slate-950 ml-auto shadow-2xs"
+              >
+                <span className="material-symbols-outlined text-[15px]">add</span>
+                Add
+              </button>
+            )}
+          </>
+        )}
+
+        {(currentRole === 'AUTHORITY' || currentRole === 'PLATFORM_ADMIN') && (
+          <>
+            <button
+              onClick={() => onSelectTab('authority-dashboard')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'authority-dashboard' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">monitoring</span>
+              Dashboard
+            </button>
+            <button
+              onClick={() => onSelectTab('certificates')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'certificates' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">workspace_premium</span>
+              Certificates
+            </button>
+            <button
+              onClick={() => onSelectTab('audit-logs')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'audit-logs' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">history_edu</span>
+              Audit
+            </button>
+          </>
+        )}
+
+        {(currentRole === 'VERIFIER' || currentRole === 'GATC') && (
+          <>
+            <button
+              onClick={() => onSelectTab('verifier-dashboard')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'verifier-dashboard' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">task_alt</span>
+              Assigned Cases
+            </button>
+            <button
+              onClick={() => onSelectTab('certificates')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'certificates' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">workspace_premium</span>
+              Certificates
+            </button>
+          </>
+        )}
+      </div>
     </header>
   );
 }

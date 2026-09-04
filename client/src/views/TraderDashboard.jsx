@@ -87,13 +87,13 @@ export default function TraderDashboard({
       )}
 
       {/* 3. Metric KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-3">
             <span className="text-xs font-semibold uppercase tracking-wider">Registered Instruments</span>
             <span className="material-symbols-outlined text-primary text-xl">scale</span>
           </div>
-          <div className="text-2xl font-extrabold text-primary">{instruments.length}</div>
+          <div className="text-2xl font-extrabold text-primary">{safeInstruments.length}</div>
           <p className="text-[11px] text-slate-500 mt-1">Total instruments registered</p>
         </div>
 
@@ -127,22 +127,22 @@ export default function TraderDashboard({
 
       {/* 4. Active Instruments Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
+        <div className="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
           <div>
             <h2 className="text-base font-bold text-slate-900">Registered Instruments</h2>
             <p className="text-xs text-slate-500 mt-0.5">Commercial instruments subject to statutory verification</p>
           </div>
           <button
             onClick={onOpenAddModal}
-            className="text-xs font-bold text-primary hover:text-primary-container flex items-center gap-1"
+            className="px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary font-bold rounded-lg text-xs transition-colors flex items-center gap-1.5 shadow-2xs"
           >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            + Add New
+            <span className="material-symbols-outlined text-[16px]">add_circle</span>
+            Add New
           </button>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[680px]">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
                 <th className="px-6 py-3">Device & Model</th>
