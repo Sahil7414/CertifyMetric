@@ -4,15 +4,63 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { db, initDatabase } from './db.js';
+import { connectMongo, getMongoStatus, disconnectMongo } from './db/mongodb.js';
+import {
+  User,
+  UserSession,
+  Organization,
+  InstrumentCategory,
+  RuleSet,
+  Instrument,
+  Application,
+  Assignment,
+  Appointment,
+  Verification,
+  VerificationChecklistResponse,
+  VerificationReading,
+  VerificationEvidence,
+  Certificate,
+  AuditLog
+} from './models/index.js';
+import { seedAllDemoData } from './scripts/seedDemoUsers.js';
 import { ROLES, hasPermission } from './permissions.js';
 import { upload, STORAGE_DIR, deleteStoredFile, initStorage } from './storage.js';
+import { verifyPassword } from './auth-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize DB schema & statutory baseline data
-await initDatabase();
+// Automatically load .env.local or .env if present
+const rootDir = path.resolve(__dirname, '..');
+for (const envFile of ['.env.local', '.env', 'server/.env.local', 'server/.env']) {
+  const fullPath = path.resolve(rootDir, envFile);
+  try {
+    if (fs.existsSync(fullPath) && typeof process.loadEnvFile === 'function') {
+      process.loadEnvFile(fullPath);
+    }
+  } catch (e) {}
+}
+
+// -----------------------------------------------------------------------------
+// Initialize MongoDB Connection & Startup Seeding
+// -----------------------------------------------------------------------------
+if (process.env.MONGODB_URI) {
+  connectMongo()
+    .then(async () => {
+      if (process.env.SEED_DEMO_USERS !== 'false') {
+        try {
+          await seedAllDemoData();
+        } catch (seedErr) {
+          console.error('Initial demo seeding warning:', seedErr.message);
+        }
+      }
+    })
+    .catch((err) => {
+      console.error('Initial MongoDB connection warning:', err.message);
+    });
+} else {
+  console.warn('⚠️ MONGODB_URI not set. Set MONGODB_URI in your environment to connect to MongoDB Atlas.');
+}
 
 // Initialize persistent storage directory
 initStorage();
@@ -52,61 +100,48 @@ app.use(express.json());
 // Serve static evidence files from persistent storage
 app.use('/uploads', express.static(STORAGE_DIR));
 
-function parseJson(val, fallback) {
-  if (val === null || val === undefined) return fallback;
-  if (typeof val === 'object') return val;
-  try {
-    return JSON.parse(val);
-  } catch (e) {
-    return fallback;
-  }
-}
-
-
 // -----------------------------------------------------------------------------
 // System Health Check Endpoint
 // -----------------------------------------------------------------------------
-app.get('/api/health', async (req, res) => {
-  try {
-    await db.prepare('SELECT 1').get();
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      database: 'connected',
-      environment: process.env.NODE_ENV || 'development'
-    });
-  } catch (err) {
-    res.status(503).json({
-      status: 'error',
-      timestamp: new Date().toISOString(),
-      database: 'disconnected',
-      error: 'Database connectivity probe failed'
+app.get('/api/health', (req, res) => {
+  const mongoStatus = getMongoStatus();
+  res.status(200).json({
+    status: mongoStatus.connected ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
+    database: mongoStatus.status,
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Database connectivity guard for all other API endpoints
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next();
+  const mongoStatus = getMongoStatus();
+  if (!mongoStatus.connected) {
+    return res.status(503).json({
+      error: 'Database unavailable: MongoDB is not connected. Please configure MONGODB_URI in backend environment.'
     });
   }
+  next();
 });
 
 // Helper: Audit Logger
 async function logAudit(entityName, entityId, action, actorId, actorRole, details) {
   try {
-    await db.prepare(`
-      INSERT INTO audit_logs (id, entity_name, entity_id, action, actor_id, actor_role, details_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      `AUD_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
-      entityName,
-      entityId,
+    await AuditLog.create({
+      id: `AUD_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      entity_name: entityName,
+      entity_id: entityId,
       action,
-      actorId || 'SYSTEM',
-      actorRole || 'SYSTEM',
-      JSON.stringify(details || {}),
-      new Date().toISOString()
-    );
+      actor_id: actorId || 'SYSTEM',
+      actor_role: actorRole || 'SYSTEM',
+      details: details || {},
+      created_at: new Date().toISOString()
+    });
   } catch (err) {
-    console.error('Audit log failed:', err);
+    console.error('Audit log failed:', err.message);
   }
 }
-
-import { verifyPassword } from './auth-utils.js';
 
 // Helper: Resolve Actor for Request (Strict Server-Side Authorization)
 async function resolveActor(req) {
@@ -114,9 +149,9 @@ async function resolveActor(req) {
   const token = authHeader ? authHeader.replace('Bearer ', '').trim() : req.headers['x-auth-token'];
 
   if (token) {
-    const session = await db.prepare('SELECT * FROM user_sessions WHERE token = ?').get(token);
+    const session = await UserSession.findOne({ token }).lean();
     if (session && new Date(session.expires_at) > new Date()) {
-      const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(session.user_id);
+      const user = await User.findOne({ id: session.user_id }).lean();
       if (user) {
         return { id: user.id, role: user.role, email: user.email };
       }
@@ -127,7 +162,7 @@ async function resolveActor(req) {
   if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true') {
     const userId = req.headers['x-user-id'];
     if (userId) {
-      const user = await db.prepare('SELECT id, role, email FROM users WHERE id = ?').get(userId);
+      const user = await User.findOne({ id: userId }).lean();
       if (user) {
         return { id: user.id, role: user.role, email: user.email };
       }
@@ -166,7 +201,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
-  const user = await db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
+  const user = await User.findOne({ email: email.trim().toLowerCase() }).lean();
   if (!user) {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
@@ -178,22 +213,19 @@ app.post('/api/auth/login', async (req, res) => {
 
   // Generate real session token
   const token = `tok_${user.id}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
-  await db.prepare(`
-    INSERT INTO user_sessions (token, user_id, role, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
+  await UserSession.create({
     token,
-    user.id,
-    user.role,
-    new Date().toISOString(),
-    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-  );
+    user_id: user.id,
+    role: user.role,
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  });
 
-  const org = await db.prepare('SELECT * FROM organizations WHERE id = ?').get(user.organization_id);
+  const org = user.organization_id ? await Organization.findOne({ id: user.organization_id }).lean() : null;
 
   logAudit('UserAuth', user.id, 'USER_LOGGED_IN', user.id, user.role, { email: user.email });
 
-  const { password_hash, ...safeUser } = user;
+  const { password_hash, _id, ...safeUser } = user;
   res.json({ token, user: safeUser, organization: org });
 });
 
@@ -201,19 +233,29 @@ app.post('/api/auth/logout', async (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader ? authHeader.replace('Bearer ', '').trim() : req.headers['x-auth-token'];
   if (token) {
-    await db.prepare('DELETE FROM user_sessions WHERE token = ?').run(token);
+    await UserSession.deleteOne({ token });
   }
   res.json({ success: true });
 });
 
 app.get('/api/auth/users', async (req, res) => {
-  const users = await db.prepare(`
-    SELECT u.id, u.email, u.full_name, u.role, u.organization_id, u.phone, u.avatar, u.is_demo,
-           o.name as organization_name 
-    FROM users u 
-    LEFT JOIN organizations o ON u.organization_id = o.id
-  `).all();
-  res.json(users);
+  const users = await User.find().lean();
+  const orgIds = [...new Set(users.map(u => u.organization_id).filter(Boolean))];
+  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
+  const orgMap = new Map(orgs.map(o => [o.id, o.name]));
+
+  const result = users.map(u => ({
+    id: u.id,
+    email: u.email,
+    full_name: u.full_name,
+    role: u.role,
+    organization_id: u.organization_id,
+    phone: u.phone,
+    avatar: u.avatar,
+    is_demo: u.is_demo,
+    organization_name: orgMap.get(u.organization_id) || null
+  }));
+  res.json(result);
 });
 
 // ==========================================
@@ -222,47 +264,72 @@ app.get('/api/auth/users', async (req, res) => {
 
 app.get('/api/instruments', async (req, res) => {
   const { owner_id } = req.query;
-  let query = `
-    SELECT i.*, c.name as category_name, c.code as category_code
-    FROM instruments i
-    JOIN instrument_categories c ON i.category_id = c.id
-  `;
-  const params = [];
-  if (owner_id) {
-    query += ' WHERE i.owner_id = ?';
-    params.push(owner_id);
-  }
-  query += ' ORDER BY i.created_at DESC';
-  const instruments = await db.prepare(query).all(...params);
-  res.json(instruments);
+  const filter = {};
+  if (owner_id) filter.owner_id = owner_id;
+
+  const instruments = await Instrument.find(filter).sort({ created_at: -1 }).lean();
+  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
+  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
+  const catMap = new Map(categories.map(c => [c.id, c]));
+
+  const result = instruments.map(i => {
+    const cat = catMap.get(i.category_id) || {};
+    return {
+      ...i,
+      category_name: cat.name || null,
+      category_code: cat.code || null
+    };
+  });
+  res.json(result);
 });
 
 app.get('/api/instruments/:id', async (req, res) => {
-  const instrument = await db.prepare(`
-    SELECT i.*, c.name as category_name, c.code as category_code,
-           u.full_name as owner_name, o.name as owner_org
-    FROM instruments i
-    JOIN instrument_categories c ON i.category_id = c.id
-    JOIN users u ON i.owner_id = u.id
-    LEFT JOIN organizations o ON u.organization_id = o.id
-    WHERE i.id = ?
-  `).get(req.params.id);
-
+  const instrument = await Instrument.findOne({ id: req.params.id }).lean();
   if (!instrument) return res.status(404).json({ error: 'Instrument not found' });
 
-  // Fetch verifications & certificates history
-  const history = await db.prepare(`
-    SELECT v.*, a.application_no, a.request_type, u.full_name as verifier_name,
-           c.id as certificate_id, c.certificate_no, c.public_token, c.issue_date, c.valid_until, c.status as certificate_status
-    FROM verifications v
-    JOIN applications a ON v.application_id = a.id
-    LEFT JOIN users u ON v.verifier_id = u.id
-    LEFT JOIN certificates c ON c.verification_id = v.id
-    WHERE a.instrument_id = ?
-    ORDER BY v.completed_at DESC
-  `).all(req.params.id);
+  const cat = await InstrumentCategory.findOne({ id: instrument.category_id }).lean();
+  const user = await User.findOne({ id: instrument.owner_id }).lean();
+  const org = user && user.organization_id ? await Organization.findOne({ id: user.organization_id }).lean() : null;
 
-  res.json({ ...instrument, history });
+  // Fetch verifications & certificates history
+  const apps = await Application.find({ instrument_id: req.params.id }).lean();
+  const appIds = apps.map(a => a.id);
+  const appMap = new Map(apps.map(a => [a.id, a]));
+
+  const verifs = await Verification.find({ application_id: { $in: appIds } }).sort({ completed_at: -1 }).lean();
+  const verifIds = verifs.map(v => v.id);
+  const verifierIds = [...new Set(verifs.map(v => v.verifier_id).filter(Boolean))];
+  const verifiers = await User.find({ id: { $in: verifierIds } }).lean();
+  const verifierMap = new Map(verifiers.map(u => [u.id, u.full_name]));
+
+  const certs = await Certificate.find({ verification_id: { $in: verifIds } }).lean();
+  const certMap = new Map(certs.map(c => [c.verification_id, c]));
+
+  const history = verifs.map(v => {
+    const appItem = appMap.get(v.application_id) || {};
+    const cert = certMap.get(v.id) || {};
+    return {
+      ...v,
+      application_no: appItem.application_no || null,
+      request_type: appItem.request_type || null,
+      verifier_name: verifierMap.get(v.verifier_id) || null,
+      certificate_id: cert.id || null,
+      certificate_no: cert.certificate_no || null,
+      public_token: cert.public_token || null,
+      issue_date: cert.issue_date || null,
+      valid_until: cert.valid_until || null,
+      certificate_status: cert.status || null
+    };
+  });
+
+  res.json({
+    ...instrument,
+    category_name: cat ? cat.name : null,
+    category_code: cat ? cat.code : null,
+    owner_name: user ? user.full_name : null,
+    owner_org: org ? org.name : null,
+    history
+  });
 });
 
 app.post('/api/instruments', async (req, res) => {
@@ -288,7 +355,7 @@ app.post('/api/instruments', async (req, res) => {
     return res.status(400).json({ error: 'Missing mandatory instrument details' });
   }
 
-  const existing = await db.prepare('SELECT id FROM instruments WHERE serial_number = ?').get(serial_number);
+  const existing = await Instrument.findOne({ serial_number }).lean();
   if (existing) {
     return res.status(400).json({ error: 'Instrument with this serial number is already registered' });
   }
@@ -296,10 +363,20 @@ app.post('/api/instruments', async (req, res) => {
   const id = `INST_${Date.now()}`;
   const now = new Date().toISOString();
 
-  await db.prepare(`
-    INSERT INTO instruments (id, owner_id, category_id, manufacturer, model, serial_number, max_capacity, min_capacity, verification_scale_interval_e, location, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REGISTERED', ?)
-  `).run(id, owner_id, category_id || 'CAT_NAWI_III', manufacturer, model, serial_number, max_capacity || '30 kg', min_capacity || '100 g', verification_scale_interval_e || '5 g', location, now);
+  await Instrument.create({
+    id,
+    owner_id,
+    category_id: category_id || 'CAT_NAWI_III',
+    manufacturer,
+    model,
+    serial_number,
+    max_capacity: max_capacity || '30 kg',
+    min_capacity: min_capacity || '100 g',
+    verification_scale_interval_e: verification_scale_interval_e || '5 g',
+    location,
+    status: 'REGISTERED',
+    created_at: now
+  });
 
   logAudit('Instrument', id, 'REGISTER', actorId, role, { serial_number, manufacturer, model });
 
@@ -312,65 +389,113 @@ app.post('/api/instruments', async (req, res) => {
 
 app.get('/api/applications', async (req, res) => {
   const { trader_id, status } = req.query;
-  let query = `
-    SELECT a.*, i.manufacturer, i.model, i.serial_number, i.location, c.name as category_name,
-           u.full_name as trader_name, org.name as trader_org,
-           asn.assigned_id, asn.assigned_type, asn.is_override,
-           assignee.full_name as assigned_to_name
-    FROM applications a
-    JOIN instruments i ON a.instrument_id = i.id
-    JOIN instrument_categories c ON i.category_id = c.id
-    JOIN users u ON a.trader_id = u.id
-    LEFT JOIN organizations org ON u.organization_id = org.id
-    LEFT JOIN assignments asn ON asn.application_id = a.id
-    LEFT JOIN users assignee ON asn.assigned_id = assignee.id
-  `;
-  const conditions = [];
-  const params = [];
-  if (trader_id) {
-    conditions.push('a.trader_id = ?');
-    params.push(trader_id);
-  }
-  if (status) {
-    conditions.push('a.status = ?');
-    params.push(status);
-  }
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-  query += ' ORDER BY a.created_at DESC';
+  const filter = {};
+  if (trader_id) filter.trader_id = trader_id;
+  if (status) filter.status = status;
 
-  const applications = await db.prepare(query).all(...params);
-  res.json(applications);
+  const applications = await Application.find(filter).sort({ created_at: -1 }).lean();
+  if (applications.length === 0) return res.json([]);
+
+  const instIds = [...new Set(applications.map(a => a.instrument_id).filter(Boolean))];
+  const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
+  const appIds = applications.map(a => a.id);
+
+  const instruments = await Instrument.find({ id: { $in: instIds } }).lean();
+  const instMap = new Map(instruments.map(i => [i.id, i]));
+
+  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
+  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
+  const catMap = new Map(categories.map(c => [c.id, c.name]));
+
+  const users = await User.find({ id: { $in: traderIds } }).lean();
+  const userMap = new Map(users.map(u => [u.id, u]));
+
+  const orgIds = [...new Set(users.map(u => u.organization_id).filter(Boolean))];
+  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
+  const orgMap = new Map(orgs.map(o => [o.id, o.name]));
+
+  const assignments = await Assignment.find({ application_id: { $in: appIds } }).lean();
+  const asnMap = new Map(assignments.map(a => [a.application_id, a]));
+
+  const assigneeIds = [...new Set(assignments.map(a => a.assigned_id).filter(Boolean))];
+  const assignees = await User.find({ id: { $in: assigneeIds } }).lean();
+  const assigneeMap = new Map(assignees.map(u => [u.id, u.full_name]));
+
+  const result = applications.map(a => {
+    const inst = instMap.get(a.instrument_id) || {};
+    const trader = userMap.get(a.trader_id) || {};
+    const traderOrg = trader.organization_id ? orgMap.get(trader.organization_id) : null;
+    const asn = asnMap.get(a.id) || {};
+
+    return {
+      ...a,
+      manufacturer: inst.manufacturer || null,
+      model: inst.model || null,
+      serial_number: inst.serial_number || null,
+      location: inst.location || null,
+      category_name: catMap.get(inst.category_id) || null,
+      trader_name: trader.full_name || null,
+      trader_org: traderOrg || null,
+      assigned_id: asn.assigned_id || null,
+      assigned_type: asn.assigned_type || null,
+      is_override: asn.is_override || 0,
+      assigned_to_name: asn.assigned_id ? assigneeMap.get(asn.assigned_id) : null
+    };
+  });
+
+  res.json(result);
 });
 
 app.get('/api/applications/:id', async (req, res) => {
-  const application = await db.prepare(`
-    SELECT a.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
-           i.verification_scale_interval_e, i.location, c.name as category_name,
-           u.full_name as trader_name, u.phone as trader_phone, u.email as trader_email,
-           org.name as trader_org, org.jurisdiction as trader_jurisdiction,
-           asn.id as assignment_id, asn.assigned_type, asn.assigned_id, asn.recommended_id, asn.is_override, asn.override_reason,
-           assignee.full_name as assigned_to_name,
-           apt.scheduled_date, apt.time_slot, apt.arrangement_type,
-           v.result as verification_result, v.remarks as verification_remarks, v.completed_at as verification_completed_at,
-           cert.id as certificate_id, cert.certificate_no, cert.status as certificate_status,
-           cert.issue_date as certificate_issue_date, cert.valid_until as certificate_valid_until
-    FROM applications a
-    JOIN instruments i ON a.instrument_id = i.id
-    JOIN instrument_categories c ON i.category_id = c.id
-    JOIN users u ON a.trader_id = u.id
-    LEFT JOIN organizations org ON u.organization_id = org.id
-    LEFT JOIN assignments asn ON asn.application_id = a.id
-    LEFT JOIN users assignee ON asn.assigned_id = assignee.id
-    LEFT JOIN appointments apt ON apt.assignment_id = asn.id
-    LEFT JOIN verifications v ON v.application_id = a.id
-    LEFT JOIN certificates cert ON cert.verification_id = v.id
-    WHERE a.id = ?
-  `).get(req.params.id);
-
+  const application = await Application.findOne({ id: req.params.id }).lean();
   if (!application) return res.status(404).json({ error: 'Application not found' });
-  res.json(application);
+
+  const inst = await Instrument.findOne({ id: application.instrument_id }).lean();
+  const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const trader = await User.findOne({ id: application.trader_id }).lean();
+  const traderOrg = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
+
+  const asn = await Assignment.findOne({ application_id: application.id }).lean();
+  const assignee = asn ? await User.findOne({ id: asn.assigned_id }).lean() : null;
+  const apt = asn ? await Appointment.findOne({ assignment_id: asn.id }).lean() : null;
+
+  const verif = await Verification.findOne({ application_id: application.id }).lean();
+  const cert = verif ? await Certificate.findOne({ verification_id: verif.id }).lean() : null;
+
+  res.json({
+    ...application,
+    manufacturer: inst ? inst.manufacturer : null,
+    model: inst ? inst.model : null,
+    serial_number: inst ? inst.serial_number : null,
+    max_capacity: inst ? inst.max_capacity : null,
+    min_capacity: inst ? inst.min_capacity : null,
+    verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+    location: inst ? inst.location : null,
+    category_name: cat ? cat.name : null,
+    trader_name: trader ? trader.full_name : null,
+    trader_phone: trader ? trader.phone : null,
+    trader_email: trader ? trader.email : null,
+    trader_org: traderOrg ? traderOrg.name : null,
+    trader_jurisdiction: traderOrg ? traderOrg.jurisdiction : null,
+    assignment_id: asn ? asn.id : null,
+    assigned_type: asn ? asn.assigned_type : null,
+    assigned_id: asn ? asn.assigned_id : null,
+    recommended_id: asn ? asn.recommended_id : null,
+    is_override: asn ? asn.is_override : 0,
+    override_reason: asn ? asn.override_reason : null,
+    assigned_to_name: assignee ? assignee.full_name : null,
+    scheduled_date: apt ? apt.scheduled_date : null,
+    time_slot: apt ? apt.time_slot : null,
+    arrangement_type: apt ? apt.arrangement_type : null,
+    verification_result: verif ? verif.result : null,
+    verification_remarks: verif ? verif.remarks : null,
+    verification_completed_at: verif ? verif.completed_at : null,
+    certificate_id: cert ? cert.id : null,
+    certificate_no: cert ? cert.certificate_no : null,
+    certificate_status: cert ? cert.status : null,
+    certificate_issue_date: cert ? cert.issue_date : null,
+    certificate_valid_until: cert ? cert.valid_until : null
+  });
 });
 
 app.post('/api/applications', async (req, res) => {
@@ -385,13 +510,17 @@ app.post('/api/applications', async (req, res) => {
     return res.status(400).json({ error: 'Missing instrument or trader ID' });
   }
 
-  const inst = await db.prepare('SELECT id, status, owner_id FROM instruments WHERE id = ?').get(instrument_id);
+  const inst = await Instrument.findOne({ id: instrument_id }).lean();
   if (!inst) return res.status(404).json({ error: 'Instrument not found' });
   if (inst.owner_id !== trader_id && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: 'Forbidden: You can only apply for your own registered instruments.' });
   }
 
-  const activeApp = await db.prepare("SELECT id FROM applications WHERE instrument_id = ? AND status NOT IN ('VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')").get(instrument_id);
+  const activeApp = await Application.findOne({
+    instrument_id,
+    status: { $nin: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] }
+  }).lean();
+
   if (activeApp) {
     return res.status(400).json({ error: 'An active verification application is already in progress for this instrument.' });
   }
@@ -400,12 +529,20 @@ app.post('/api/applications', async (req, res) => {
   const appNo = `APP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
   const now = new Date().toISOString();
 
-  await db.prepare(`
-    INSERT INTO applications (id, application_no, instrument_id, trader_id, request_type, status, documents_json, fee_status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 'SUBMITTED', '[]', 'PAID', ?, ?)
-  `).run(id, appNo, instrument_id, trader_id, request_type || 'INITIAL_VERIFICATION', now, now);
+  await Application.create({
+    id,
+    application_no: appNo,
+    instrument_id,
+    trader_id,
+    request_type: request_type || 'INITIAL_VERIFICATION',
+    status: 'SUBMITTED',
+    documents: [],
+    fee_status: 'PAID',
+    created_at: now,
+    updated_at: now
+  });
 
-  await db.prepare("UPDATE instruments SET status = 'UNDER_VERIFICATION' WHERE id = ?").run(instrument_id);
+  await Instrument.updateOne({ id: instrument_id }, { $set: { status: 'UNDER_VERIFICATION' } });
 
   logAudit('Application', id, 'SUBMIT', actorId, role, { application_no: appNo, instrument_id });
 
@@ -423,7 +560,7 @@ app.post('/api/applications/:id/review', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot review applications.` });
   }
 
-  const appItem = await db.prepare('SELECT id, status FROM applications WHERE id = ?').get(req.params.id);
+  const appItem = await Application.findOne({ id: req.params.id }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   if (appItem.status !== 'SUBMITTED' && appItem.status !== 'UNDER_REVIEW') {
@@ -431,7 +568,7 @@ app.post('/api/applications/:id/review', async (req, res) => {
   }
 
   const now = new Date().toISOString();
-  await db.prepare("UPDATE applications SET status = 'UNDER_REVIEW', updated_at = ? WHERE id = ?").run(now, req.params.id);
+  await Application.updateOne({ id: req.params.id }, { $set: { status: 'UNDER_REVIEW', updated_at: now } });
 
   logAudit('Application', req.params.id, 'STATUTORY_REVIEW_OPENED', actorId, role, { previous_status: appItem.status });
 
@@ -444,34 +581,37 @@ app.get('/api/applications/:id/candidates', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access verifier allocation engine.` });
   }
 
-  const appItem = await db.prepare(`
-    SELECT a.*, i.category_id, i.location, org.jurisdiction 
-    FROM applications a
-    JOIN instruments i ON a.instrument_id = i.id
-    JOIN users u ON a.trader_id = u.id
-    LEFT JOIN organizations org ON u.organization_id = org.id
-    WHERE a.id = ?
-  `).get(req.params.id);
-
+  const appItem = await Application.findOne({ id: req.params.id }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  const candidates = await db.prepare(`
-    SELECT u.id, u.full_name, u.role, u.phone, o.name as organization_name, o.jurisdiction,
-           (SELECT COUNT(*) FROM assignments WHERE assigned_id = u.id) as current_workload
-    FROM users u
-    JOIN organizations o ON u.organization_id = o.id
-    WHERE u.role IN ('VERIFIER', 'GATC')
-  `).all();
+  const verifiers = await User.find({ role: { $in: ['VERIFIER', 'GATC'] } }).lean();
+  const orgIds = [...new Set(verifiers.map(u => u.organization_id).filter(Boolean))];
+  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
+  const orgMap = new Map(orgs.map(o => [o.id, o]));
 
-  const scored = candidates.map(c => {
-    let score = 100 - (c.current_workload * 12);
+  const assignments = await Assignment.find().lean();
+  const workloadMap = new Map();
+  for (const a of assignments) {
+    workloadMap.set(a.assigned_id, (workloadMap.get(a.assigned_id) || 0) + 1);
+  }
+
+  const scored = verifiers.map(c => {
+    const org = orgMap.get(c.organization_id) || {};
+    const current_workload = workloadMap.get(c.id) || 0;
+    let score = 100 - (current_workload * 12);
     let matchReason = 'Authorized statutory Legal Metrology Officer';
     if (c.role === 'GATC') {
       score += 5;
       matchReason = 'Approved test centre with verified mass standard laboratory';
     }
     return {
-      ...c,
+      id: c.id,
+      full_name: c.full_name,
+      role: c.role,
+      phone: c.phone,
+      organization_name: org.name || null,
+      jurisdiction: org.jurisdiction || null,
+      current_workload,
       suitability_score: Math.max(score, 40),
       match_reason: matchReason,
       is_eligible: true
@@ -495,7 +635,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   }
 
   const applicationId = req.params.id;
-  const appItem = await db.prepare('SELECT id, status FROM applications WHERE id = ?').get(applicationId);
+  const appItem = await Application.findOne({ id: applicationId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   if (!['SUBMITTED', 'UNDER_REVIEW'].includes(appItem.status)) {
@@ -505,7 +645,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   const { assigned_id, recommended_id, is_override, override_reason, scheduled_date, time_slot, arrangement_type } = req.body;
   if (!assigned_id) return res.status(400).json({ error: 'Target assignee ID is required' });
 
-  const assignee = await db.prepare('SELECT id, role, full_name FROM users WHERE id = ?').get(assigned_id);
+  const assignee = await User.findOne({ id: assigned_id }).lean();
   if (!assignee) return res.status(404).json({ error: 'Assignee user not found' });
   if (![ROLES.VERIFIER, ROLES.GATC].includes(assignee.role)) {
     return res.status(400).json({ error: 'Assignee must have role VERIFIER or GATC' });
@@ -514,39 +654,63 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   const assignmentId = `ASN_${Date.now()}`;
   const now = new Date().toISOString();
 
-  const existingAsn = await db.prepare('SELECT id FROM assignments WHERE application_id = ?').get(applicationId);
+  const existingAsn = await Assignment.findOne({ application_id: applicationId }).lean();
   if (existingAsn) {
-    await db.prepare(`
-      UPDATE assignments 
-      SET assigned_id = ?, assigned_type = ?, is_override = ?, override_reason = ?, assigned_by = ?
-      WHERE id = ?
-    `).run(assigned_id, assignee.role, is_override ? 1 : 0, override_reason || '', actorId, existingAsn.id);
+    await Assignment.updateOne(
+      { id: existingAsn.id },
+      {
+        $set: {
+          assigned_id,
+          assigned_type: assignee.role,
+          is_override: is_override ? 1 : 0,
+          override_reason: override_reason || '',
+          assigned_by: actorId
+        }
+      }
+    );
   } else {
-    await db.prepare(`
-      INSERT INTO assignments (id, application_id, assigned_type, assigned_id, recommended_id, is_override, override_reason, assigned_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(assignmentId, applicationId, assignee.role, assigned_id, recommended_id || assigned_id, is_override ? 1 : 0, override_reason || '', actorId, now);
+    await Assignment.create({
+      id: assignmentId,
+      application_id: applicationId,
+      assigned_type: assignee.role,
+      assigned_id,
+      recommended_id: recommended_id || assigned_id,
+      is_override: is_override ? 1 : 0,
+      override_reason: override_reason || '',
+      assigned_by: actorId,
+      created_at: now
+    });
   }
 
-  // Appointment scheduling if provided
+  // Appointment scheduling
   const targetAsnId = existingAsn ? existingAsn.id : assignmentId;
   const aptId = `APT_${Date.now()}`;
-  const existingApt = await db.prepare('SELECT id FROM appointments WHERE assignment_id = ?').get(targetAsnId);
+  const existingApt = await Appointment.findOne({ assignment_id: targetAsnId }).lean();
   if (existingApt) {
-    await db.prepare(`
-      UPDATE appointments 
-      SET scheduled_date = ?, time_slot = ?, arrangement_type = ?
-      WHERE id = ?
-    `).run(scheduled_date || '', time_slot || 'MORNING_10_00', arrangement_type || 'FIELD_VISIT', existingApt.id);
+    await Appointment.updateOne(
+      { id: existingApt.id },
+      {
+        $set: {
+          scheduled_date: scheduled_date || '',
+          time_slot: time_slot || 'MORNING_10_00',
+          arrangement_type: arrangement_type || 'FIELD_VISIT'
+        }
+      }
+    );
   } else {
-    await db.prepare(`
-      INSERT INTO appointments (id, assignment_id, scheduled_date, time_slot, arrangement_type, status, created_at)
-      VALUES (?, ?, ?, ?, ?, 'SCHEDULED', ?)
-    `).run(aptId, targetAsnId, scheduled_date || '', time_slot || 'MORNING_10_00', arrangement_type || 'FIELD_VISIT', now);
+    await Appointment.create({
+      id: aptId,
+      assignment_id: targetAsnId,
+      scheduled_date: scheduled_date || '',
+      time_slot: time_slot || 'MORNING_10_00',
+      arrangement_type: arrangement_type || 'FIELD_VISIT',
+      status: 'SCHEDULED',
+      created_at: now
+    });
   }
 
   // Transition: -> ASSIGNED
-  await db.prepare("UPDATE applications SET status = 'ASSIGNED', updated_at = ? WHERE id = ?").run(now, applicationId);
+  await Application.updateOne({ id: applicationId }, { $set: { status: 'ASSIGNED', updated_at: now } });
 
   logAudit('Application', applicationId, is_override ? 'ASSIGNMENT_OVERRIDE' : 'ASSIGNMENT_CONFIRMED', actorId, role, {
     assigned_id,
@@ -574,29 +738,67 @@ app.get('/api/verifications/cases', async (req, res) => {
   const { verifier_id } = req.query;
   const targetVerifierId = verifier_id || actorId;
 
-  let query = `
-    SELECT a.id as application_id, a.application_no, a.request_type, a.status as application_status,
-           i.id as instrument_id, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.location,
-           u.full_name as trader_name, u.phone as trader_phone,
-           asn.assigned_id, asn.is_override,
-           apt.scheduled_date, apt.time_slot, apt.arrangement_type,
-           v.id as verification_id, v.status as verification_status, v.result as verification_result
-    FROM applications a
-    JOIN assignments asn ON asn.application_id = a.id
-    JOIN instruments i ON a.instrument_id = i.id
-    JOIN users u ON a.trader_id = u.id
-    LEFT JOIN appointments apt ON apt.assignment_id = asn.id
-    LEFT JOIN verifications v ON v.application_id = a.id
-    WHERE a.status IN ('ASSIGNED', 'IN_PROGRESS', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')
-  `;
-  const params = [];
+  // Filter assignments by verifier if not admin
+  const asnFilter = {};
   if (role !== ROLES.PLATFORM_ADMIN && targetVerifierId !== 'UNKNOWN') {
-    query += ' AND asn.assigned_id = ?';
-    params.push(targetVerifierId);
+    asnFilter.assigned_id = targetVerifierId;
   }
-  query += ' ORDER BY a.updated_at DESC';
 
-  const cases = await db.prepare(query).all(...params);
+  const assignments = await Assignment.find(asnFilter).lean();
+  const appIds = assignments.map(a => a.application_id);
+  const asnMap = new Map(assignments.map(a => [a.application_id, a]));
+
+  const applications = await Application.find({
+    id: { $in: appIds },
+    status: { $in: ['ASSIGNED', 'IN_PROGRESS', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] }
+  }).sort({ updated_at: -1 }).lean();
+
+  const instIds = [...new Set(applications.map(a => a.instrument_id).filter(Boolean))];
+  const instruments = await Instrument.find({ id: { $in: instIds } }).lean();
+  const instMap = new Map(instruments.map(i => [i.id, i]));
+
+  const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
+  const traders = await User.find({ id: { $in: traderIds } }).lean();
+  const traderMap = new Map(traders.map(u => [u.id, u]));
+
+  const asnIds = assignments.map(a => a.id);
+  const appointments = await Appointment.find({ assignment_id: { $in: asnIds } }).lean();
+  const aptMap = new Map(appointments.map(a => [a.assignment_id, a]));
+
+  const verifs = await Verification.find({ application_id: { $in: applications.map(a => a.id) } }).lean();
+  const verifMap = new Map(verifs.map(v => [v.application_id, v]));
+
+  const cases = applications.map(a => {
+    const asn = asnMap.get(a.id) || {};
+    const inst = instMap.get(a.instrument_id) || {};
+    const trader = traderMap.get(a.trader_id) || {};
+    const apt = aptMap.get(asn.id) || {};
+    const verif = verifMap.get(a.id) || {};
+
+    return {
+      application_id: a.id,
+      application_no: a.application_no,
+      request_type: a.request_type,
+      application_status: a.status,
+      instrument_id: inst.id || null,
+      manufacturer: inst.manufacturer || null,
+      model: inst.model || null,
+      serial_number: inst.serial_number || null,
+      max_capacity: inst.max_capacity || null,
+      location: inst.location || null,
+      trader_name: trader.full_name || null,
+      trader_phone: trader.phone || null,
+      assigned_id: asn.assigned_id || null,
+      is_override: asn.is_override || 0,
+      scheduled_date: apt.scheduled_date || null,
+      time_slot: apt.time_slot || null,
+      arrangement_type: apt.arrangement_type || null,
+      verification_id: verif.id || null,
+      verification_status: verif.status || null,
+      verification_result: verif.result || null
+    };
+  });
+
   res.json(cases);
 });
 
@@ -608,60 +810,73 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot open verification workspace.` });
   }
 
-  const caseItem = await db.prepare(`
-    SELECT a.id as application_id, a.application_no, a.status as application_status, a.request_type,
-           i.id as instrument_id, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
-           i.verification_scale_interval_e, i.location, c.name as category_name,
-           u.full_name as trader_name, u.phone as trader_phone, u.email as trader_email,
-           org.name as trader_org, org.jurisdiction as trader_jurisdiction,
-           asn.assigned_id, asn.assigned_type, asn.created_at as assigned_at,
-           assigner.full_name as assigned_by_name,
-           apt.scheduled_date, apt.time_slot, apt.arrangement_type,
-           r.checklist_schema_json, r.mpe_rules_json,
-           v.id as verification_id, v.status as verification_status, v.result as verification_result,
-           v.remarks as observations, v.started_at, v.completed_at,
-           cert.id as certificate_id, cert.certificate_no, cert.status as certificate_status,
-           cert.issue_date, cert.valid_until, cert.public_token
-    FROM applications a
-    JOIN instruments i ON a.instrument_id = i.id
-    JOIN instrument_categories c ON i.category_id = c.id
-    JOIN rule_sets r ON r.category_id = c.id
-    JOIN users u ON a.trader_id = u.id
-    LEFT JOIN organizations org ON u.organization_id = org.id
-    JOIN assignments asn ON asn.application_id = a.id
-    LEFT JOIN users assigner ON asn.assigned_by = assigner.id
-    LEFT JOIN appointments apt ON apt.assignment_id = asn.id
-    LEFT JOIN verifications v ON v.application_id = a.id
-    LEFT JOIN certificates cert ON cert.verification_id = v.id
-    WHERE a.id = ?
-  `).get(req.params.appId);
+  const a = await Application.findOne({ id: req.params.appId }).lean();
+  if (!a) return res.status(404).json({ error: 'Case not found' });
 
-  if (!caseItem) return res.status(404).json({ error: 'Case not found' });
+  const inst = await Instrument.findOne({ id: a.instrument_id }).lean();
+  const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const ruleSet = cat ? await RuleSet.findOne({ category_id: cat.id }).lean() : null;
+  const trader = await User.findOne({ id: a.trader_id }).lean();
+  const traderOrg = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
+
+  const asn = await Assignment.findOne({ application_id: a.id }).lean();
+  const assigner = asn && asn.assigned_by ? await User.findOne({ id: asn.assigned_by }).lean() : null;
+  const apt = asn ? await Appointment.findOne({ assignment_id: asn.id }).lean() : null;
+
+  const verif = await Verification.findOne({ application_id: a.id }).lean();
+  const cert = verif ? await Certificate.findOne({ verification_id: verif.id }).lean() : null;
 
   // Access validation: verifier must be the assigned officer
-  if (role === ROLES.VERIFIER && caseItem.assigned_id !== actorId && role !== ROLES.PLATFORM_ADMIN) {
+  if (role === ROLES.VERIFIER && asn && asn.assigned_id !== actorId && role !== ROLES.PLATFORM_ADMIN) {
     return res.status(403).json({ error: 'Forbidden: You are not the assigned verifier for this case.' });
   }
 
-  // Load existing checklist responses
-  const checklistResponses = caseItem.verification_id
-    ? await db.prepare('SELECT * FROM verification_checklist_responses WHERE verification_id = ?').all(caseItem.verification_id)
-    : [];
-
-  // Load existing readings
-  const readings = caseItem.verification_id
-    ? await db.prepare('SELECT * FROM verification_readings WHERE verification_id = ? ORDER BY reference_value ASC').all(caseItem.verification_id)
-    : [];
-
-  // Load existing evidence attachments
-  const evidence = caseItem.verification_id
-    ? await db.prepare('SELECT * FROM verification_evidence WHERE verification_id = ? ORDER BY created_at DESC').all(caseItem.verification_id)
-    : [];
+  // Load existing checklist responses, readings, evidence
+  const checklistResponses = verif ? await VerificationChecklistResponse.find({ verification_id: verif.id }).lean() : [];
+  const readings = verif ? await VerificationReading.find({ verification_id: verif.id }).sort({ reference_value: 1 }).lean() : [];
+  const evidence = verif ? await VerificationEvidence.find({ verification_id: verif.id }).sort({ created_at: -1 }).lean() : [];
 
   res.json({
-    ...caseItem,
-    checklist_schema: parseJson(caseItem.checklist_schema_json, []),
-    mpe_rules: parseJson(caseItem.mpe_rules_json, {}),
+    application_id: a.id,
+    application_no: a.application_no,
+    status: a.status,
+    application_status: a.status,
+    request_type: a.request_type,
+    instrument_id: inst ? inst.id : null,
+    manufacturer: inst ? inst.manufacturer : null,
+    model: inst ? inst.model : null,
+    serial_number: inst ? inst.serial_number : null,
+    max_capacity: inst ? inst.max_capacity : null,
+    min_capacity: inst ? inst.min_capacity : null,
+    verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+    location: inst ? inst.location : null,
+    category_name: cat ? cat.name : null,
+    trader_name: trader ? trader.full_name : null,
+    trader_phone: trader ? trader.phone : null,
+    trader_email: trader ? trader.email : null,
+    trader_org: traderOrg ? traderOrg.name : null,
+    trader_jurisdiction: traderOrg ? traderOrg.jurisdiction : null,
+    assigned_id: asn ? asn.assigned_id : null,
+    assigned_type: asn ? asn.assigned_type : null,
+    assigned_at: asn ? asn.created_at : null,
+    assigned_by_name: assigner ? assigner.full_name : null,
+    scheduled_date: apt ? apt.scheduled_date : null,
+    time_slot: apt ? apt.time_slot : null,
+    arrangement_type: apt ? apt.arrangement_type : null,
+    checklist_schema: ruleSet ? ruleSet.checklist_schema : [],
+    mpe_rules: ruleSet ? ruleSet.mpe_rules : {},
+    verification_id: verif ? verif.id : null,
+    verification_status: verif ? verif.status : null,
+    verification_result: verif ? verif.result : null,
+    observations: verif ? verif.remarks : null,
+    started_at: verif ? verif.started_at : null,
+    completed_at: verif ? verif.completed_at : null,
+    certificate_id: cert ? cert.id : null,
+    certificate_no: cert ? cert.certificate_no : null,
+    certificate_status: cert ? cert.status : null,
+    issue_date: cert ? cert.issue_date : null,
+    valid_until: cert ? cert.valid_until : null,
+    public_token: cert ? cert.public_token : null,
     checklist_responses: checklistResponses,
     readings,
     evidence
@@ -676,16 +891,11 @@ app.post('/api/verifications/cases/:appId/start', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot start verifications.` });
   }
 
-  const appItem = await db.prepare(`
-    SELECT a.id, a.status, asn.assigned_id 
-    FROM applications a 
-    JOIN assignments asn ON asn.application_id = a.id 
-    WHERE a.id = ?
-  `).get(req.params.appId);
-
+  const appItem = await Application.findOne({ id: req.params.appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  if (role !== ROLES.PLATFORM_ADMIN && appItem.assigned_id !== actorId) {
+  const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
+  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can start this verification.' });
   }
 
@@ -694,24 +904,34 @@ app.post('/api/verifications/cases/:appId/start', async (req, res) => {
   }
 
   const now = new Date().toISOString();
-  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
 
   if (!verif) {
-    await db.prepare(`
-      INSERT INTO verifications (id, application_id, verifier_id, status, started_at, created_at, updated_at)
-      VALUES (?, ?, ?, 'IN_PROGRESS', ?, ?, ?)
-    `).run(verifId, req.params.appId, actorId, now, now, now);
+    await Verification.create({
+      id: verifId,
+      application_id: req.params.appId,
+      verifier_id: actorId,
+      status: 'IN_PROGRESS',
+      started_at: now,
+      created_at: now,
+      updated_at: now
+    });
   } else {
-    await db.prepare(`
-      UPDATE verifications 
-      SET status = 'IN_PROGRESS', started_at = COALESCE(started_at, ?), updated_at = ? 
-      WHERE id = ?
-    `).run(now, now, verifId);
+    await Verification.updateOne(
+      { id: verifId },
+      {
+        $set: {
+          status: 'IN_PROGRESS',
+          started_at: verif.started_at || now,
+          updated_at: now
+        }
+      }
+    );
   }
 
   // State Transition: -> IN_PROGRESS
-  await db.prepare("UPDATE applications SET status = 'IN_PROGRESS', updated_at = ? WHERE id = ?").run(now, req.params.appId);
+  await Application.updateOne({ id: req.params.appId }, { $set: { status: 'IN_PROGRESS', updated_at: now } });
 
   logAudit('Verification', verifId, 'VERIFICATION_STARTED', actorId, role, {
     application_id: req.params.appId
@@ -728,15 +948,11 @@ app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot record verification draft.` });
   }
 
-  const appItem = await db.prepare(`
-    SELECT a.id, a.status, asn.assigned_id 
-    FROM applications a 
-    JOIN assignments asn ON asn.application_id = a.id 
-    WHERE a.id = ?
-  `).get(req.params.appId);
-
+  const appItem = await Application.findOne({ id: req.params.appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
-  if (role !== ROLES.PLATFORM_ADMIN && appItem.assigned_id !== actorId) {
+
+  const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
+  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can save draft data.' });
   }
   if (appItem.status !== 'IN_PROGRESS') {
@@ -746,61 +962,70 @@ app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
   const { checklist_responses, readings, observations } = req.body;
   const now = new Date().toISOString();
 
-  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
+  let verifId = verif ? verif.id : `VERIF_${Date.now()}`;
+
   if (!verif) {
-    const verifId = `VERIF_${Date.now()}`;
-    await db.prepare(`
-      INSERT INTO verifications (id, application_id, verifier_id, status, remarks, started_at, created_at, updated_at)
-      VALUES (?, ?, ?, 'IN_PROGRESS', ?, ?, ?, ?)
-    `).run(verifId, req.params.appId, actorId, observations || '', now, now, now);
-    verif = { id: verifId };
+    await Verification.create({
+      id: verifId,
+      application_id: req.params.appId,
+      verifier_id: actorId,
+      status: 'IN_PROGRESS',
+      remarks: observations || '',
+      started_at: now,
+      created_at: now,
+      updated_at: now
+    });
   } else {
-    await db.prepare(`
-      UPDATE verifications 
-      SET remarks = ?, updated_at = ? 
-      WHERE id = ?
-    `).run(observations || '', now, verif.id);
+    await Verification.updateOne(
+      { id: verif.id },
+      { $set: { remarks: observations || '', updated_at: now } }
+    );
   }
 
   // Save checklist responses
   if (Array.isArray(checklist_responses)) {
-    const upsertChk = await db.prepare(`
-      INSERT INTO verification_checklist_responses (id, verification_id, item_id, status, note, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(verification_id, item_id) DO UPDATE SET
-        status = excluded.status,
-        note = excluded.note,
-        updated_at = excluded.updated_at
-    `);
     for (const chk of checklist_responses) {
       if (chk.item_id) {
-        await upsertChk.run(`CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, verif.id, chk.item_id, chk.status || 'PASS', chk.note || '', now);
+        await VerificationChecklistResponse.findOneAndUpdate(
+          { verification_id: verifId, item_id: chk.item_id },
+          {
+            $set: {
+              status: chk.status || 'PASS',
+              note: chk.note || '',
+              updated_at: now
+            },
+            $setOnInsert: {
+              id: `CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+              verification_id: verifId,
+              item_id: chk.item_id
+            }
+          },
+          { upsert: true }
+        );
       }
     }
   }
 
   // Save measurement readings
   if (Array.isArray(readings)) {
-    await db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verif.id);
-    const insertReading = await db.prepare(`
-      INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const r of readings) {
-      await insertReading.run(
-        `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        verif.id,
-        r.test_point || 'Test Point',
-        Number(r.reference_value) || 0,
-        r.observed_value !== undefined && r.observed_value !== '' ? Number(r.observed_value) : null,
-        r.unit || 'kg',
-        r.reading_result || 'PASS',
-        now
-      );
+    await VerificationReading.deleteMany({ verification_id: verifId });
+    const docs = readings.map(r => ({
+      id: `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      verification_id: verifId,
+      test_point: r.test_point || 'Test Point',
+      reference_value: Number(r.reference_value) || 0,
+      observed_value: r.observed_value !== undefined && r.observed_value !== '' ? Number(r.observed_value) : null,
+      unit: r.unit || 'kg',
+      reading_result: r.reading_result || 'PASS',
+      updated_at: now
+    }));
+    if (docs.length > 0) {
+      await VerificationReading.insertMany(docs);
     }
   }
 
-  logAudit('Verification', verif.id, 'VERIFICATION_DRAFT_SAVED', actorId, role, {
+  logAudit('Verification', verifId, 'VERIFICATION_DRAFT_SAVED', actorId, role, {
     application_id: req.params.appId,
     checklist_count: checklist_responses?.length || 0,
     readings_count: readings?.length || 0
@@ -817,15 +1042,11 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), asyn
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot attach evidence.` });
   }
 
-  const appItem = await db.prepare(`
-    SELECT a.id, a.status, asn.assigned_id 
-    FROM applications a 
-    JOIN assignments asn ON asn.application_id = a.id 
-    WHERE a.id = ?
-  `).get(req.params.appId);
-
+  const appItem = await Application.findOne({ id: req.params.appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
-  if (role !== ROLES.PLATFORM_ADMIN && appItem.assigned_id !== actorId) {
+
+  const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
+  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can attach evidence.' });
   }
   if (appItem.status !== 'IN_PROGRESS') {
@@ -837,14 +1058,19 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), asyn
   }
 
   const now = new Date().toISOString();
-  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
+  let verifId = verif ? verif.id : `VERIF_${Date.now()}`;
+
   if (!verif) {
-    const verifId = `VERIF_${Date.now()}`;
-    await db.prepare(`
-      INSERT INTO verifications (id, application_id, verifier_id, status, started_at, created_at, updated_at)
-      VALUES (?, ?, ?, 'IN_PROGRESS', ?, ?, ?)
-    `).run(verifId, req.params.appId, actorId, now, now, now);
-    verif = { id: verifId };
+    await Verification.create({
+      id: verifId,
+      application_id: req.params.appId,
+      verifier_id: actorId,
+      status: 'IN_PROGRESS',
+      started_at: now,
+      created_at: now,
+      updated_at: now
+    });
   }
 
   const evidenceId = `EV_${Date.now()}`;
@@ -852,12 +1078,18 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), asyn
   const category = req.body.category || 'DEVICE_SETUP';
   const caption = req.body.caption || req.file.originalname;
 
-  await db.prepare(`
-    INSERT INTO verification_evidence (id, verification_id, file_name, file_path, file_type, category, caption, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(evidenceId, verif.id, req.file.originalname, relativePath, req.file.mimetype, category, caption, now);
+  await VerificationEvidence.create({
+    id: evidenceId,
+    verification_id: verifId,
+    file_name: req.file.originalname,
+    file_path: relativePath,
+    file_type: req.file.mimetype,
+    category,
+    caption,
+    created_at: now
+  });
 
-  logAudit('Verification', verif.id, 'EVIDENCE_ATTACHED', actorId, role, {
+  logAudit('Verification', verifId, 'EVIDENCE_ATTACHED', actorId, role, {
     evidence_id: evidenceId,
     file_name: req.file.originalname,
     category
@@ -881,25 +1113,21 @@ app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', async (req, r
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot delete evidence.` });
   }
 
-  const appItem = await db.prepare(`
-    SELECT a.id, a.status, asn.assigned_id 
-    FROM applications a 
-    JOIN assignments asn ON asn.application_id = a.id 
-    WHERE a.id = ?
-  `).get(req.params.appId);
-
+  const appItem = await Application.findOne({ id: req.params.appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
-  if (role !== ROLES.PLATFORM_ADMIN && appItem.assigned_id !== actorId) {
+
+  const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
+  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can delete evidence.' });
   }
   if (appItem.status !== 'IN_PROGRESS') {
     return res.status(400).json({ error: `Cannot modify evidence for application in status '${appItem.status}'. Must be 'IN_PROGRESS'.` });
   }
 
-  const ev = await db.prepare('SELECT id, file_path, verification_id FROM verification_evidence WHERE id = ?').get(req.params.evidenceId);
+  const ev = await VerificationEvidence.findOne({ id: req.params.evidenceId }).lean();
   if (!ev) return res.status(404).json({ error: 'Evidence record not found' });
 
-  await db.prepare('DELETE FROM verification_evidence WHERE id = ?').run(req.params.evidenceId);
+  await VerificationEvidence.deleteOne({ id: req.params.evidenceId });
 
   // Safely remove physical file from persistent storage
   deleteStoredFile(ev.file_path);
@@ -919,22 +1147,19 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot submit verification outcomes.` });
   }
 
-  const appItem = await db.prepare(`
-    SELECT a.id, a.instrument_id, a.status, asn.assigned_id, r.checklist_schema_json
-    FROM applications a 
-    JOIN assignments asn ON asn.application_id = a.id 
-    JOIN instruments i ON a.instrument_id = i.id
-    JOIN rule_sets r ON r.category_id = i.category_id
-    WHERE a.id = ?
-  `).get(req.params.appId);
-
+  const appItem = await Application.findOne({ id: req.params.appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
-  if (role !== ROLES.PLATFORM_ADMIN && appItem.assigned_id !== actorId) {
+
+  const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
+  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can submit verification results.' });
   }
   if (appItem.status !== 'IN_PROGRESS') {
     return res.status(400).json({ error: `Invalid state transition: Cannot submit result for application in state '${appItem.status}'. Must be 'IN_PROGRESS'.` });
   }
+
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const ruleSet = inst ? await RuleSet.findOne({ category_id: inst.category_id }).lean() : null;
 
   const { result, remarks, checklist_responses, readings } = req.body;
 
@@ -949,8 +1174,8 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   }
 
   // 3. Checklist completeness check (all required items in schema must have status)
-  const checklistSchema = parseJson(appItem.checklist_schema_json, []);
-  const requiredItemIds = checklistSchema.filter(i => i.required).map(i => i.id);
+  const checklistSchema = ruleSet ? ruleSet.checklist_schema : [];
+  const requiredItemIds = checklistSchema.filter(i => i.mandatory || i.required).map(i => i.id);
   const providedResponses = Array.isArray(checklist_responses) ? checklist_responses : [];
 
   for (const reqId of requiredItemIds) {
@@ -966,63 +1191,80 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   }
 
   const now = new Date().toISOString();
-  let verif = await db.prepare('SELECT id FROM verifications WHERE application_id = ?').get(req.params.appId);
+  let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
 
   // Persist final responses
   if (!verif) {
-    await db.prepare(`
-      INSERT INTO verifications (id, application_id, verifier_id, status, result, remarks, started_at, completed_at, created_at, updated_at)
-      VALUES (?, ?, ?, 'COMPLETED', ?, ?, ?, ?, ?, ?)
-    `).run(verifId, req.params.appId, actorId, result, remarks || '', now, now, now, now);
+    await Verification.create({
+      id: verifId,
+      application_id: req.params.appId,
+      verifier_id: actorId,
+      status: 'COMPLETED',
+      result,
+      remarks: remarks || '',
+      started_at: now,
+      completed_at: now,
+      created_at: now,
+      updated_at: now
+    });
   } else {
-    await db.prepare(`
-      UPDATE verifications 
-      SET status = 'COMPLETED', result = ?, remarks = ?, completed_at = ?, updated_at = ? 
-      WHERE id = ?
-    `).run(result, remarks || '', now, now, verifId);
+    await Verification.updateOne(
+      { id: verifId },
+      {
+        $set: {
+          status: 'COMPLETED',
+          result,
+          remarks: remarks || '',
+          completed_at: now,
+          updated_at: now
+        }
+      }
+    );
   }
 
   // Persist responses
-  const upsertChk = await db.prepare(`
-    INSERT INTO verification_checklist_responses (id, verification_id, item_id, status, note, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(verification_id, item_id) DO UPDATE SET
-      status = excluded.status,
-      note = excluded.note,
-      updated_at = excluded.updated_at
-  `);
   for (const chk of providedResponses) {
     if (chk.item_id) {
-      await upsertChk.run(`CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`, verifId, chk.item_id, chk.status, chk.note || '', now);
+      await VerificationChecklistResponse.findOneAndUpdate(
+        { verification_id: verifId, item_id: chk.item_id },
+        {
+          $set: {
+            status: chk.status,
+            note: chk.note || '',
+            updated_at: now
+          },
+          $setOnInsert: {
+            id: `CHK_RES_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+            verification_id: verifId,
+            item_id: chk.item_id
+          }
+        },
+        { upsert: true }
+      );
     }
   }
 
   // Persist readings
-  await db.prepare('DELETE FROM verification_readings WHERE verification_id = ?').run(verifId);
-  const insertReading = await db.prepare(`
-    INSERT INTO verification_readings (id, verification_id, test_point, reference_value, observed_value, unit, reading_result, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  for (const r of readings) {
-    await insertReading.run(
-      `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-      verifId,
-      r.test_point || 'Test Point',
-      Number(r.reference_value) || 0,
-      Number(r.observed_value),
-      r.unit || 'kg',
-      r.reading_result || 'PASS',
-      now
-    );
-  }
+  await VerificationReading.deleteMany({ verification_id: verifId });
+  const readingDocs = readings.map(r => ({
+    id: `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    verification_id: verifId,
+    test_point: r.test_point || 'Test Point',
+    reference_value: Number(r.reference_value) || 0,
+    observed_value: Number(r.observed_value),
+    unit: r.unit || 'kg',
+    reading_result: r.reading_result || 'PASS',
+    updated_at: now
+  }));
+  await VerificationReading.insertMany(readingDocs);
 
   // State Transitions for Application & Instrument
   const nextAppStatus = result === 'PASS' ? 'VERIFICATION_COMPLETED' : 'VERIFICATION_FAILED';
   const nextInstStatus = result === 'PASS' ? 'VERIFIED' : 'REJECTED';
 
-  await db.prepare("UPDATE applications SET status = ?, updated_at = ? WHERE id = ?").run(nextAppStatus, now, req.params.appId);
-  await db.prepare("UPDATE instruments SET status = ? WHERE id = ?").run(nextInstStatus, appItem.instrument_id);
+  await Application.updateOne({ id: req.params.appId }, { $set: { status: nextAppStatus, updated_at: now } });
+  await Instrument.updateOne({ id: appItem.instrument_id }, { $set: { status: nextInstStatus } });
 
   logAudit('Verification', verifId, 'VERIFICATION_RESULT_SUBMITTED', actorId, role, {
     application_id: req.params.appId,
@@ -1054,46 +1296,44 @@ app.post('/api/certificates/generate/:appId', async (req, res) => {
   }
 
   const appId = req.params.appId;
-  const appItem = await db.prepare(`
-    SELECT a.*, i.id as inst_id, i.category_id, i.owner_id,
-           r.validity_period_months,
-           v.id as verification_id, v.result as verification_result, v.status as verification_status,
-           u.full_name as verifier_name, o.name as authority_name
-    FROM applications a
-    JOIN instruments i ON a.instrument_id = i.id
-    LEFT JOIN rule_sets r ON r.category_id = i.category_id
-    LEFT JOIN verifications v ON v.application_id = a.id
-    LEFT JOIN users u ON v.verifier_id = u.id
-    LEFT JOIN organizations o ON u.organization_id = o.id
-    WHERE a.id = ?
-  `).get(appId);
-
+  const appItem = await Application.findOne({ id: appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const ruleSet = inst ? await RuleSet.findOne({ category_id: inst.category_id }).lean() : null;
+  const verif = await Verification.findOne({ application_id: appId }).lean();
+  const verifier = verif ? await User.findOne({ id: verif.verifier_id }).lean() : null;
+  const org = verifier && verifier.organization_id ? await Organization.findOne({ id: verifier.organization_id }).lean() : null;
+
   // 1. Verification Eligibility Check: Must be COMPLETED and PASS
-  if (!appItem.verification_id || appItem.verification_result !== 'PASS') {
+  if (!verif || verif.result !== 'PASS') {
     return res.status(400).json({
       error: 'Ineligible: Statutory certificate cannot be generated for an incomplete, missing, or failed verification.'
     });
   }
 
   // 2. Idempotency Check: If certificate already exists, return it without creating duplicate
-  const existingCert = await db.prepare(`
-    SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
-           i.verification_scale_interval_e, i.location,
-           cat.name as category_name, trader.full_name as owner_name, torg.name as owner_org
-    FROM certificates c
-    JOIN instruments i ON c.instrument_id = i.id
-    JOIN instrument_categories cat ON i.category_id = cat.id
-    JOIN users trader ON i.owner_id = trader.id
-    LEFT JOIN organizations torg ON trader.organization_id = torg.id
-    WHERE c.verification_id = ?
-  `).get(appItem.verification_id);
-
+  const existingCert = await Certificate.findOne({ verification_id: verif.id }).lean();
   if (existingCert) {
+    const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+    const trader = inst ? await User.findOne({ id: inst.owner_id }).lean() : null;
+    const traderOrg = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
+
     return res.json({
       message: 'Certificate already exists for this verification',
-      certificate: existingCert,
+      certificate: {
+        ...existingCert,
+        manufacturer: inst ? inst.manufacturer : null,
+        model: inst ? inst.model : null,
+        serial_number: inst ? inst.serial_number : null,
+        max_capacity: inst ? inst.max_capacity : null,
+        min_capacity: inst ? inst.min_capacity : null,
+        verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+        location: inst ? inst.location : null,
+        category_name: cat ? cat.name : null,
+        owner_name: trader ? trader.full_name : null,
+        owner_org: traderOrg ? traderOrg.name : null
+      },
       created: false
     });
   }
@@ -1106,53 +1346,65 @@ app.post('/api/certificates/generate/:appId', async (req, res) => {
   const certId = `CERT_${Date.now()}`;
 
   const issueDate = new Date();
-  const validityMonths = appItem.validity_period_months || 12;
+  const validityMonths = ruleSet?.validity_period_months || 12;
   const validUntil = new Date(issueDate);
   validUntil.setMonth(validUntil.getMonth() + validityMonths);
 
-  const issuingOfficer = appItem.verifier_name || 'Vikram Singh (LMO)';
-  const issuingAuthority = appItem.authority_name || 'Department of Consumer Affairs, Delhi';
+  const issuingOfficer = verifier?.full_name || 'Vikram Singh (LMO)';
+  const issuingAuthority = org?.name || 'Department of Consumer Affairs, Delhi';
 
-  await db.prepare(`
-    INSERT INTO certificates (
-      id, certificate_no, verification_id, instrument_id, public_token,
-      issue_date, valid_until, status, issuing_officer, issuing_authority, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'VALID', ?, ?, ?)
-  `).run(
-    certId,
-    certNo,
-    appItem.verification_id,
-    appItem.inst_id,
-    publicToken,
-    issueDate.toISOString(),
-    validUntil.toISOString(),
-    issuingOfficer,
-    issuingAuthority,
-    issueDate.toISOString()
-  );
+  await Certificate.create({
+    id: certId,
+    certificate_no: certNo,
+    verification_id: verif.id,
+    instrument_id: inst.id,
+    public_token: publicToken,
+    issue_date: issueDate.toISOString(),
+    valid_until: validUntil.toISOString(),
+    status: 'VALID',
+    issuing_officer: issuingOfficer,
+    issuing_authority: issuingAuthority,
+    created_at: issueDate.toISOString()
+  });
 
   // Update instrument status to VERIFIED
-  await db.prepare("UPDATE instruments SET status = 'VERIFIED' WHERE id = ?").run(appItem.inst_id);
+  await Instrument.updateOne({ id: inst.id }, { $set: { status: 'VERIFIED' } });
 
   logAudit('Certificate', certId, 'CERTIFICATE_GENERATED', actorId, role, {
     certificate_no: certNo,
     application_id: appId,
-    instrument_id: appItem.inst_id,
+    instrument_id: inst.id,
     public_token: publicToken,
     valid_until: validUntil.toISOString()
   });
 
-  const createdCert = await db.prepare(`
-    SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
-           i.verification_scale_interval_e, i.location,
-           cat.name as category_name, trader.full_name as owner_name, torg.name as owner_org
-    FROM certificates c
-    JOIN instruments i ON c.instrument_id = i.id
-    JOIN instrument_categories cat ON i.category_id = cat.id
-    JOIN users trader ON i.owner_id = trader.id
-    LEFT JOIN organizations torg ON trader.organization_id = torg.id
-    WHERE c.id = ?
-  `).get(certId);
+  const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const trader = inst ? await User.findOne({ id: inst.owner_id }).lean() : null;
+  const traderOrg = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
+
+  const createdCert = {
+    id: certId,
+    certificate_no: certNo,
+    verification_id: verif.id,
+    instrument_id: inst.id,
+    public_token: publicToken,
+    issue_date: issueDate.toISOString(),
+    valid_until: validUntil.toISOString(),
+    status: 'VALID',
+    issuing_officer: issuingOfficer,
+    issuing_authority: issuingAuthority,
+    created_at: issueDate.toISOString(),
+    manufacturer: inst ? inst.manufacturer : null,
+    model: inst ? inst.model : null,
+    serial_number: inst ? inst.serial_number : null,
+    max_capacity: inst ? inst.max_capacity : null,
+    min_capacity: inst ? inst.min_capacity : null,
+    verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+    location: inst ? inst.location : null,
+    category_name: cat ? cat.name : null,
+    owner_name: trader ? trader.full_name : null,
+    owner_org: traderOrg ? traderOrg.name : null
+  };
 
   res.status(201).json({
     message: 'Certificate generated successfully',
@@ -1166,57 +1418,73 @@ app.get('/api/certificates', async (req, res) => {
   const { role, id: actorId } = getActor(req);
   const { owner_id } = req.query;
 
-  let query = `
-    SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.location,
-           cat.name as category_name, trader.full_name as owner_name, torg.name as owner_org,
-           i.owner_id
-    FROM certificates c
-    JOIN instruments i ON c.instrument_id = i.id
-    JOIN instrument_categories cat ON i.category_id = cat.id
-    JOIN users trader ON i.owner_id = trader.id
-    LEFT JOIN organizations torg ON trader.organization_id = torg.id
-  `;
-  const params = [];
-
-  // Security: Trader can ONLY see their own certificates
+  const instFilter = {};
   if (role === ROLES.TRADER) {
-    query += ' WHERE i.owner_id = ?';
-    params.push(actorId);
+    instFilter.owner_id = actorId;
   } else if (owner_id) {
-    query += ' WHERE i.owner_id = ?';
-    params.push(owner_id);
+    instFilter.owner_id = owner_id;
   }
 
-  query += ' ORDER BY c.created_at DESC';
-  const certs = await db.prepare(query).all(...params);
-  res.json(certs);
+  const instruments = await Instrument.find(instFilter).lean();
+  const instIds = instruments.map(i => i.id);
+  const instMap = new Map(instruments.map(i => [i.id, i]));
+
+  const certFilter = instIds.length > 0 ? { instrument_id: { $in: instIds } } : (role === ROLES.TRADER || owner_id ? { id: '__none__' } : {});
+  const certificates = await Certificate.find(certFilter).sort({ created_at: -1 }).lean();
+
+  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
+  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
+  const catMap = new Map(categories.map(c => [c.id, c.name]));
+
+  const ownerIds = [...new Set(instruments.map(i => i.owner_id).filter(Boolean))];
+  const traders = await User.find({ id: { $in: ownerIds } }).lean();
+  const traderMap = new Map(traders.map(u => [u.id, u]));
+
+  const orgIds = [...new Set(traders.map(u => u.organization_id).filter(Boolean))];
+  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
+  const orgMap = new Map(orgs.map(o => [o.id, o.name]));
+
+  const result = certificates.map(c => {
+    const inst = instMap.get(c.instrument_id) || {};
+    const trader = traderMap.get(inst.owner_id) || {};
+    const org = trader.organization_id ? orgMap.get(trader.organization_id) : null;
+
+    return {
+      ...c,
+      manufacturer: inst.manufacturer || null,
+      model: inst.model || null,
+      serial_number: inst.serial_number || null,
+      max_capacity: inst.max_capacity || null,
+      location: inst.location || null,
+      owner_id: inst.owner_id || null,
+      category_name: catMap.get(inst.category_id) || null,
+      owner_name: trader.full_name || null,
+      owner_org: org || null
+    };
+  });
+
+  res.json(result);
 });
 
 // Get Single Certificate
 app.get('/api/certificates/:id', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  const cert = await db.prepare(`
-    SELECT c.*, i.manufacturer, i.model, i.serial_number, i.max_capacity, i.min_capacity,
-           i.verification_scale_interval_e, i.location, i.owner_id,
-           cat.name as category_name,
-           trader.full_name as owner_name, torg.name as owner_org,
-           v.remarks as verification_remarks, v.completed_at as verification_date,
-           u.full_name as verifier_name
-    FROM certificates c
-    JOIN instruments i ON c.instrument_id = i.id
-    JOIN instrument_categories cat ON i.category_id = cat.id
-    JOIN users trader ON i.owner_id = trader.id
-    LEFT JOIN organizations torg ON trader.organization_id = torg.id
-    LEFT JOIN verifications v ON c.verification_id = v.id
-    LEFT JOIN users u ON v.verifier_id = u.id
-    WHERE c.id = ? OR c.certificate_no = ?
-  `).get(req.params.id, req.params.id);
+  const cert = await Certificate.findOne({
+    $or: [{ id: req.params.id }, { certificate_no: req.params.id }]
+  }).lean();
 
   if (!cert) return res.status(404).json({ error: 'Certificate not found' });
 
+  const inst = await Instrument.findOne({ id: cert.instrument_id }).lean();
+  const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const trader = inst ? await User.findOne({ id: inst.owner_id }).lean() : null;
+  const org = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
+  const verif = await Verification.findOne({ id: cert.verification_id }).lean();
+  const verifier = verif ? await User.findOne({ id: verif.verifier_id }).lean() : null;
+
   // Security check: Trader can only view their own certificate
-  if (role === ROLES.TRADER && cert.owner_id !== actorId) {
+  if (role === ROLES.TRADER && inst && inst.owner_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: You do not have permission to view this certificate.' });
   }
 
@@ -1224,7 +1492,23 @@ app.get('/api/certificates/:id', async (req, res) => {
     certificate_no: cert.certificate_no
   });
 
-  res.json(cert);
+  res.json({
+    ...cert,
+    manufacturer: inst ? inst.manufacturer : null,
+    model: inst ? inst.model : null,
+    serial_number: inst ? inst.serial_number : null,
+    max_capacity: inst ? inst.max_capacity : null,
+    min_capacity: inst ? inst.min_capacity : null,
+    verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+    location: inst ? inst.location : null,
+    owner_id: inst ? inst.owner_id : null,
+    category_name: cat ? cat.name : null,
+    owner_name: trader ? trader.full_name : null,
+    owner_org: org ? org.name : null,
+    verification_remarks: verif ? verif.remarks : null,
+    verification_date: verif ? verif.completed_at : null,
+    verifier_name: verifier ? verifier.full_name : null
+  });
 });
 
 // ==========================================
@@ -1243,19 +1527,7 @@ app.get('/api/public/verify/:token', async (req, res) => {
   }
 
   // Query certificate by public_token (guaranteed unique, non-guessable UUID)
-  const cert = await db.prepare(`
-    SELECT c.certificate_no, c.public_token, c.issue_date, c.valid_until, c.status as stored_status,
-           c.issuing_officer, c.issuing_authority,
-           i.manufacturer, i.model, i.serial_number, i.max_capacity, i.verification_scale_interval_e,
-           cat.name as category_name, cat.code as category_code,
-           torg.name as business_name, torg.jurisdiction as operational_jurisdiction
-    FROM certificates c
-    JOIN instruments i ON c.instrument_id = i.id
-    JOIN instrument_categories cat ON i.category_id = cat.id
-    JOIN users trader ON i.owner_id = trader.id
-    LEFT JOIN organizations torg ON trader.organization_id = torg.id
-    WHERE c.public_token = ?
-  `).get(token.trim());
+  const cert = await Certificate.findOne({ public_token: token.trim() }).lean();
 
   if (!cert) {
     return res.status(404).json({
@@ -1264,11 +1536,16 @@ app.get('/api/public/verify/:token', async (req, res) => {
     });
   }
 
+  const inst = await Instrument.findOne({ id: cert.instrument_id }).lean();
+  const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const trader = inst ? await User.findOne({ id: inst.owner_id }).lean() : null;
+  const torg = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
+
   // Calculate live statutory validity based on date
   const now = new Date();
   const validUntilDate = new Date(cert.valid_until);
   const isExpired = validUntilDate < now;
-  const liveStatus = isExpired ? 'EXPIRED' : (cert.stored_status === 'VALID' ? 'VALID' : cert.stored_status);
+  const liveStatus = isExpired ? 'EXPIRED' : (cert.status === 'VALID' ? 'VALID' : cert.status);
 
   // Log public verification inquiry into audit trail
   try {
@@ -1281,7 +1558,6 @@ app.get('/api/public/verify/:token', async (req, res) => {
   }
 
   // Return strictly public, sanitized verification payload
-  // Zero private personal info (no phone, personal email, or private address)
   res.json({
     status: liveStatus,
     certificate_no: cert.certificate_no,
@@ -1290,20 +1566,20 @@ app.get('/api/public/verify/:token', async (req, res) => {
     valid_until: cert.valid_until,
     is_expired: isExpired,
     instrument: {
-      category: cert.category_name,
-      manufacturer: cert.manufacturer,
-      model: cert.model,
-      serial_number: cert.serial_number,
-      max_capacity: cert.max_capacity,
-      verification_scale_interval_e: cert.verification_scale_interval_e
+      category: cat ? cat.name : 'Weighing Instrument',
+      manufacturer: inst ? inst.manufacturer : null,
+      model: inst ? inst.model : null,
+      serial_number: inst ? inst.serial_number : null,
+      max_capacity: inst ? inst.max_capacity : null,
+      verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null
     },
     verification_authority: {
       officer: cert.issuing_officer,
       authority: cert.issuing_authority,
-      jurisdiction: cert.operational_jurisdiction
+      jurisdiction: torg ? torg.jurisdiction : 'National Capital Territory of Delhi'
     },
     business: {
-      enterprise_name: cert.business_name || 'Authorized Commercial Establishment'
+      enterprise_name: torg ? torg.name : 'Authorized Commercial Establishment'
     },
     verification_statement: 'Matched and authenticated against the official Department of Consumer Affairs Legal Metrology digital ledger.'
   });
@@ -1318,16 +1594,16 @@ app.get('/api/audit-logs', async (req, res) => {
   if (!hasPermission(role, 'VIEW_AUDIT_LOGS')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot view audit logs.` });
   }
-  const logs = await db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 50').all();
+  const logs = await AuditLog.find().sort({ created_at: -1 }).limit(50).lean();
   res.json(logs);
 });
 
 app.get('/api/stats', async (req, res) => {
-  const totalInstruments = parseInt((await db.prepare('SELECT COUNT(*) as count FROM instruments').get()).count || 0, 10);
-  const pendingApplications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('SUBMITTED', 'UNDER_REVIEW')").get()).count || 0, 10);
-  const assignedApplications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status = 'ASSIGNED'").get()).count || 0, 10);
-  const inProgressApplications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status = 'IN_PROGRESS'").get()).count || 0, 10);
-  const completedVerifications = parseInt((await db.prepare("SELECT COUNT(*) as count FROM applications WHERE status IN ('VERIFICATION_COMPLETED', 'VERIFICATION_FAILED')").get()).count || 0, 10);
+  const totalInstruments = await Instrument.countDocuments();
+  const pendingApplications = await Application.countDocuments({ status: { $in: ['SUBMITTED', 'UNDER_REVIEW'] } });
+  const assignedApplications = await Application.countDocuments({ status: 'ASSIGNED' });
+  const inProgressApplications = await Application.countDocuments({ status: 'IN_PROGRESS' });
+  const completedVerifications = await Application.countDocuments({ status: { $in: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] } });
 
   res.json({
     totalInstruments,
@@ -1366,10 +1642,10 @@ const server = app.listen(PORT, HOST, () => {
 // Graceful Shutdown on SIGTERM / SIGINT
 const gracefulShutdown = (signal) => {
   console.log(`\nReceived ${signal}. Shutting down gracefully...`);
-  server.close(() => {
+  server.close(async () => {
     console.log('HTTP server closed.');
     try {
-      db.close();
+      await disconnectMongo();
       console.log('Database connection closed.');
     } catch (e) {
       console.error('Error closing database:', e.message);
