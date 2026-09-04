@@ -77,15 +77,21 @@ const defaultOrigins = [
   'http://127.0.0.1:3000'
 ];
 const envOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(',').map(u => u.trim())
+  ? process.env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/+$/, ''))
   : [];
 const allowedOrigins = new Set([...defaultOrigins, ...envOrigins]);
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow non-browser requests, same-origin, or whitelisted frontend origins
+    // Allow non-browser requests, same-origin, whitelisted frontend origins, or Vercel
     if (!origin) return callback(null, true);
-    if (allowedOrigins.has(origin) || process.env.NODE_ENV !== 'production') {
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    if (
+      allowedOrigins.has(cleanOrigin) ||
+      allowedOrigins.has(origin) ||
+      process.env.NODE_ENV !== 'production' ||
+      cleanOrigin.endsWith('.vercel.app')
+    ) {
       return callback(null, true);
     }
     return callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
