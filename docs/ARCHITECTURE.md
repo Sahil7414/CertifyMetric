@@ -1,6 +1,6 @@
-# System Architecture
+# System Architecture & Technical Design
 
-This document describes the actual runtime architecture, data flows, and technical components implemented in the CertifyMetric platform (`SIH26036`).
+This document describes the runtime architecture, data flows, statutory state machines, and technical components of the CertifyMetric platform (`SIH26036`).
 
 ---
 
@@ -9,50 +9,55 @@ This document describes the actual runtime architecture, data flows, and technic
 ```mermaid
 graph TD
     %% User Personas
-    subgraph Users ["Statutory Personas & Citizens"]
-        Trader["Trader / Manufacturer"]
+    subgraph Users ["Statutory Roles & Public Users"]
+        Trader["Trader / Instrument Owner"]
         Authority["Legal Metrology Officer (Authority)"]
         Verifier["Field Verifier / Inspector"]
         GATC["GATC Testing Laboratory"]
         Admin["Platform Administrator"]
-        PublicCitizen["Public Consumer / Citizen (QR Scan)"]
+        PublicCitizen["Public Citizen / Consumer (QR Scan)"]
     end
 
     %% Frontend Layer
     subgraph ClientApp ["Frontend Client (React 19 + Vite SPA)"]
-        Router["Route & Session Guard (App.jsx)"]
-        LoginView["Login & 1-Click Demo Selector"]
+        Router["Route & Role Guard (App.jsx)"]
+        Sidebar["Collapsible AppSidebar & TopHeader"]
+        LoginView["Login & 1-Click Role Switcher"]
         TraderDash["Trader Dashboard & Registry"]
-        AuthDash["Operations Dashboard & Review"]
-        VerifierWS["Verification Workspace Wizard (5-Step)"]
+        ApplyView["Dedicated Multi-Step Apply Verification (5 Steps)"]
+        AppModal["Application Details Modal (Particulars & Returns)"]
+        AppTimeline["Application Lifecycle Stepper & Specs"]
+        AuthDash["Operations Review & Load-Balanced Assignment"]
+        VerifierWS["Verification Workspace Wizard (5-Step MPE)"]
+        GatcWS["GATC Lab Testing Workspace"]
         CertViewer["Official Form 6 Certificate Viewer"]
         PublicVerify["Public Verification View (/verify/:token)"]
-        ApiClient["API Client & Bearer Token Manager (api.js)"]
-        QREngine["Client QR Generator (qrcode npm)"]
+        ApiClient["Centralized API Client (api.js)"]
+        QREngine["Client QR Generator (qrcode)"]
     end
 
     %% Backend Layer
     subgraph ServerApp ["Backend REST API (Node.js + Express)"]
         AuthMiddleware["Session & RBAC Middleware (getActor)"]
-        AuthEndpoints["/api/auth (Login, Logout, Users)"]
+        AuthEndpoints["/api/auth (Login, Logout, Me, Seed Switch)"]
         InstrumentAPI["/api/instruments (Registry CRUD)"]
-        ApplicationAPI["/api/applications (Review, Assign, Transition)"]
-        VerificationAPI["/api/verifications (Cases, Readings, Evidence, Submit)"]
-        CertificateAPI["/api/certificates (Generate, List, Form 6)"]
-        PublicVerifyAPI["/api/public/verify/:token (Unauthenticated Lookup)"]
+        ApplicationAPI["/api/applications (Apply, Calculate Fee, Review, Assign, Return, Resubmit)"]
+        VerificationAPI["/api/verifications (Readings, Checklist, Seals, Evidence)"]
+        CertificateAPI["/api/certificates (Generate, Form 6, QR Verification)"]
+        PublicVerifyAPI["/api/public/verify/:token (Statutory Unauthenticated Lookup)"]
         AuditAPI["/api/audit-logs & /api/stats"]
         MulterStorage["Multer Disk Storage (/uploads/evidence)"]
     end
 
     %% Data Storage Layer
-    subgraph Persistence ["Data Storage Layer (Node.js Native SQLite)"]
-        DB[(metrology.db)]
-        UsersTable["users & user_sessions"]
-        InstrumentsTable["instruments & categories & rule_sets"]
-        AppsTable["applications, assignments, appointments"]
-        VerificationsTable["verifications, readings, checklist, evidence"]
-        CertsTable["certificates"]
-        AuditTable["audit_logs"]
+    subgraph Persistence ["Data Persistence Layer (MongoDB Atlas / Mongoose)"]
+        MongoAtlas[(MongoDB Atlas / Local MongoDB)]
+        UsersCol["Users & UserSessions"]
+        InstrumentsCol["Instruments & InstrumentCategories & RuleSets"]
+        AppsCol["Applications, Assignments, Appointments"]
+        VerifsCol["Verifications, VerificationReadings, VerificationEvidence"]
+        CertsCol["Certificates"]
+        AuditCol["AuditLogs"]
         EvidenceFS["File System: server/uploads/evidence"]
     end
 
@@ -65,15 +70,21 @@ graph TD
     PublicCitizen -->|Scans QR (No Auth)| PublicVerify
 
     LoginView --> Router
-    Router --> TraderDash
-    Router --> AuthDash
-    Router --> VerifierWS
-    Router --> CertViewer
-    Router --> PublicVerify
+    Router --> Sidebar
+    Sidebar --> TraderDash
+    Sidebar --> ApplyView
+    Sidebar --> AuthDash
+    Sidebar --> VerifierWS
+    Sidebar --> GatcWS
+    Sidebar --> CertViewer
+    TraderDash --> AppModal
+    TraderDash --> AppTimeline
 
     TraderDash --> ApiClient
+    ApplyView --> ApiClient
     AuthDash --> ApiClient
     VerifierWS --> ApiClient
+    GatcWS --> ApiClient
     CertViewer --> ApiClient
     CertViewer --> QREngine
     PublicVerify --> ApiClient
@@ -90,39 +101,83 @@ graph TD
     AuthMiddleware --> AuditAPI
 
     %% Server to Persistence
-    AuthEndpoints --> UsersTable
-    InstrumentAPI --> InstrumentsTable
-    ApplicationAPI --> AppsTable
-    VerificationAPI --> VerificationsTable
+    AuthEndpoints --> UsersCol
+    InstrumentAPI --> InstrumentsCol
+    ApplicationAPI --> AppsCol
+    VerificationAPI --> VerifsCol
     VerificationAPI --> MulterStorage
     MulterStorage --> EvidenceFS
-    CertificateAPI --> CertsTable
-    PublicVerifyAPI --> CertsTable
-    PublicVerifyAPI --> InstrumentsTable
-    PublicVerifyAPI --> VerificationsTable
-    ServerApp --> AuditTable
+    CertificateAPI --> CertsCol
+    PublicVerifyAPI --> CertsCol
+    PublicVerifyAPI --> InstrumentsCol
+    PublicVerifyAPI --> VerifsCol
+    ServerApp --> AuditCol
 ```
 
 ---
 
-## 2. Layer Descriptions
+## 2. Statutory State Machine
 
-### 2.1 Client Application Layer (`client/`)
-* **Technology**: React 19 SPA powered by Vite 8 with Tailwind CSS.
-* **Component Architecture**: Modular view components (`views/`) wrapped by a central state router (`App.jsx`) and consistent government branding navigation (`Navbar.jsx`).
-* **Session Management**: JWT-style session tokens stored in `localStorage` and dispatched via `Authorization: Bearer <token>` on all mutation requests.
-* **No Direct Role Overrides**: User role is derived strictly from the authenticated database payload, locking client tabs to designated authority.
-* **QR Engine**: Client-side rendering of scannable SVG and data URIs via the `qrcode` library, pointing to `/verify/:token`.
+The verification application transitions across standardized statutory states:
 
-### 2.2 API & Business Logic Layer (`server/`)
-* **Technology**: Express.js running on Node.js v22 (ES Modules).
-* **Actor Resolution (`getActor`)**: Authenticates Bearer tokens against `user_sessions` and resolves the authoritative user record directly from the `users` SQLite table.
-* **Strict Role-Based Access Control**: Rejects privilege elevation attacks. For example, a Trader token attempting to review applications or query audit logs receives `HTTP 403 Forbidden`.
-* **Statutory State Machine**:
-  `SUBMITTED` $\rightarrow$ `UNDER_REVIEW` $\rightarrow$ `ASSIGNED` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `PASSED` / `FAILED` $\rightarrow$ `CERTIFICATE_ISSUED`.
-* **Evidence Ingestion**: Uses `multer.diskStorage` to validate and store timestamped inspection photographs and calibration certificates on disk.
+```mermaid
+stateDiagram-v2
+    [*] --> SUBMITTED: Trader files verification request
+    SUBMITTED --> PAYMENT_PENDING: Statutory Fee calculated
+    PAYMENT_PENDING --> UNDER_REVIEW: Fee paid (Online / Challan)
+    UNDER_REVIEW --> RETURNED: Officer identifies deficiency (Return Reason)
+    RETURNED --> UNDER_REVIEW: Trader rectifies & resubmits
+    UNDER_REVIEW --> REJECTED: Ineligible on statutory grounds
+    UNDER_REVIEW --> ASSIGNED: Officer assigns Verifier / GATC Lab
+    ASSIGNED --> IN_PROGRESS: Verifier opens inspection case
+    IN_PROGRESS --> VERIFICATION_COMPLETED: Inspection PASSED within MPE
+    IN_PROGRESS --> VERIFICATION_FAILED: Inspection FAILED MPE limits
+    VERIFICATION_COMPLETED --> CERTIFICATE_ISSUED: Authority sign-off & Form 6 issued
+    CERTIFICATE_ISSUED --> [*]
+```
 
-### 2.3 Data Storage Layer (`server/metrology.db`)
-* **Technology**: SQLite managed through Node.js native `node:sqlite` (`DatabaseSync`).
-* **Direct Prepared Statements**: Zero ORM overhead. All queries use parameterized statements (`db.prepare(...).run/get/all`) providing native protection against SQL injection.
-* **Audit Trail**: Every significant business mutation (login, instrument creation, application assignment, inspection submission, certificate generation) writes an immutable record to the `audit_logs` table.
+---
+
+## 3. Core Component Subsystems
+
+### 3.1 Trader Experience & Kerala LMOMS Alignment
+* **Instrument Management**: Registration with manufacturer, model, capacity, verification scale interval ($e$), and location.
+* **Full-Page Verification Flow (`ApplyVerificationView.jsx`)**:
+  1. *Step 1*: Instrument Selection (Existing or New).
+  2. *Step 2*: Verification Type & Mode (Original vs Re-verification; In-Situ vs Camp).
+  3. *Step 3*: Document & Invoice Upload.
+  4. *Step 4*: Schedule V Fee Breakdown calculation.
+  5. *Step 5*: Payment authorization & instant tracking.
+* **Application Details Modal (`ApplicationDetailsModal.jsx`)**:
+  * Rich inspection modal showing complete technical parameters, payment transaction reference, attached documents, and officer deficiency remarks.
+  * Direct one-click **"Resubmit Application"** trigger that carries existing application data for rectification without additional fees.
+
+### 3.2 Authority Operations & Load Balancing (`ApplicationReview.jsx`)
+* Review of technical eligibility against statutory categories.
+* Automated load-balanced allocator with manual authority override.
+* Statutory actions:
+  * **Approve & Assign**: Moves to active inspection.
+  * **Return for Rectification**: Captures mandatory deficiency remarks sent to the trader.
+  * **Reject Application**: Closes application with statutory legal grounds.
+
+### 3.3 Verifier Inspection Engine (`VerificationWorkspace.jsx`)
+* Multi-point nominal test matrix: $0, \text{Min}, \frac{1}{4}\text{Max}, \frac{1}{2}\text{Max}, \text{Max}$.
+* Eccentricity and repeatability testing.
+* Automated Maximum Permissible Error (MPE) comparison.
+* Photo evidence logging for physical lead/security seals and nameplates.
+
+### 3.4 Official Form 6 Digital Certificate (`OfficialCertificate.jsx` & `PublicVerify.jsx`)
+* Conforms to Form 6 statutory format under the Legal Metrology (General) Rules, 2011.
+* Includes dynamic cryptographic QR token resolving to `/verify/:token` for instant public validation.
+
+---
+
+## 4. Database Schema (Mongoose Models)
+
+* **`User`**: User credentials, role (`TRADER`, `AUTHORITY`, `VERIFIER`, `GATC`, `ADMIN`), organization reference, jurisdiction.
+* **`Instrument`**: Make, model, serial number, category, capacity, scale interval $e$, location, verification status.
+* **`Application`**: Application number, instrument ID, trader ID, verification type, mode, status, return reason, fee breakdown, payment particulars, documents.
+* **`Assignment`**: Allocation to officer or GATC laboratory, assignment mode, override flags.
+* **`Verification`**: Test points, nominal readings, calculated error, MPE pass/fail determination, physical seal numbers, photo evidence.
+* **`Certificate`**: Form 6 certificate number, validity period, cryptographic public verification token.
+* **`AuditLog`**: Immutable audit logs capturing actor, action, timestamp, IP, and state diffs.

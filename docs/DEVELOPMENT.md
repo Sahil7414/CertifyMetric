@@ -1,98 +1,73 @@
 # Contributor Development Guidelines
 
-This document outlines standard conventions, architectural rules, and engineering practices for contributors working on the CertifyMetric codebase.
+This document outlines conventions, architectural invariants, and engineering best practices for contributors working on the **CertifyMetric** codebase (`SIH26036`).
 
 ---
 
 ## 1. Branching & Commit Conventions
 
 ### 1.1 Branch Naming
-* **Feature Branches**: `feat/<short-description>` (e.g. `feat/reverification-scheduler`)
-* **Bug Fixes**: `fix/<short-description>` (e.g. `fix/mpe-rounding-error`)
-* **MVP Slices**: `slice/<slice-number>-<name>` (e.g. `slice/5-reverification`)
-* **Documentation**: `docs/<short-description>` (e.g. `docs/api-spec`)
+* **Feature Branches**: `feat/<feature-name>` (e.g., `feat/trader-verification-flow`)
+* **Bug Fixes**: `fix/<bug-description>` (e.g., `fix/fee-calculation-rounding`)
+* **Refactoring**: `refactor/<component>` (e.g., `refactor/application-details-modal`)
+* **Documentation**: `docs/<topic>` (e.g., `docs/api-specifications`)
 
-### 1.2 Commit Messages
-Follow the Conventional Commits specification:
+### 1.2 Commit Messages (Conventional Commits)
 ```
 <type>(<scope>): <subject>
 
-[optional body]
+[optional body explaining rationale]
 ```
-* `feat`: A new user-facing feature or API endpoint.
-* `fix`: A bug fix in logic or UI.
+* `feat`: A new user-facing feature or statutory workflow enhancement.
+* `fix`: A bug fix or layout correction.
 * `docs`: Documentation updates only.
-* `refactor`: Code change that neither fixes a bug nor adds a feature.
-* `test`: Adding or correcting tests.
-* `chore`: Build process, dependencies, or tooling adjustments.
+* `refactor`: Code refactoring without behavioral alterations.
+* `test`: Adding or updating test suites.
+* `chore`: Dependency updates, tooling, or build configuration.
 
 ---
 
 ## 2. Code Organization & Responsibilities
 
-| Code Location | Layer | Responsibility |
+| Code Location | Layer | Primary Responsibility |
 | :--- | :--- | :--- |
-| `client/src/views/` | Frontend | Top-level screen views (e.g. `TraderDashboard.jsx`, `VerificationWorkspace.jsx`). |
-| `client/src/components/` | Frontend | Reusable UI components (e.g. `Navbar.jsx`, `StatusBadge.jsx`, `QRCodeModal.jsx`). |
-| `client/src/api.js` | Frontend | Centralized API client. All `fetch` requests must be made here, never inline in components. |
-| `server/server.js` | Backend | Express route handlers, input validation, and business workflow state machine. |
-| `server/db.js` | Backend | Database schema initialization, table migrations, and sample seed data. |
-| `server/auth-utils.js` | Backend | Cryptographic password hashing and verification (`scryptSync`). |
-| `server/permissions.js` | Backend | RBAC permission matrix and role validation helpers. |
-| `server/uploads/` | Backend | Static file storage for physical test evidence photos. |
+| `client/src/views/` | Frontend Views | Screen-level components (`TraderDashboard.jsx`, `ApplyVerificationView.jsx`, `ApplicationsList.jsx`, `ApplicationTimeline.jsx`, `VerificationWorkspace.jsx`). |
+| `client/src/components/` | Frontend Components | Reusable components (`AppSidebar.jsx`, `TopHeader.jsx`, `ApplicationDetailsModal.jsx`, `StatusBadge.jsx`, `QRCodeModal.jsx`). |
+| `client/src/api.js` | Frontend API Layer | Centralized API client. All network calls must go through `api.js`. |
+| `server/server.js` | Backend Controller | Express route handlers, business state transitions, and error handling. |
+| `server/models/index.js` | Backend Models | Mongoose schemas and database models for MongoDB. |
+| `server/permissions.js` | Backend Security | Role-Based Access Control (RBAC) permission matrices. |
+| `server/auth-utils.js` | Backend Security | Cryptographic `scrypt` password hashing and verification. |
+| `server/scripts/seedDemoUsers.js` | Database Seeder | Database initializers and mock data generation. |
 
 ---
 
-## 3. Database Schema & Migration Rules
+## 3. Statutory Verification & State Invariants
 
-1. **Non-Destructive Migrations**:
-   SQLite does not have an automated ORM migration runner. When adding columns:
-   ```javascript
-   const cols = db.prepare("PRAGMA table_info(my_table)").all().map(c => c.name);
-   if (!cols.includes('new_column')) {
-     db.exec("ALTER TABLE my_table ADD COLUMN new_column TEXT");
-   }
-   ```
-2. **Never Drop or Truncate In Production**:
-   Do not execute `DROP TABLE` in automatic startup scripts.
-3. **Always Use Prepared Statements**:
-   Never concatenate SQL strings with user input:
-   ```javascript
-   // ✔ CORRECT:
-   db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-
-   // ❌ FORBIDDEN:
-   db.prepare(`SELECT * FROM users WHERE email = '${email}'`).get();
-   ```
+1. **Strict RBAC Enforcement**:
+   - Every protected API route must validate user roles using `getActor(req)`.
+   - Never trust client-supplied role claims.
+2. **Statutory Return Clarification Workflow**:
+   - An authority officer returning an application **must** supply mandatory `return_reason` remarks.
+   - Resubmission by a trader resets the state to `UNDER_REVIEW` without requiring re-payment of statutory fees.
+3. **MPE Calculation Tolerance**:
+   - Verification error must be strictly validated against the Maximum Permissible Error (MPE) thresholds defined in Schedule V of the Legal Metrology General Rules, 2011.
+4. **Form 6 Certificate Cryptographic QR**:
+   - Official certificates must generate a verifiable public token that can be looked up anonymously on `/api/public/verify/:token`.
+   - Public verification endpoints must **never** expose applicant PII (phone numbers, emails, passwords).
+5. **Immutable Audit Logging**:
+   - Every significant state mutation (application creation, return, assignment, test completion, certificate issuance) must invoke `logAudit(...)`.
 
 ---
 
-## 4. Authentication & Security Invariants
+## 4. Quality Assurance & Build Verification
 
-1. **Authoritative Server Role Lookup**:
-   Never trust a client-supplied role claim. Always resolve the user role from `getActor(req)` using the database record or session token.
-2. **Zero Plaintext Passwords**:
-   All user passwords must be hashed using `hashPassword()` (`crypto.scryptSync` with unique 16-byte salt) before writing to `users.password_hash`.
-3. **Public Route Privacy**:
-   The public certificate verification endpoint (`/api/public/verify/:token`) must **NEVER** expose personal identifiable information (PII) such as phone numbers, emails, trader user IDs, or internal verification primary keys.
-4. **Never Commit Secrets**:
-   Do not commit API tokens, production passwords, or sensitive keys to git. Use environment variables.
+Before submitting code:
+```bash
+# 1. Validate frontend build
+npm --prefix client run build
 
----
-
-## 5. Testing & Quality Assurance
-
-Before submitting any Pull Request:
-1. **Frontend Build Validation**:
-   ```bash
-   cd client
-   npm run build
-   ```
-   Must complete with `0` errors.
-2. **Backend Regression Test**:
-   Ensure existing demo logins and verification workflows pass:
-   ```bash
-   node server/seed-demo-users.js
-   ```
-3. **Audit Log Invariant**:
-   Any new business state mutation (e.g. status changes, assignments, approvals) must record an entry via `logAudit(...)`.
+# 2. Verify backend startup and seeding
+node server/scripts/seedDemoUsers.js
+```
+The frontend build must complete with `0` errors.

@@ -1,140 +1,106 @@
-# Local Machine Setup & Installation Guide
+# Local Setup & Installation Manual
 
-This guide describes how to set up, configure, seed, and run the CertifyMetric Legal Metrology Platform (`SIH26036`) from scratch on a clean developer machine.
+This guide walks through configuring, seeding, and running the **CertifyMetric** Legal Metrology Verification Platform (`SIH26036`) on a local machine.
 
 ---
 
-## 1. Prerequisites
+## 1. System Requirements
 
-Ensure your development environment meets the following minimum requirements:
-
-* **Node.js**: `v22.5.0` or higher (Required for native `node:sqlite` `DatabaseSync` support without native compilation tools).
+* **Node.js**: `v20.0.0` or higher
   * Check version: `node -v`
-* **npm**: `v10.0.0` or higher (Bundled with Node.js).
+* **npm**: `v10.0.0` or higher
   * Check version: `npm -v`
-* **Git**: `v2.30.0` or higher.
+* **MongoDB**: A running local MongoDB daemon (`mongodb://127.0.0.1:27017/certifymetric`) or a MongoDB Atlas cloud URI.
 * **Operating System**: Windows 10/11, macOS, or Linux.
 
 ---
 
-## 2. Clone the Repository
+## 2. Clone Repository & Install Dependencies
 
 ```bash
-git clone <repository-url>
-cd SIH26036
+# Clone repository
+git clone https://github.com/Sahil7414/CertifyMetric.git
+cd CertifyMetric
+
+# 1. Install root dependencies
+npm install
+
+# 2. Install server backend dependencies
+npm --prefix server install
+
+# 3. Install client frontend dependencies
+npm --prefix client install
 ```
 
 ---
 
-## 3. Install Dependencies
+## 3. Environment Setup
 
-The project is structured into a root coordinator, a React frontend (`client/`), and an Express backend (`server/`). Install dependencies in all three layers:
+Copy the example environment templates:
 
 ```bash
-# 1. Install root dependencies (concurrent process manager)
-npm install
+# Server configuration
+cp server/.env.example server/.env
 
-# 2. Install backend dependencies
-cd server
-npm install
-cd ..
-
-# 3. Install frontend dependencies
-cd client
-npm install
-cd ..
+# Client configuration
+cp client/.env.example client/.env.local
 ```
+
+### Key Environment Settings
+
+**`server/.env`**:
+* `PORT`: `4000`
+* `MONGODB_URI`: `mongodb+srv://...` (or `mongodb://localhost:27017/certifymetric`)
+* `SESSION_SECRET`: Random secure string
+
+**`client/.env.local`**:
+* `VITE_API_URL`: `http://localhost:4000/api`
 
 ---
 
 ## 4. Initialize Database & Seed Demo Accounts
 
-The SQLite database (`server/metrology.db`) is automatically initialized and migrated on server boot. To explicitly seed or reset the database and generate demo user credentials:
+Seed statutory reference categories, standard NAWI rule sets, sample applications, and 5 pre-configured demo role accounts:
 
 ```bash
-node server/seed-demo-users.js
+node server/scripts/seedDemoUsers.js
 ```
 
-This command will:
-1. Create all 15 core database tables if they do not already exist.
-2. Run non-destructive column migrations (e.g. `password_hash`, `is_demo`, verification timestamps).
-3. Seed standard legal metrology organizations, instrument categories, MPE rules, and sample test applications.
-4. Hash demo passwords using cryptographic `scrypt` and seed the 5 statutory roles:
-   * **Trader**: `demo.trader@certifymetric.local` (`DemoTrader@2026`)
-   * **Authority**: `demo.authority@certifymetric.local` (`DemoAuthority@2026`)
-   * **Verifier**: `demo.verifier@certifymetric.local` (`DemoVerifier@2026`)
-   * **GATC**: `demo.gatc@certifymetric.local` (`DemoGatc@2026`)
-   * **Platform Admin**: `demo.admin@certifymetric.local` (`DemoAdmin@2026`)
-5. Generate the local `DEMO_CREDENTIALS.md` file in your root workspace.
+This seeds the 5 standard demo accounts:
+* **Trader**: `demo.trader@certifymetric.local` (`DemoTrader@2026`)
+* **Authority**: `demo.authority@certifymetric.local` (`DemoAuthority@2026`)
+* **Verifier**: `demo.verifier@certifymetric.local` (`DemoVerifier@2026`)
+* **GATC**: `demo.gatc@certifymetric.local` (`DemoGatc@2026`)
+* **Admin**: `demo.admin@certifymetric.local` (`DemoAdmin@2026`)
 
 ---
 
-## 5. Start Development Servers
+## 5. Running Development Servers
 
-You can start both the backend API and frontend client concurrently using the root startup script:
+Start both Frontend and Backend concurrently with one command:
 
 ```bash
-# Starts backend on :4000 and frontend on :5173
 node start-dev.js
 ```
 
-Or run them individually in separate terminal windows:
+Or start them individually in separate terminals:
 
-### Terminal 1 — Backend API Server
 ```bash
+# Terminal 1: Backend API (Port 4000)
 cd server
 npm start
-# Server listens at http://localhost:4000
-```
 
-### Terminal 2 — Frontend Client (Vite Dev Server)
-```bash
+# Terminal 2: Frontend SPA (Port 5173)
 cd client
 npm run dev
-# Frontend runs at http://localhost:5173
 ```
+
+Visit **[http://localhost:5173](http://localhost:5173)**.
 
 ---
 
-## 6. Access the Application
+## 6. Verification & Health Probes
 
-* **Frontend Web Application**: Open [http://localhost:5173](http://localhost:5173) in any modern web browser.
-* **1-Click Demo Login**: On the Sign In screen, click any of the 5 demo role buttons (**Trader**, **Authority**, **Verifier**, **GATC**, or **Admin**) to directly log in as that persona.
-* **Public QR Verification Route**: Test unauthenticated public certificate lookup directly at:
-  `http://localhost:5173/verify/<certificate-public-token>`
-  (e.g. `http://localhost:5173/verify/CERT-2026-NAWI-849201`)
-
----
-
-## 7. Run Verification & Integrity Tests
-
-To verify that all backend authentication routes, RBAC rules, and API endpoints are working properly:
-
-```bash
-# Run server authentication & authorization test
-node -e "
-async function test() {
-  const res = await fetch('http://localhost:4000/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'demo.trader@certifymetric.local', password: 'DemoTrader@2026' })
-  });
-  const data = await res.json();
-  console.log('Login Test Status:', res.status, '| Role:', data.user?.role);
-}
-test();
-"
-```
-
----
-
-## 8. Build Production Bundle
-
-To validate the frontend for production packaging:
-
-```bash
-cd client
-npm run build
-```
-
-This compiles optimized HTML, CSS, and JS bundles into `client/dist/`.
+* **API Health**: `GET http://localhost:4000/api/health`
+* **Public QR Verification**: `GET http://localhost:4000/api/public/verify/<token>`
+* **Frontend Build Check**: `npm --prefix client run build`
