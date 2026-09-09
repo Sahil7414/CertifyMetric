@@ -54,7 +54,7 @@ const DEMO_ROLES = [
   }
 ];
 
-export default function LoginView({ onLoginSuccess }) {
+export default function LoginView({ onLoginSuccess, onBackToLanding }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -118,14 +118,34 @@ export default function LoginView({ onLoginSuccess }) {
             <span className="hidden md:inline text-slate-400">|</span>
             <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009</span>
           </div>
-          <span className="text-[11px] text-slate-300 hidden sm:inline">National Compliance Registry</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-300 hidden sm:inline">National Compliance Registry</span>
+            {onBackToLanding && (
+              <button
+                onClick={onBackToLanding}
+                className="text-xs text-amber-300 hover:text-amber-200 font-semibold flex items-center gap-1 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">home</span>
+                Portal Home
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
       {/* 2. Centered Login Card */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
-        <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-5 animate-in fade-in zoom-in-95 duration-200">
-          
+        <div className="w-full max-w-lg bg-white rounded-2xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-5 animate-in fade-in zoom-in-95 duration-200 relative">
+          {onBackToLanding && (
+            <button
+              onClick={onBackToLanding}
+              className="absolute top-5 left-5 text-slate-400 hover:text-primary text-xs font-semibold flex items-center gap-1 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">arrow_back</span>
+              Portal
+            </button>
+          )}
+
           {/* Platform Identity */}
           <div className="text-center space-y-2">
             <div className="w-12 h-12 rounded-xl bg-primary text-white flex items-center justify-center mx-auto shadow-sm">

@@ -6,6 +6,7 @@ export default function InstrumentDetail({
   instrumentId,
   onBack,
   onRequestVerification,
+  onOpenApplyModal,
   onOpenQR,
   onSelectCertificate
 }) {
@@ -65,16 +66,22 @@ export default function InstrumentDetail({
           <div className="flex items-center gap-2">
             {instrument.status === 'REGISTERED' && (
               <button
-                onClick={() => onRequestVerification(instrument.id)}
+                onClick={() => {
+                  if (onOpenApplyModal) onOpenApplyModal(instrument.id);
+                  else if (onRequestVerification) onRequestVerification(instrument.id);
+                }}
                 className="px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-container shadow-xs transition-all flex items-center gap-1.5"
               >
-                <span className="material-symbols-outlined text-[16px]">send</span>
-                Request Verification
+                <span className="material-symbols-outlined text-[16px]">post_add</span>
+                Apply for Verification
               </button>
             )}
             {instrument.status === 'EXPIRING' && (
               <button
-                onClick={() => onRequestVerification(instrument.id)}
+                onClick={() => {
+                  if (onOpenApplyModal) onOpenApplyModal(instrument.id);
+                  else if (onRequestVerification) onRequestVerification(instrument.id);
+                }}
                 className="px-4 py-2 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700 shadow-xs transition-all flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">published_with_changes</span>

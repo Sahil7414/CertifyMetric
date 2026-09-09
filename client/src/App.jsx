@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
+import AuthenticatedLayout from './layouts/AuthenticatedLayout';
 import TraderDashboard from './views/TraderDashboard';
 import InstrumentsList from './views/InstrumentsList';
 import AddInstrumentModal from './views/AddInstrumentModal';
+import ApplyVerificationView from './views/ApplyVerificationView';
+import ApplicationsList from './views/ApplicationsList';
 import InstrumentDetail from './views/InstrumentDetail';
 import ApplicationTimeline from './views/ApplicationTimeline';
 import AuthorityDashboard from './views/AuthorityDashboard';
@@ -13,20 +15,39 @@ import VerificationWorkspace from './views/VerificationWorkspace';
 import CertificatesList from './views/CertificatesList';
 import OfficialCertificate from './views/OfficialCertificate';
 import PublicCertificateVerification from './views/PublicCertificateVerification';
+import PortalLanding from './views/PortalLanding';
+import VendorApplyVerificationView from './views/VendorApplyVerificationView';
 import QRCodeModal from './components/QRCodeModal';
 import LoginView from './views/LoginView';
 import AuditLogView from './views/AuditLogView';
+import GatcDashboard from './views/GatcDashboard';
+import AdminDashboard from './views/AdminDashboard';
 import { api, setApiUser, getStoredAuth } from './api';
+
+const ROLE_ALLOWED_TABS = {
+  TRADER: ['dashboard', 'instruments', 'instrument-detail', 'apply-verification', 'applications', 'application-timeline', 'applications-rejected', 'vendor-apply-tank', 'certificates', 'official-certificate', 'public-qr-verify'],
+  AUTHORITY: ['authority-dashboard', 'applications', 'application-timeline', 'application-review', 'assignment-decision', 'certificates', 'official-certificate', 'audit-logs', 'public-qr-verify'],
+  VERIFIER: ['verifier-dashboard', 'verification-workspace', 'certificates', 'official-certificate', 'public-qr-verify'],
+  GATC: ['gatc-dashboard', 'verification-workspace', 'certificates', 'official-certificate', 'public-qr-verify'],
+  PLATFORM_ADMIN: ['admin-dashboard', 'audit-logs', 'public-qr-verify']
+};
+
+const getInitialRoleTab = (role) => {
+  if (role === 'TRADER') return 'dashboard';
+  if (role === 'AUTHORITY') return 'authority-dashboard';
+  if (role === 'PLATFORM_ADMIN') return 'admin-dashboard';
+  if (role === 'VERIFIER') return 'verifier-dashboard';
+  if (role === 'GATC') return 'gatc-dashboard';
+  return 'dashboard';
+};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredAuth().user);
   const [currentRole, setCurrentRole] = useState(() => getStoredAuth().user?.role || null);
+  const [showLanding, setShowLanding] = useState(() => !getStoredAuth().user);
   const [activeTab, setActiveTab] = useState(() => {
     const role = getStoredAuth().user?.role;
-    if (role === 'TRADER') return 'dashboard';
-    if (role === 'AUTHORITY' || role === 'PLATFORM_ADMIN') return 'authority-dashboard';
-    if (role === 'VERIFIER' || role === 'GATC') return 'verifier-dashboard';
-    return 'dashboard';
+    return getInitialRoleTab(role);
   });
 
   // Public QR Verification Route State (No auth required)
@@ -45,8 +66,11 @@ export default function App() {
   const [selectedApplicationId, setSelectedApplicationId] = useState(null);
   const [selectedCertificateId, setSelectedCertificateId] = useState(null);
 
-  // Modals
+  // Modals & Navigation States
   const [showAddModal, setShowAddModal] = useState(false);
+  const [applyModalInstId, setApplyModalInstId] = useState(null);
+  const [resubmitAppData, setResubmitAppData] = useState(null);
+  const [pendingPaymentAppData, setPendingPaymentAppData] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [qrModalInfo, setQrModalInfo] = useState(null);
 
@@ -88,7 +112,6 @@ export default function App() {
     if (currentUser) {
       api.getMe().then(res => {
         if (!res || !res.user) {
-          // Stale session or expired token from old database: clean up and show login
           handleLogout();
         } else {
           setCurrentUser(res.user);
@@ -125,13 +148,25 @@ export default function App() {
     setCurrentUser(user);
     setCurrentRole(user.role);
     setApiUser(user, token);
+    setShowLanding(false);
 
     // Determine portal / dashboard strictly based on database role:
-    if (user.role === 'TRADER') setActiveTab('dashboard');
-    else if (user.role === 'AUTHORITY' || user.role === 'PLATFORM_ADMIN') setActiveTab('authority-dashboard');
-    else if (user.role === 'VERIFIER' || user.role === 'GATC') setActiveTab('verifier-dashboard');
+    const targetTab = getInitialRoleTab(user.role);
+    setActiveTab(targetTab);
 
     refreshAllData(user);
+  };
+
+  const handleDirectDemoLogin = async (demo) => {
+    try {
+      setLoading(true);
+      const data = await api.login(demo.email, demo.password);
+      handleLoginSuccess(data);
+    } catch (err) {
+      alert(`Demo login failed: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -141,24 +176,31 @@ export default function App() {
     setApiUser(null);
     setCurrentUser(null);
     setCurrentRole(null);
+    setShowLanding(true);
     setInstruments([]);
     setApplications([]);
     setCertificates([]);
   };
 
-  const handleRequestVerification = async (instrumentId) => {
-    try {
-      const res = await api.createApplication({
-        instrument_id: instrumentId,
-        trader_id: currentUser?.id,
-        request_type: 'INITIAL_VERIFICATION'
-      });
-      await refreshAllData();
-      setSelectedApplicationId(res.id);
-      setActiveTab('application-timeline');
-    } catch (err) {
-      alert('Error requesting verification: ' + err.message);
-    }
+  const handleOpenApplyModal = (instrumentId = null) => {
+    setResubmitAppData(null);
+    setPendingPaymentAppData(null);
+    setApplyModalInstId(instrumentId);
+    setActiveTab('apply-verification');
+  };
+
+  const handleOpenResubmit = (app) => {
+    setPendingPaymentAppData(null);
+    setResubmitAppData(app);
+    setApplyModalInstId(app?.instrument_id || null);
+    setActiveTab('apply-verification');
+  };
+
+  const handleOpenPayment = (app) => {
+    setResubmitAppData(null);
+    setPendingPaymentAppData(app);
+    setApplyModalInstId(app?.instrument_id || null);
+    setActiveTab('apply-verification');
   };
 
   // Standalone Public Verification Route (Immediate render, no auth/login or data loading required)
@@ -174,9 +216,28 @@ export default function App() {
     );
   }
 
-  // Render Login Screen if not authenticated
+  // Render Landing Page or Login Screen if not authenticated
   if (!currentUser) {
-    return <LoginView onLoginSuccess={handleLoginSuccess} />;
+    if (showLanding) {
+      return (
+        <PortalLanding
+          onGoToLogin={() => setShowLanding(false)}
+          onTrackApplication={(appNo) => {
+            // Switch to login for secure access to application tracking
+            setShowLanding(false);
+          }}
+          onVerifyCertificate={handleVerifyPublicToken}
+          onDirectDemoLogin={handleDirectDemoLogin}
+        />
+      );
+    }
+
+    return (
+      <LoginView
+        onLoginSuccess={handleLoginSuccess}
+        onBackToLanding={() => setShowLanding(true)}
+      />
+    );
   }
 
   if (loading) {
@@ -191,23 +252,57 @@ export default function App() {
     );
   }
 
+  const handleTabChange = (tab) => {
+    const allowed = ROLE_ALLOWED_TABS[currentRole] || [];
+    if (!allowed.includes(tab)) {
+      console.warn(`Access denied to tab '${tab}' for role '${currentRole}'`);
+      setActiveTab(getInitialRoleTab(currentRole));
+      return;
+    }
+    setActiveTab(tab);
+  };
+
   return (
-    <div className="min-h-screen bg-surface flex flex-col antialiased text-on-surface">
-      {/* Platform Navigation */}
-      <Navbar
+    <>
+      <AuthenticatedLayout
         currentUser={currentUser}
         currentRole={currentRole}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={handleTabChange}
+        onOpenApplyModal={handleOpenApplyModal}
         onOpenAddModal={() => setShowAddModal(true)}
+        onVerifyPublicToken={handleVerifyPublicToken}
         onLogout={handleLogout}
-      />
+        onGoHome={() => handleTabChange(getInitialRoleTab(currentRole))}
+      >
+        {/* LMOMS Vehicle Tank Verification View (Matches Screenshot) */}
+            {activeTab === 'vendor-apply-tank' && (
+              <VendorApplyVerificationView
+                instruments={instruments}
+                onOpenApplyModal={handleOpenApplyModal}
+                onOpenAddModal={() => setShowAddModal(true)}
+              />
+            )}
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* ========================================================
-            TRADER VIEWS: Login -> Dashboard -> Add Instrument -> Request Verification
-           ======================================================== */}
+            {/* Resubmit Rejected Weights/Measures */}
+            {activeTab === 'applications-rejected' && (
+              <ApplicationsList
+                applications={applications.filter(a => a.status === 'FAILED' || a.status === 'REJECTED')}
+                onSelectApplication={(id) => {
+                  setSelectedApplicationId(id);
+                  setActiveTab('application-timeline');
+                }}
+                onOpenApplyModal={handleOpenApplyModal}
+                onSelectCertificate={(id) => {
+                  setSelectedCertificateId(id);
+                  setActiveTab('official-certificate');
+                }}
+              />
+            )}
+
+            {/* ========================================================
+                TRADER VIEWS: Login -> Dashboard -> Add Instrument -> Apply for Verification
+               ======================================================== */}
         {activeTab === 'dashboard' && (
           <TraderDashboard
             currentUser={currentUser}
@@ -215,6 +310,7 @@ export default function App() {
             applications={applications}
             certificates={certificates}
             onOpenAddModal={() => setShowAddModal(true)}
+            onOpenApplyModal={handleOpenApplyModal}
             onSelectInstrument={(id) => {
               setSelectedInstrumentId(id);
               setActiveTab('instrument-detail');
@@ -227,12 +323,45 @@ export default function App() {
               setSelectedCertificateId(id);
               setActiveTab('official-certificate');
             }}
-            onRequestVerification={handleRequestVerification}
+            onResubmitApplication={handleOpenResubmit}
+            onPayApplication={handleOpenPayment}
+            onRequestVerification={handleOpenApplyModal}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
             }}
             onViewAllInstruments={() => setActiveTab('instruments')}
+            onViewAllApplications={() => setActiveTab('applications')}
+            onViewAllCertificates={() => setActiveTab('certificates')}
+          />
+        )}
+
+        {/* Dedicated Full Page: Apply for Statutory Verification */}
+        {activeTab === 'apply-verification' && (
+          <ApplyVerificationView
+            currentUser={currentUser}
+            instruments={instruments}
+            preselectedInstrumentId={applyModalInstId}
+            resubmitApplicationData={resubmitAppData}
+            pendingPaymentApplication={pendingPaymentAppData}
+            onClose={() => {
+              setApplyModalInstId(null);
+              setResubmitAppData(null);
+              setPendingPaymentAppData(null);
+              setActiveTab('dashboard');
+            }}
+            onApplicationCreated={async (newAppId) => {
+              await refreshAllData();
+              setSelectedApplicationId(newAppId);
+              setActiveTab('application-timeline');
+            }}
+            onOpenAddInstrument={() => {
+              setShowAddModal(true);
+            }}
+            onViewApplicationTimeline={(newAppId) => {
+              setSelectedApplicationId(newAppId);
+              setActiveTab('application-timeline');
+            }}
           />
         )}
 
@@ -240,11 +369,12 @@ export default function App() {
           <InstrumentsList
             instruments={instruments}
             onOpenAddModal={() => setShowAddModal(true)}
+            onOpenApplyModal={handleOpenApplyModal}
             onSelectInstrument={(id) => {
               setSelectedInstrumentId(id);
               setActiveTab('instrument-detail');
             }}
-            onRequestVerification={handleRequestVerification}
+            onRequestVerification={handleOpenApplyModal}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
@@ -256,7 +386,8 @@ export default function App() {
           <InstrumentDetail
             instrumentId={selectedInstrumentId}
             onBack={() => setActiveTab('instruments')}
-            onRequestVerification={handleRequestVerification}
+            onRequestVerification={handleOpenApplyModal}
+            onOpenApplyModal={handleOpenApplyModal}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
@@ -268,10 +399,27 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'applications' && (
+          <ApplicationsList
+            applications={applications}
+            onSelectApplication={(id) => {
+              setSelectedApplicationId(id);
+              setActiveTab('application-timeline');
+            }}
+            onOpenApplyModal={handleOpenApplyModal}
+            onSelectCertificate={(id) => {
+              setSelectedCertificateId(id);
+              setActiveTab('official-certificate');
+            }}
+            onResubmitApplication={handleOpenResubmit}
+            onPayApplication={handleOpenPayment}
+          />
+        )}
+
         {activeTab === 'application-timeline' && (
           <ApplicationTimeline
             applicationId={selectedApplicationId}
-            onBack={() => setActiveTab(currentRole === 'AUTHORITY' ? 'authority-dashboard' : 'dashboard')}
+            onBack={() => setActiveTab(currentRole === 'AUTHORITY' ? 'authority-dashboard' : 'applications')}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
@@ -280,6 +428,8 @@ export default function App() {
               setSelectedCertificateId(id);
               setActiveTab('official-certificate');
             }}
+            onResubmitApplication={handleOpenResubmit}
+            onPayApplication={handleOpenPayment}
           />
         )}
 
@@ -358,6 +508,29 @@ export default function App() {
         )}
 
         {/* ========================================================
+            GATC LAB METROLOGY CONSOLE
+           ======================================================== */}
+        {activeTab === 'gatc-dashboard' && (
+          <GatcDashboard
+            currentUser={currentUser}
+            onOpenCase={(appId) => {
+              setSelectedApplicationId(appId);
+              setActiveTab('verification-workspace');
+            }}
+          />
+        )}
+
+        {/* ========================================================
+            PLATFORM ADMIN CONSOLE
+           ======================================================== */}
+        {activeTab === 'admin-dashboard' && (
+          <AdminDashboard
+            currentUser={currentUser}
+            onViewAuditLogs={() => setActiveTab('audit-logs')}
+          />
+        )}
+
+        {/* ========================================================
             VERIFIER VIEWS: Login -> Dashboard -> Assigned Cases -> Open Workspace
            ======================================================== */}
         {activeTab === 'verifier-dashboard' && (
@@ -374,7 +547,7 @@ export default function App() {
           <VerificationWorkspace
             applicationId={selectedApplicationId}
             currentUser={currentUser}
-            onBack={() => setActiveTab('verifier-dashboard')}
+            onBack={() => setActiveTab(currentRole === 'GATC' ? 'gatc-dashboard' : 'verifier-dashboard')}
             onVerificationCompleted={async () => {
               await refreshAllData();
             }}
@@ -391,7 +564,7 @@ export default function App() {
         {activeTab === 'audit-logs' && (
           <AuditLogView />
         )}
-      </main>
+      </AuthenticatedLayout>
 
       {/* Global Add Instrument Modal */}
       {showAddModal && (
@@ -406,6 +579,7 @@ export default function App() {
         />
       )}
 
+
       {/* Global QR Code Inspection Modal */}
       {showQrModal && (
         <QRCodeModal
@@ -414,6 +588,6 @@ export default function App() {
           onNavigateToVerify={handleVerifyPublicToken}
         />
       )}
-    </div>
+    </>
   );
 }

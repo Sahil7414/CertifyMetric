@@ -6,6 +6,8 @@ export default function Navbar({
   activeTab,
   onSelectTab,
   onOpenAddModal,
+  onOpenApplyModal,
+  onVerifyPublicToken,
   onLogout
 }) {
   return (
@@ -19,6 +21,17 @@ export default function Navbar({
           </span>
           <span className="hidden md:inline text-slate-400">|</span>
           <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-slate-300">
+          <span className="hidden sm:inline">Online Management System (SIH 26036)</span>
+          {onVerifyPublicToken && (
+            <button
+              onClick={() => onVerifyPublicToken('e1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b')}
+              className="text-amber-300 hover:text-amber-200 font-semibold underline"
+            >
+              Public QR Verify
+            </button>
+          )}
         </div>
       </div>
 
@@ -36,6 +49,9 @@ export default function Navbar({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-lg tracking-tight text-primary">CertifyMetric</span>
+                <span className="hidden sm:inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                  LMOMS
+                </span>
               </div>
               <p className="text-[11px] text-slate-500 leading-none font-medium mt-0.5">Online Verification & Compliance Platform</p>
             </div>
@@ -57,16 +73,25 @@ export default function Navbar({
                 <button
                   onClick={() => onSelectTab('instruments')}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                    activeTab === 'instruments' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                    activeTab === 'instruments' || activeTab === 'instrument-detail' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">scale</span>
                   My Instruments
                 </button>
                 <button
+                  onClick={() => onSelectTab('applications')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'applications' || activeTab === 'application-timeline' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                  My Applications
+                </button>
+                <button
                   onClick={() => onSelectTab('certificates')}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                    activeTab === 'certificates' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                    activeTab === 'certificates' || activeTab === 'official-certificate' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">workspace_premium</span>
@@ -85,6 +110,15 @@ export default function Navbar({
                 >
                   <span className="material-symbols-outlined text-[18px]">monitoring</span>
                   Operations Dashboard
+                </button>
+                <button
+                  onClick={() => onSelectTab('applications')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'applications' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                  All Applications
                 </button>
                 <button
                   onClick={() => onSelectTab('certificates')}
@@ -112,30 +146,48 @@ export default function Navbar({
                 <button
                   onClick={() => onSelectTab('verifier-dashboard')}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                    activeTab === 'verifier-dashboard' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                    activeTab === 'verifier-dashboard' || activeTab === 'verification-workspace' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[18px]">task_alt</span>
+                  <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
                   Assigned Cases
+                </button>
+                <button
+                  onClick={() => onSelectTab('certificates')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'certificates' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">workspace_premium</span>
+                  Issued Certificates
                 </button>
               </>
             )}
           </nav>
 
-          {/* Right Action: CTA & Profile Badge */}
+          {/* Quick Action Button & User Profile Controls */}
           <div className="flex items-center gap-3">
-            {currentRole === 'TRADER' && (
+            {currentRole === 'TRADER' && onOpenAddModal && (
               <button
                 onClick={onOpenAddModal}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-container transition-all shadow-xs"
+                className="hidden lg:flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition-all border border-slate-300"
               >
                 <span className="material-symbols-outlined text-[16px]">add_circle</span>
-                Add Instrument
+                Register Instrument
               </button>
             )}
 
-            {/* Profile Avatar & Logout Action */}
-            <div className="flex items-center gap-3 pl-2 border-l border-slate-200">
+            {currentRole === 'TRADER' && onOpenApplyModal && (
+              <button
+                onClick={() => onOpenApplyModal(null)}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg text-xs font-bold transition-all shadow-xs"
+              >
+                <span className="material-symbols-outlined text-[16px]">post_add</span>
+                Apply for Verification
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 border-l border-slate-200">
               <div className="flex items-center gap-2">
                 <img
                   src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
@@ -186,6 +238,15 @@ export default function Navbar({
               Instruments
             </button>
             <button
+              onClick={() => onSelectTab('applications')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'applications' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">receipt_long</span>
+              Applications
+            </button>
+            <button
               onClick={() => onSelectTab('certificates')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
                 activeTab === 'certificates' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
@@ -194,13 +255,13 @@ export default function Navbar({
               <span className="material-symbols-outlined text-[15px]">workspace_premium</span>
               Certificates
             </button>
-            {onOpenAddModal && (
+            {onOpenApplyModal && (
               <button
-                onClick={onOpenAddModal}
+                onClick={() => onOpenApplyModal(null)}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 bg-amber-400 text-slate-950 ml-auto shadow-2xs"
               >
-                <span className="material-symbols-outlined text-[15px]">add</span>
-                Add
+                <span className="material-symbols-outlined text-[15px]">post_add</span>
+                Apply
               </button>
             )}
           </>
@@ -216,6 +277,15 @@ export default function Navbar({
             >
               <span className="material-symbols-outlined text-[15px]">monitoring</span>
               Dashboard
+            </button>
+            <button
+              onClick={() => onSelectTab('applications')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'applications' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">receipt_long</span>
+              Applications
             </button>
             <button
               onClick={() => onSelectTab('certificates')}
@@ -246,7 +316,7 @@ export default function Navbar({
                 activeTab === 'verifier-dashboard' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              <span className="material-symbols-outlined text-[15px]">task_alt</span>
+              <span className="material-symbols-outlined text-[15px]">assignment_turned_in</span>
               Assigned Cases
             </button>
             <button

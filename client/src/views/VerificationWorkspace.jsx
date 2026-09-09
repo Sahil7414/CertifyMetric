@@ -215,8 +215,8 @@ export default function VerificationWorkspace({
     }
 
     const confirmMsg = resultOutcome === 'PASS'
-      ? 'Confirm PASS determination? This completes the verification process.'
-      : 'Confirm FAIL determination? The instrument will be marked as REJECTED.';
+      ? 'Confirm submission of PASS verification report to the Legal Metrology Authority for statutory scrutiny?'
+      : 'Confirm submission of FAIL verification report to the Legal Metrology Authority? The report will be forwarded with failure observations.';
 
     if (!window.confirm(confirmMsg)) return;
 
@@ -238,7 +238,7 @@ export default function VerificationWorkspace({
       await loadCase();
       if (onVerificationCompleted) onVerificationCompleted(applicationId);
     } catch (err) {
-      alert('Failed to submit verification result: ' + err.message);
+      alert('Failed to submit verification report: ' + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -266,9 +266,9 @@ export default function VerificationWorkspace({
     );
   }
 
-  const isAssigned = caseData.application_status === 'ASSIGNED';
+  const isAssigned = ['ASSIGNED', 'PENDING_VERIFICATION'].includes(caseData.application_status);
   const isInProgress = caseData.application_status === 'IN_PROGRESS';
-  const isCompleted = ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'].includes(caseData.application_status);
+  const isCompleted = ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED', 'CERTIFICATE_ISSUED'].includes(caseData.application_status);
   const validationErrors = getValidationErrors();
 
   return (
@@ -461,8 +461,9 @@ export default function VerificationWorkspace({
                         </span>
                       </>
                     ) : (
-                      <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200">
-                        Pending Statutory Certificate Generation
+                      <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[15px]">pending_actions</span>
+                        Awaiting Authority Scrutiny & Statutory Issuance
                       </span>
                     )}
                   </div>
@@ -470,26 +471,10 @@ export default function VerificationWorkspace({
 
                 <div className="flex items-center gap-2">
                   {!caseData.certificate_no ? (
-                    <button
-                      onClick={async () => {
-                        try {
-                          setSubmitting(true);
-                          const res = await api.generateCertificate(applicationId);
-                          await loadCase();
-                          if (onVerificationCompleted) onVerificationCompleted();
-                          alert('Certificate Generated Successfully!\nCertificate No: ' + res.certificate.certificate_no);
-                        } catch (err) {
-                          alert('Error generating certificate: ' + err.message);
-                        } finally {
-                          setSubmitting(false);
-                        }
-                      }}
-                      disabled={submitting}
-                      className="px-5 py-2.5 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-md transition-all flex items-center gap-1.5"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">verified</span>
-                      {submitting ? 'Generating Certificate...' : 'Generate Statutory Certificate'}
-                    </button>
+                    <div className="px-3.5 py-2 bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-medium flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] text-amber-600">hourglass_top</span>
+                      <span>Report Forwarded to Authority Officer</span>
+                    </div>
                   ) : (
                     <>
                       <button
@@ -1170,11 +1155,12 @@ export default function VerificationWorkspace({
               {/* Submission Action Bar */}
               <div className="p-6 rounded-2xl bg-slate-900 text-white space-y-4 shadow-md">
                 <div>
-                  <h4 className="text-sm font-bold uppercase tracking-wider text-slate-200">
-                    Statutory Outcome Determination
+                  <h4 className="text-sm font-bold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-primary">assignment_turned_in</span>
+                    Field Verification Report Submission
                   </h4>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Submit the official verification decision. This action seals the verification record in the audit trail.
+                    Submit your field inspection findings and test readings. The Legal Metrology Authority Officer will scrutinize this report to make the final statutory approval and certificate issuance decision.
                   </p>
                 </div>
 
@@ -1186,7 +1172,7 @@ export default function VerificationWorkspace({
                     className="w-full sm:w-auto px-6 py-2.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center justify-center gap-1.5"
                   >
                     <span className="material-symbols-outlined text-[18px]">cancel</span>
-                    {submitting ? 'Submitting...' : 'Submit FAIL Determination'}
+                    {submitting ? 'Submitting...' : 'Submit FAIL Report to Authority'}
                   </button>
 
                   <button
@@ -1200,7 +1186,7 @@ export default function VerificationWorkspace({
                     }`}
                   >
                     <span className="material-symbols-outlined text-[18px]">verified</span>
-                    {submitting ? 'Submitting...' : 'Submit PASS Determination'}
+                    {submitting ? 'Submitting...' : 'Submit PASS Report to Authority'}
                   </button>
                 </div>
               </div>

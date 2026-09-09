@@ -81,9 +81,24 @@ const applicationSchema = new Schema({
   instrument_id: { type: String, required: true, index: true },
   trader_id: { type: String, required: true, index: true },
   request_type: { type: String, default: 'INITIAL_VERIFICATION' },
+  verification_type: { type: String, default: 'ORIGINAL' }, // 'ORIGINAL' | 'RE_VERIFICATION'
+  verification_mode: { type: String, default: 'CAMP' }, // 'CAMP' | 'IN_SITU'
+  preferred_date: { type: String },
+  remarks: { type: String },
+  contact_person: { type: String },
+  contact_phone: { type: String },
+  location_address: { type: String },
   status: { type: String, default: 'SUBMITTED', index: true },
   documents: { type: Schema.Types.Mixed, default: [] },
-  fee_status: { type: String, default: 'PAID' },
+  fee_status: { type: String, default: 'PAID' }, // 'PAID' | 'PENDING' | 'EXEMPTED'
+  fee_breakdown: { type: Schema.Types.Mixed, default: {} },
+  payment: { type: Schema.Types.Mixed, default: {} },
+  return_reason: { type: String },
+  rejection_reason: { type: String },
+  resubmitted_at: { type: String },
+  approval_remarks: { type: String },
+  approved_at: { type: String },
+  approved_by: { type: String },
   created_at: { type: String, default: () => new Date().toISOString() },
   updated_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });

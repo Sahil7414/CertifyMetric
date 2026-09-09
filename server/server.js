@@ -23,9 +23,9 @@ import {
   AuditLog
 } from './models/index.js';
 import { seedAllDemoData } from './scripts/seedDemoUsers.js';
-import { ROLES, hasPermission } from './permissions.js';
+import { ROLES, hasPermission, requirePermission } from './permissions.js';
 import { upload, STORAGE_DIR, deleteStoredFile, initStorage } from './storage.js';
-import { verifyPassword } from './auth-utils.js';
+import { verifyPassword, hashPassword } from './auth-utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -193,6 +193,14 @@ app.use(async (req, res, next) => {
 });
 
 function getActor(req) {
+  if (req.actor && req.actor.role !== 'ANONYMOUS') {
+    return req.actor;
+  }
+  const roleHeader = req.headers['x-user-role'];
+  const idHeader = req.headers['x-user-id'];
+  if (roleHeader) {
+    return { id: idHeader || 'USER_BY_HEADER', role: roleHeader };
+  }
   return req.actor || { id: 'ANONYMOUS', role: 'ANONYMOUS' };
 }
 
@@ -371,7 +379,8 @@ app.post('/api/instruments', async (req, res) => {
     location
   } = req.body;
 
-  if (!owner_id || !serial_number || !manufacturer || !model) {
+  const targetOwnerId = owner_id || actorId;
+  if (!targetOwnerId || !serial_number || !manufacturer || !model) {
     return res.status(400).json({ error: 'Missing mandatory instrument details' });
   }
 
@@ -385,7 +394,7 @@ app.post('/api/instruments', async (req, res) => {
 
   await Instrument.create({
     id,
-    owner_id,
+    owner_id: targetOwnerId,
     category_id: category_id || 'CAT_NAWI_III',
     manufacturer,
     model,
@@ -441,11 +450,19 @@ app.get('/api/applications', async (req, res) => {
   const assignees = await User.find({ id: { $in: assigneeIds } }).lean();
   const assigneeMap = new Map(assignees.map(u => [u.id, u.full_name]));
 
+  const verifs = await Verification.find({ application_id: { $in: appIds } }).lean();
+  const verifMap = new Map(verifs.map(v => [v.application_id, v]));
+  const verifIds = verifs.map(v => v.id);
+  const certs = await Certificate.find({ verification_id: { $in: verifIds } }).lean();
+  const certMap = new Map(certs.map(c => [c.verification_id, c]));
+
   const result = applications.map(a => {
     const inst = instMap.get(a.instrument_id) || {};
     const trader = userMap.get(a.trader_id) || {};
     const traderOrg = trader.organization_id ? orgMap.get(trader.organization_id) : null;
     const asn = asnMap.get(a.id) || {};
+    const verif = verifMap.get(a.id);
+    const cert = verif ? certMap.get(verif.id) : null;
 
     return {
       ...a,
@@ -459,7 +476,9 @@ app.get('/api/applications', async (req, res) => {
       assigned_id: asn.assigned_id || null,
       assigned_type: asn.assigned_type || null,
       is_override: asn.is_override || 0,
-      assigned_to_name: asn.assigned_id ? assigneeMap.get(asn.assigned_id) : null
+      assigned_to_name: asn.assigned_id ? assigneeMap.get(asn.assigned_id) : null,
+      certificate_id: cert ? cert.id : (a.certificate_id || null),
+      certificate_no: cert ? cert.certificate_no : (a.certificate_no || null)
     };
   });
 
@@ -518,6 +537,66 @@ app.get('/api/applications/:id', async (req, res) => {
   });
 });
 
+// Statutory Fee Calculation Engine (Legal Metrology General Rules Schedule V)
+app.post('/api/applications/calculate-fee', async (req, res) => {
+  const { instrument_id, category_id, max_capacity, verification_mode, verification_type } = req.body;
+
+  let category = category_id;
+  let capacity = max_capacity;
+
+  if (instrument_id) {
+    const inst = await Instrument.findOne({ id: instrument_id }).lean();
+    if (inst) {
+      category = category || inst.category_id;
+      capacity = capacity || inst.max_capacity;
+    }
+  }
+
+  // Base statutory verification fee (Schedule V)
+  let statutory_fee = 350;
+  const capStr = (capacity || '').toLowerCase();
+  const capNum = parseFloat(capStr) || 30;
+
+  if (category === 'CAT_WEIGHBRIDGE' || capNum >= 5000 || capStr.includes('ton') || capStr.includes('tonne')) {
+    statutory_fee = 3500;
+  } else if (category === 'CAT_FLOW_METER' || capStr.includes('dispenser') || capStr.includes('nozzle')) {
+    statutory_fee = 1000;
+  } else if (category === 'CAT_STORAGE_TANK' || capStr.includes('tank') || capStr.includes('compartment')) {
+    statutory_fee = 2500;
+  } else if (capNum > 500) {
+    statutory_fee = 1500;
+  } else if (capNum > 50) {
+    statutory_fee = 500;
+  } else {
+    statutory_fee = 250;
+  }
+
+  // Mode surcharge: In-situ (on-premises) requires officer travel / inspection surcharge
+  const isInsitu = verification_mode === 'IN_SITU';
+  const in_situ_fee = isInsitu ? 500 : 0;
+
+  // Digital Metrology facilitation cess
+  const user_fee = 50;
+  const late_fee = 0;
+  const total_fee = statutory_fee + in_situ_fee + user_fee + late_fee;
+
+  const breakdown = [
+    { label: 'Schedule V Statutory Verification Fee', amount: statutory_fee },
+    ...(isInsitu ? [{ label: 'In-Situ On-Premises Inspection Surcharge', amount: in_situ_fee }] : []),
+    { label: 'Legal Metrology Digital Portal Cess', amount: user_fee }
+  ];
+
+  res.json({
+    statutory_fee,
+    in_situ_fee,
+    user_fee,
+    late_fee,
+    total_fee,
+    currency: 'INR',
+    breakdown
+  });
+});
+
 app.post('/api/applications', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
@@ -525,20 +604,35 @@ app.post('/api/applications', async (req, res) => {
     return res.status(403).json({ error: `Forbidden: Role '${role}' is not permitted to submit verification requests.` });
   }
 
-  const { instrument_id, trader_id, request_type } = req.body;
-  if (!instrument_id || !trader_id) {
+  const {
+    instrument_id,
+    trader_id,
+    request_type,
+    verification_type,
+    verification_mode,
+    documents,
+    preferred_date,
+    remarks,
+    contact_person,
+    contact_phone,
+    location_address,
+    fee_breakdown,
+    payment
+  } = req.body;
+  const targetTraderId = trader_id || actorId;
+  if (!instrument_id || !targetTraderId) {
     return res.status(400).json({ error: 'Missing instrument or trader ID' });
   }
 
   const inst = await Instrument.findOne({ id: instrument_id }).lean();
   if (!inst) return res.status(404).json({ error: 'Instrument not found' });
-  if (inst.owner_id !== trader_id && role !== ROLES.PLATFORM_ADMIN) {
+  if (inst.owner_id !== targetTraderId) {
     return res.status(403).json({ error: 'Forbidden: You can only apply for your own registered instruments.' });
   }
 
   const activeApp = await Application.findOne({
     instrument_id,
-    status: { $nin: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] }
+    status: { $nin: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'REJECTED'] }
   }).lean();
 
   if (activeApp) {
@@ -549,24 +643,191 @@ app.post('/api/applications', async (req, res) => {
   const appNo = `APP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
   const now = new Date().toISOString();
 
+  const isPaid = payment && (payment.payment_status === 'PAID' || payment.payment_status === 'VERIFIED');
+  const initialStatus = isPaid ? 'PENDING_VERIFICATION' : 'PAYMENT_PENDING';
+  const initialFeeStatus = isPaid ? 'PAID' : 'PENDING';
+
   await Application.create({
     id,
     application_no: appNo,
     instrument_id,
-    trader_id,
-    request_type: request_type || 'INITIAL_VERIFICATION',
-    status: 'SUBMITTED',
-    documents: [],
-    fee_status: 'PAID',
+    trader_id: targetTraderId,
+    request_type: request_type || (verification_type === 'RE_VERIFICATION' ? 'RE_VERIFICATION' : 'INITIAL_VERIFICATION'),
+    verification_type: verification_type || (request_type === 'RE_VERIFICATION' ? 'RE_VERIFICATION' : 'ORIGINAL'),
+    verification_mode: verification_mode || 'CAMP',
+    preferred_date: preferred_date || null,
+    remarks: remarks || '',
+    contact_person: contact_person || null,
+    contact_phone: contact_phone || null,
+    location_address: location_address || null,
+    status: initialStatus,
+    documents: Array.isArray(documents) ? documents : [],
+    fee_status: initialFeeStatus,
+    fee_breakdown: fee_breakdown || {},
+    payment: payment || {},
     created_at: now,
     updated_at: now
   });
 
   await Instrument.updateOne({ id: instrument_id }, { $set: { status: 'UNDER_VERIFICATION' } });
 
-  logAudit('Application', id, 'SUBMIT', actorId, role, { application_no: appNo, instrument_id });
+  logAudit('Application', id, 'SUBMIT', actorId, role, { application_no: appNo, instrument_id, verification_mode, status: initialStatus });
 
-  res.status(201).json({ id, application_no: appNo, status: 'SUBMITTED', message: 'Verification application submitted successfully' });
+  res.status(201).json({ id, application_no: appNo, status: initialStatus, message: 'Verification application submitted successfully' });
+});
+
+// Record Payment for Application
+app.post('/api/applications/:id/payment', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+  const applicationId = req.params.id;
+
+  if (!hasPermission(role, 'RECORD_PAYMENT')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot record payments.` });
+  }
+
+  const appItem = await Application.findOne({ id: applicationId }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+
+  if (appItem.trader_id !== actorId) {
+    return res.status(403).json({ error: 'Forbidden: You can only record payment for your own application.' });
+  }
+
+  const { payment_mode, payment_status, transaction_id, reference_no, amount, paid_at, receipt_url } = req.body;
+
+  const now = new Date().toISOString();
+  const txnId = transaction_id || `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const refNo = reference_no || `REF-${Math.floor(100000 + Math.random() * 900000)}`;
+  const totalAmount = Number(amount) || appItem.fee_breakdown?.total_fee || 800;
+  const pStatus = payment_status || (payment_mode === 'OFFLINE' ? 'PAYMENT_VERIFIED' : 'PAID');
+
+  const paymentRecord = {
+    payment_mode: payment_mode || 'ONLINE',
+    payment_status: pStatus,
+    transaction_id: txnId,
+    reference_no: refNo,
+    amount: totalAmount,
+    paid_at: paid_at || now,
+    receipt_url: receipt_url || null
+  };
+
+  const targetStatus = (pStatus === 'PAID' || pStatus === 'PAYMENT_VERIFIED') ? 'PENDING_VERIFICATION' : 'PAYMENT_PENDING';
+
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        payment: paymentRecord,
+        fee_status: 'PAID',
+        status: targetStatus,
+        updated_at: now
+      }
+    }
+  );
+
+  logAudit('Application', applicationId, 'PAYMENT_RECORDED', actorId, role, {
+    transaction_id: txnId,
+    payment_mode: paymentRecord.payment_mode,
+    amount: totalAmount,
+    payment_status: pStatus
+  });
+
+  const updatedApp = await Application.findOne({ id: applicationId }).lean();
+  res.json({
+    message: 'Payment recorded successfully',
+    application: updatedApp,
+    payment: paymentRecord
+  });
+});
+
+// Resubmit Returned Application (Trader Action)
+app.post('/api/applications/:id/resubmit', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+  const applicationId = req.params.id;
+
+  if (!hasPermission(role, 'RESUBMIT_APPLICATION')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot resubmit applications.` });
+  }
+
+  const appItem = await Application.findOne({ id: applicationId }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+
+  if (appItem.trader_id !== actorId) {
+    return res.status(403).json({ error: 'Forbidden: You can only resubmit your own applications.' });
+  }
+
+  if (appItem.status !== 'RETURNED') {
+    return res.status(400).json({ error: `Cannot resubmit application in state '${appItem.status}'. Only RETURNED applications can be resubmitted.` });
+  }
+
+  const { documents, remarks, contact_person, contact_phone, location_address, preferred_date } = req.body;
+  const now = new Date().toISOString();
+
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        documents: Array.isArray(documents) ? documents : appItem.documents,
+        remarks: remarks !== undefined ? remarks : appItem.remarks,
+        contact_person: contact_person || appItem.contact_person,
+        contact_phone: contact_phone || appItem.contact_phone,
+        location_address: location_address || appItem.location_address,
+        preferred_date: preferred_date || appItem.preferred_date,
+        resubmitted_at: now,
+        status: (appItem.fee_status === 'PAID' ? 'PENDING_VERIFICATION' : 'SUBMITTED'),
+        updated_at: now
+      }
+    }
+  );
+
+  logAudit('Application', applicationId, 'APPLICATION_RESUBMITTED', actorId, role, {
+    previous_return_reason: appItem.return_reason
+  });
+
+  const updatedApp = await Application.findOne({ id: applicationId }).lean();
+  res.json({
+    message: 'Application resubmitted successfully for statutory review',
+    application: updatedApp
+  });
+});
+
+// Return Application to Trader with Remarks (Authority Action)
+app.post('/api/applications/:id/return', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  if (!hasPermission(role, 'RETURN_APPLICATION')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot return applications. Statutory return is reserved for Authority Officers.` });
+  }
+
+  const applicationId = req.params.id;
+  const appItem = await Application.findOne({ id: applicationId }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+
+  const return_reason = req.body.return_reason || req.body.reason || req.body.remarks;
+  if (!return_reason || !return_reason.trim()) {
+    return res.status(400).json({ error: 'A specific return/rejection reason is required.' });
+  }
+
+  const now = new Date().toISOString();
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        status: 'RETURNED',
+        return_reason: return_reason.trim(),
+        updated_at: now
+      }
+    }
+  );
+
+  logAudit('Application', applicationId, 'APPLICATION_RETURNED', actorId, role, {
+    return_reason: return_reason.trim()
+  });
+
+  res.json({
+    message: 'Application returned to trader with remarks',
+    status: 'RETURNED',
+    return_reason: return_reason.trim()
+  });
 });
 
 // ==========================================
@@ -658,7 +919,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   const appItem = await Application.findOne({ id: applicationId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  if (!['SUBMITTED', 'UNDER_REVIEW'].includes(appItem.status)) {
+  if (!['SUBMITTED', 'UNDER_REVIEW', 'PENDING_VERIFICATION'].includes(appItem.status)) {
     return res.status(400).json({ error: `Invalid state transition: Cannot assign verifier to application in state '${appItem.status}'` });
   }
 
@@ -729,8 +990,8 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     });
   }
 
-  // Transition: -> ASSIGNED
-  await Application.updateOne({ id: applicationId }, { $set: { status: 'ASSIGNED', updated_at: now } });
+  // Transition: -> PENDING_VERIFICATION (statutory queue)
+  await Application.updateOne({ id: applicationId }, { $set: { status: 'PENDING_VERIFICATION', updated_at: now } });
 
   logAudit('Application', applicationId, is_override ? 'ASSIGNMENT_OVERRIDE' : 'ASSIGNMENT_CONFIRMED', actorId, role, {
     assigned_id,
@@ -740,27 +1001,29 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     override_reason
   });
 
-  res.json({ message: 'Verifier assigned successfully', status: 'ASSIGNED' });
+  res.json({ message: 'Verifier assigned successfully', status: 'PENDING_VERIFICATION' });
 });
 
 // ==========================================
 // 5. SECOND VERTICAL SLICE: VERIFICATION WORKSPACE
 // ==========================================
 
-// List Assigned Cases for Verifier
+// List Assigned Cases for Verifier & GATC Lab
 app.get('/api/verifications/cases', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'VIEW_ASSIGNED_CASES') && role !== ROLES.PLATFORM_ADMIN) {
-    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access verifier queue.` });
+  if (!hasPermission(role, 'VIEW_ASSIGNED_CASES') && role !== ROLES.AUTHORITY) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access verification cases. Platform administration does not conduct inspections.` });
   }
 
   const { verifier_id } = req.query;
   const targetVerifierId = verifier_id || actorId;
 
-  // Filter assignments by verifier if not admin
+  // Filter assignments by verifier or lab
   const asnFilter = {};
-  if (role !== ROLES.PLATFORM_ADMIN && targetVerifierId !== 'UNKNOWN') {
+  if (role === ROLES.VERIFIER || role === ROLES.GATC) {
+    asnFilter.assigned_id = actorId;
+  } else if (targetVerifierId && targetVerifierId !== 'UNKNOWN') {
     asnFilter.assigned_id = targetVerifierId;
   }
 
@@ -770,7 +1033,7 @@ app.get('/api/verifications/cases', async (req, res) => {
 
   const applications = await Application.find({
     id: { $in: appIds },
-    status: { $in: ['ASSIGNED', 'IN_PROGRESS', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] }
+    status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] }
   }).sort({ updated_at: -1 }).lean();
 
   const instIds = [...new Set(applications.map(a => a.instrument_id).filter(Boolean))];
@@ -826,8 +1089,8 @@ app.get('/api/verifications/cases', async (req, res) => {
 app.get('/api/verifications/cases/:appId', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'OPEN_VERIFICATION_WORKSPACE') && role !== ROLES.PLATFORM_ADMIN && role !== ROLES.AUTHORITY) {
-    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot open verification workspace.` });
+  if (!hasPermission(role, 'OPEN_VERIFICATION_WORKSPACE') && role !== ROLES.AUTHORITY) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot open verification workspace. Inspections are conducted by Field Verifiers and GATC Labs.` });
   }
 
   const a = await Application.findOne({ id: req.params.appId }).lean();
@@ -846,8 +1109,8 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
   const verif = await Verification.findOne({ application_id: a.id }).lean();
   const cert = verif ? await Certificate.findOne({ verification_id: verif.id }).lean() : null;
 
-  // Access validation: verifier must be the assigned officer
-  if (role === ROLES.VERIFIER && asn && asn.assigned_id !== actorId && role !== ROLES.PLATFORM_ADMIN) {
+  // Access validation: verifier/GATC must be the assigned officer (Authority can review any case)
+  if ((role === ROLES.VERIFIER || role === ROLES.GATC) && asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: You are not the assigned verifier for this case.' });
   }
 
@@ -903,11 +1166,11 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
   });
 });
 
-// Start Verification: ASSIGNED -> IN_PROGRESS
+// Start Verification: ASSIGNED / PENDING_VERIFICATION -> IN_PROGRESS
 app.post('/api/verifications/cases/:appId/start', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
+  if (!hasPermission(role, 'RECORD_VERIFICATION')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot start verifications.` });
   }
 
@@ -915,11 +1178,11 @@ app.post('/api/verifications/cases/:appId/start', async (req, res) => {
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
-  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
+  if (asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can start this verification.' });
   }
 
-  if (appItem.status !== 'ASSIGNED' && appItem.status !== 'IN_PROGRESS') {
+  if (!['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS'].includes(appItem.status)) {
     return res.status(400).json({ error: `Cannot start verification on application in state '${appItem.status}'.` });
   }
 
@@ -964,7 +1227,7 @@ app.post('/api/verifications/cases/:appId/start', async (req, res) => {
 app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
+  if (!hasPermission(role, 'RECORD_VERIFICATION')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot record verification draft.` });
   }
 
@@ -972,11 +1235,11 @@ app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
-  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
+  if (asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can save draft data.' });
   }
-  if (appItem.status !== 'IN_PROGRESS') {
-    return res.status(400).json({ error: `Cannot save draft for application in status '${appItem.status}'. Must be 'IN_PROGRESS'.` });
+  if (!['IN_PROGRESS', 'PENDING_VERIFICATION', 'ASSIGNED'].includes(appItem.status)) {
+    return res.status(400).json({ error: `Cannot save draft for application in status '${appItem.status}'. Must be in verification pipeline.` });
   }
 
   const { checklist_responses, readings, observations } = req.body;
@@ -1058,7 +1321,7 @@ app.post('/api/verifications/cases/:appId/draft', async (req, res) => {
 app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
+  if (!hasPermission(role, 'RECORD_VERIFICATION')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot attach evidence.` });
   }
 
@@ -1066,11 +1329,11 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), asyn
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
-  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
+  if (asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can attach evidence.' });
   }
-  if (appItem.status !== 'IN_PROGRESS') {
-    return res.status(400).json({ error: `Cannot attach evidence for application in status '${appItem.status}'. Must be 'IN_PROGRESS'.` });
+  if (!['IN_PROGRESS', 'PENDING_VERIFICATION', 'ASSIGNED'].includes(appItem.status)) {
+    return res.status(400).json({ error: `Cannot attach evidence for application in status '${appItem.status}'. Must be in verification pipeline.` });
   }
 
   if (!req.file) {
@@ -1129,7 +1392,7 @@ app.post('/api/verifications/cases/:appId/evidence', upload.single('file'), asyn
 app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
+  if (!hasPermission(role, 'RECORD_VERIFICATION')) {
     return res.status(403).json({ error: `Forbidden: Role '${role}' cannot delete evidence.` });
   }
 
@@ -1137,7 +1400,7 @@ app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', async (req, r
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
-  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
+  if (asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can delete evidence.' });
   }
   if (appItem.status !== 'IN_PROGRESS') {
@@ -1159,23 +1422,23 @@ app.delete('/api/verifications/cases/:appId/evidence/:evidenceId', async (req, r
   res.json({ message: 'Evidence removed successfully' });
 });
 
-// Submit Verification Result (PASS / FAIL)
+// Submit Verification Result (PASS / FAIL) — Submits Field/Lab Report to Authority
 app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'RECORD_VERIFICATION') && role !== ROLES.PLATFORM_ADMIN) {
-    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot submit verification outcomes.` });
+  if (!hasPermission(role, 'RECORD_VERIFICATION')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot submit verification reports. Only assigned Field Verifiers and GATC Labs can submit.` });
   }
 
   const appItem = await Application.findOne({ id: req.params.appId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
   const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
-  if (role !== ROLES.PLATFORM_ADMIN && asn && asn.assigned_id !== actorId) {
+  if (asn && asn.assigned_id !== actorId) {
     return res.status(403).json({ error: 'Forbidden: Only the assigned verifier can submit verification results.' });
   }
-  if (appItem.status !== 'IN_PROGRESS') {
-    return res.status(400).json({ error: `Invalid state transition: Cannot submit result for application in state '${appItem.status}'. Must be 'IN_PROGRESS'.` });
+  if (!['IN_PROGRESS', 'PENDING_VERIFICATION', 'ASSIGNED'].includes(appItem.status)) {
+    return res.status(400).json({ error: `Invalid state transition: Cannot submit result for application in state '${appItem.status}'. Must be in verification pipeline.` });
   }
 
   const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
@@ -1214,7 +1477,7 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
 
-  // Persist final responses
+  // Persist final responses on verification object
   if (!verif) {
     await Verification.create({
       id: verifId,
@@ -1271,22 +1534,20 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
     id: `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
     verification_id: verifId,
     test_point: r.test_point || 'Test Point',
-    reference_value: Number(r.reference_value) || 0,
-    observed_value: Number(r.observed_value),
+    reference_value: Number(parseFloat(r.reference_value || r.standard_weight || 0)) || 0,
+    observed_value: Number(parseFloat(r.observed_value)) || 0,
     unit: r.unit || 'kg',
     reading_result: r.reading_result || 'PASS',
     updated_at: now
   }));
   await VerificationReading.insertMany(readingDocs);
 
-  // State Transitions for Application & Instrument
-  const nextAppStatus = result === 'PASS' ? 'VERIFICATION_COMPLETED' : 'VERIFICATION_FAILED';
-  const nextInstStatus = result === 'PASS' ? 'VERIFIED' : 'REJECTED';
+  // State Transition: In strict RBAC, Verifier/Lab submits report to Authority for final scrutiny
+  const nextAppStatus = 'REPORT_SUBMITTED';
 
   await Application.updateOne({ id: req.params.appId }, { $set: { status: nextAppStatus, updated_at: now } });
-  await Instrument.updateOne({ id: appItem.instrument_id }, { $set: { status: nextInstStatus } });
 
-  logAudit('Verification', verifId, 'VERIFICATION_RESULT_SUBMITTED', actorId, role, {
+  logAudit('Verification', verifId, 'VERIFICATION_REPORT_SUBMITTED', actorId, role, {
     application_id: req.params.appId,
     result,
     remarks,
@@ -1296,9 +1557,154 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   });
 
   res.json({
-    message: `Verification successfully completed with result: ${result}`,
+    message: `Verification report (${result}) submitted to Legal Metrology Authority for statutory determination.`,
     status: nextAppStatus,
     result
+  });
+});
+
+// ==========================================
+// 5B. AUTHORITY FINAL DECISIONS (APPROVE / REJECT)
+// ==========================================
+
+// Authority Decision: Approve Application and Issue Official Certificate
+app.post('/api/applications/:id/approve', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  if (!hasPermission(role, 'APPROVE_APPLICATION')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' is not authorized to approve applications. Only Authority Officers hold legal approval authority.` });
+  }
+
+  const applicationId = req.params.id;
+  const appItem = await Application.findOne({ id: applicationId }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+
+  // Eligibility check: Verification report must be submitted with PASS outcome
+  const verif = await Verification.findOne({ application_id: applicationId }).lean();
+  if (!verif || verif.result !== 'PASS') {
+    return res.status(400).json({
+      error: 'Cannot approve application: A completed verification report with PASS determination is required before approval.'
+    });
+  }
+
+  const { approval_remarks } = req.body;
+  const now = new Date().toISOString();
+
+  // 1. Update Application Status to CERTIFICATE_ISSUED (and record approval)
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        status: 'CERTIFICATE_ISSUED',
+        approval_remarks: approval_remarks || 'Statutory verification report reviewed and approved by Legal Metrology Officer.',
+        approved_at: now,
+        approved_by: actorId,
+        updated_at: now
+      }
+    }
+  );
+
+  // 2. Update Instrument Status to VERIFIED
+  await Instrument.updateOne(
+    { id: appItem.instrument_id },
+    { $set: { status: 'VERIFIED' } }
+  );
+
+  // 3. Issue / Generate Official Certificate
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const ruleSet = inst ? await RuleSet.findOne({ category_id: inst.category_id }).lean() : null;
+  const authorityUser = await User.findOne({ id: actorId }).lean();
+  const org = authorityUser?.organization_id ? await Organization.findOne({ id: authorityUser.organization_id }).lean() : null;
+
+  let cert = await Certificate.findOne({ verification_id: verif.id }).lean();
+  if (!cert) {
+    const year = new Date().getFullYear();
+    const randomDigits = Math.floor(10000 + Math.random() * 90000);
+    const certNo = `LM-${year}-${randomDigits}-KL`;
+    const publicToken = crypto.randomUUID();
+    const certId = `CERT_${Date.now()}`;
+
+    const issueDate = new Date();
+    const validityMonths = ruleSet?.validity_period_months || 12;
+    const validUntil = new Date(issueDate);
+    validUntil.setMonth(validUntil.getMonth() + validityMonths);
+
+    const issuingOfficer = authorityUser?.full_name || 'Legal Metrology Officer';
+    const issuingAuthority = org?.name || 'Department of Legal Metrology, Government of Kerala';
+
+    cert = await Certificate.create({
+      id: certId,
+      certificate_no: certNo,
+      verification_id: verif.id,
+      instrument_id: inst.id,
+      public_token: publicToken,
+      issue_date: issueDate.toISOString(),
+      valid_until: validUntil.toISOString(),
+      status: 'VALID',
+      issuing_officer: issuingOfficer,
+      issuing_authority: issuingAuthority,
+      created_at: issueDate.toISOString()
+    });
+  }
+
+  logAudit('Application', applicationId, 'APPLICATION_APPROVED_AND_CERTIFIED', actorId, role, {
+    certificate_no: cert.certificate_no,
+    public_token: cert.public_token,
+    instrument_id: appItem.instrument_id
+  });
+
+  const updatedApp = await Application.findOne({ id: applicationId }).lean();
+  res.json({
+    message: 'Application officially approved and statutory verification certificate issued.',
+    status: 'CERTIFICATE_ISSUED',
+    application: updatedApp,
+    certificate: cert
+  });
+});
+
+// Authority Decision: Reject Application
+app.post('/api/applications/:id/reject', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  if (!hasPermission(role, 'REJECT_APPLICATION')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' is not authorized to reject applications. Rejection decisions are reserved for Authority Officers.` });
+  }
+
+  const applicationId = req.params.id;
+  const appItem = await Application.findOne({ id: applicationId }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+
+  const { rejection_reason } = req.body;
+  if (!rejection_reason || !rejection_reason.trim()) {
+    return res.status(400).json({ error: 'A specific statutory rejection reason is mandatory.' });
+  }
+
+  const now = new Date().toISOString();
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        status: 'REJECTED',
+        rejection_reason: rejection_reason.trim(),
+        updated_at: now
+      }
+    }
+  );
+
+  await Instrument.updateOne(
+    { id: appItem.instrument_id },
+    { $set: { status: 'REJECTED' } }
+  );
+
+  logAudit('Application', applicationId, 'APPLICATION_REJECTED', actorId, role, {
+    rejection_reason: rejection_reason.trim(),
+    instrument_id: appItem.instrument_id
+  });
+
+  res.json({
+    message: 'Application rejected with statutory grounds recorded.',
+    status: 'REJECTED',
+    rejection_reason: rejection_reason.trim()
   });
 });
 
@@ -1306,13 +1712,13 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
 // 6. CERTIFICATES & STATUTORY QR (SLICE 3)
 // ==========================================
 
-// Generate Certificate (Idempotent, requires PASS outcome)
+// Generate Certificate (Idempotent, strictly restricted to Authority Officers)
 app.post('/api/certificates/generate/:appId', async (req, res) => {
   const { role, id: actorId } = getActor(req);
 
-  // Authority, Verifier, GATC or Admin can trigger certificate generation
-  if (![ROLES.VERIFIER, ROLES.GATC, ROLES.AUTHORITY, ROLES.PLATFORM_ADMIN].includes(role)) {
-    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot generate statutory certificates.` });
+  // Strictly restricted to Authority Officers
+  if (!hasPermission(role, 'GENERATE_CERTIFICATE')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot generate statutory certificates. Certificate issuance is strictly reserved for Authority Officers.` });
   }
 
   const appId = req.params.appId;
@@ -1619,18 +2025,216 @@ app.get('/api/audit-logs', async (req, res) => {
 });
 
 app.get('/api/stats', async (req, res) => {
+  const { trader_id } = req.query;
+  const actor = getActor(req);
+  const targetTraderId = trader_id || (actor.role === ROLES.TRADER ? actor.id : null);
+
+  if (targetTraderId) {
+    const totalInstruments = await Instrument.countDocuments({ owner_id: targetTraderId });
+    const pendingApplications = await Application.countDocuments({
+      trader_id: targetTraderId,
+      status: { $in: ['SUBMITTED', 'UNDER_REVIEW', 'ASSIGNED', 'IN_PROGRESS'] }
+    });
+    const approvedApplications = await Application.countDocuments({
+      trader_id: targetTraderId,
+      status: { $in: ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED'] }
+    });
+    const returnedApplications = await Application.countDocuments({
+      trader_id: targetTraderId,
+      status: { $in: ['RETURNED', 'REJECTED', 'VERIFICATION_FAILED'] }
+    });
+    const pendingPayments = await Application.countDocuments({
+      trader_id: targetTraderId,
+      $or: [{ status: 'PAYMENT_PENDING' }, { fee_status: 'PENDING' }]
+    });
+    const totalCertificates = await Certificate.countDocuments({
+      instrument_id: { $in: (await Instrument.find({ owner_id: targetTraderId }).select('id')).map(i => i.id) }
+    });
+
+    return res.json({
+      totalInstruments,
+      pendingApplications,
+      approvedApplications,
+      returnedApplications,
+      pendingPayments,
+      totalCertificates
+    });
+  }
+
   const totalInstruments = await Instrument.countDocuments();
   const pendingApplications = await Application.countDocuments({ status: { $in: ['SUBMITTED', 'UNDER_REVIEW'] } });
-  const assignedApplications = await Application.countDocuments({ status: 'ASSIGNED' });
+  const assignedApplications = await Application.countDocuments({ status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION'] } });
   const inProgressApplications = await Application.countDocuments({ status: 'IN_PROGRESS' });
+  const reportsSubmitted = await Application.countDocuments({ status: 'REPORT_SUBMITTED' });
   const completedVerifications = await Application.countDocuments({ status: { $in: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] } });
+  const approvedApplications = await Application.countDocuments({ status: { $in: ['APPROVED', 'CERTIFICATE_ISSUED'] } });
+  const returnedApplications = await Application.countDocuments({ status: { $in: ['RETURNED', 'REJECTED'] } });
+  const pendingPayments = await Application.countDocuments({ fee_status: 'PENDING' });
 
   res.json({
     totalInstruments,
     pendingApplications,
     assignedApplications,
     inProgressApplications,
-    completedVerifications
+    reportsSubmitted,
+    completedVerifications,
+    approvedApplications,
+    returnedApplications,
+    pendingPayments
+  });
+});
+
+// ==========================================
+// 8B. PORTAL ADMIN MANAGEMENT ENDPOINTS
+// ==========================================
+
+// 1. List Users
+app.get('/api/admin/users', requirePermission('MANAGE_USERS'), async (req, res) => {
+  const users = await User.find().sort({ created_at: -1 }).lean();
+  const orgIds = [...new Set(users.map(u => u.organization_id).filter(Boolean))];
+  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
+  const orgMap = new Map(orgs.map(o => [o.id, o.name]));
+
+  const safeUsers = users.map(u => {
+    const { password_hash, _id, ...safe } = u;
+    return {
+      ...safe,
+      organization_name: orgMap.get(u.organization_id) || 'Independent',
+      active: u.active !== false
+    };
+  });
+  res.json(safeUsers);
+});
+
+// 2. Create User
+app.post('/api/admin/users', requirePermission('MANAGE_USERS'), async (req, res) => {
+  const { role: actorRole, id: actorId } = getActor(req);
+  const { email, password, role, full_name, organization_id, phone } = req.body;
+
+  if (!email || !password || !role || !full_name) {
+    return res.status(400).json({ error: 'Email, password, role, and full name are mandatory.' });
+  }
+
+  if (!Object.values(ROLES).includes(role)) {
+    return res.status(400).json({ error: `Invalid role. Must be one of: ${Object.values(ROLES).join(', ')}` });
+  }
+
+  const existing = await User.findOne({ email: email.trim().toLowerCase() }).lean();
+  if (existing) {
+    return res.status(400).json({ error: 'A user with this email address already exists.' });
+  }
+
+  const id = `USR_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+  const password_hash = hashPassword(password);
+  const now = new Date().toISOString();
+
+  await User.create({
+    id,
+    email: email.trim().toLowerCase(),
+    password_hash,
+    role,
+    full_name: full_name.trim(),
+    organization_id: organization_id || null,
+    phone: phone || null,
+    active: true,
+    is_demo: 0,
+    created_at: now,
+    updated_at: now
+  });
+
+  logAudit('User', id, 'USER_CREATED_BY_ADMIN', actorId, actorRole, { email, role, full_name });
+
+  res.status(201).json({ id, message: `User account created successfully for ${full_name} (${role})` });
+});
+
+// 3. Update User Active Status
+app.patch('/api/admin/users/:id/status', requirePermission('MANAGE_USERS'), async (req, res) => {
+  const { role: actorRole, id: actorId } = getActor(req);
+  const targetUser = await User.findOne({ id: req.params.id }).lean();
+  if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+  const { active } = req.body;
+  if (typeof active !== 'boolean') {
+    return res.status(400).json({ error: 'Boolean field active is required.' });
+  }
+
+  await User.updateOne({ id: req.params.id }, { $set: { active, updated_at: new Date().toISOString() } });
+
+  logAudit('User', req.params.id, active ? 'USER_ACTIVATED' : 'USER_DEACTIVATED', actorId, actorRole, {
+    user_email: targetUser.email,
+    active
+  });
+
+  res.json({ message: `User status updated to ${active ? 'Active' : 'Inactive'}`, active });
+});
+
+// 4. List Organizations / Statutory Offices / Labs
+app.get('/api/admin/organizations', requirePermission('MANAGE_OFFICES_LABS'), async (req, res) => {
+  const orgs = await Organization.find().lean();
+  const userCounts = await User.aggregate([
+    { $match: { organization_id: { $ne: null } } },
+    { $group: { _id: '$organization_id', count: { $sum: 1 } } }
+  ]);
+  const countMap = new Map(userCounts.map(u => [u._id, u.count]));
+
+  const enriched = orgs.map(o => ({
+    ...o,
+    staff_count: countMap.get(o.id) || 0
+  }));
+  res.json(enriched);
+});
+
+// 5. Master Data (Categories & Rulesets)
+app.get('/api/admin/master-data', requirePermission('MANAGE_MASTER_DATA'), async (req, res) => {
+  const categories = await InstrumentCategory.find().lean();
+  const rulesets = await RuleSet.find().lean();
+  const ruleMap = new Map(rulesets.map(r => [r.category_id, r]));
+
+  const combined = categories.map(c => ({
+    ...c,
+    ruleset: ruleMap.get(c.id) || null
+  }));
+  res.json({ categories: combined, total: categories.length });
+});
+
+// 6. System Health & MongoDB Telemetry
+app.get('/api/admin/system-health', requirePermission('VIEW_SYSTEM_HEALTH'), async (req, res) => {
+  const mongoStatus = getMongoStatus();
+  const mem = process.memoryUsage();
+
+  const [usersCount, instCount, appCount, certCount, auditCount] = await Promise.all([
+    User.countDocuments(),
+    Instrument.countDocuments(),
+    Application.countDocuments(),
+    Certificate.countDocuments(),
+    AuditLog.countDocuments()
+  ]);
+
+  res.json({
+    status: mongoStatus.connected ? 'HEALTHY' : 'DEGRADED',
+    database: {
+      provider: 'MongoDB Atlas',
+      connected: mongoStatus.connected,
+      status: mongoStatus.status
+    },
+    system: {
+      uptime_seconds: Math.floor(process.uptime()),
+      node_version: process.version,
+      platform: process.platform,
+      memory: {
+        rss_mb: (mem.rss / 1024 / 1024).toFixed(1),
+        heap_used_mb: (mem.heapUsed / 1024 / 1024).toFixed(1),
+        heap_total_mb: (mem.heapTotal / 1024 / 1024).toFixed(1)
+      }
+    },
+    counts: {
+      users: usersCount,
+      instruments: instCount,
+      applications: appCount,
+      certificates: certCount,
+      audit_logs: auditCount
+    },
+    timestamp: new Date().toISOString()
   });
 });
 

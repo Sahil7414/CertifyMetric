@@ -325,9 +325,50 @@ export async function seedDemoData() {
       instrument_id: 'INST_005',
       trader_id: 'USR_TRADER_01',
       request_type: 'INITIAL_VERIFICATION',
+      verification_type: 'ORIGINAL',
+      verification_mode: 'CAMP',
       status: 'ASSIGNED',
       documents: [],
       fee_status: 'PAID',
+      fee_breakdown: { statutory_fee: 250, in_situ_fee: 0, user_fee: 50, total_fee: 300 },
+      payment: { payment_mode: 'ONLINE', payment_status: 'PAID', transaction_id: 'TXN_2026_ASN_05', amount: 300, paid_at: now },
+      created_at: now,
+      updated_at: now
+    },
+    {
+      id: 'APP_DEMO_06',
+      application_no: 'APP-2026-4412',
+      instrument_id: 'INST_001',
+      trader_id: 'USR_TRADER_01',
+      request_type: 'RE_VERIFICATION',
+      verification_type: 'RE_VERIFICATION',
+      verification_mode: 'IN_SITU',
+      status: 'RETURNED',
+      return_reason: 'Previous calibration certificate illegible and commercial invoice is incomplete. Please re-upload verified documents.',
+      documents: [
+        { id: 'DOC_1', category: 'INVOICE', file_name: 'invoice_2025.pdf', file_size: '240 KB', uploaded_at: now }
+      ],
+      fee_status: 'PAID',
+      fee_breakdown: { statutory_fee: 250, in_situ_fee: 500, user_fee: 50, total_fee: 800 },
+      payment: { payment_mode: 'ONLINE', payment_status: 'PAID', transaction_id: 'TXN_2026_RET_06', amount: 800, paid_at: now },
+      created_at: now,
+      updated_at: now
+    },
+    {
+      id: 'APP_DEMO_07',
+      application_no: 'APP-2026-7789',
+      instrument_id: 'INST_002',
+      trader_id: 'USR_TRADER_01',
+      request_type: 'INITIAL_VERIFICATION',
+      verification_type: 'ORIGINAL',
+      verification_mode: 'CAMP',
+      status: 'PAYMENT_PENDING',
+      documents: [
+        { id: 'DOC_2', category: 'INVOICE', file_name: 'purchase_invoice.pdf', file_size: '310 KB', uploaded_at: now }
+      ],
+      fee_status: 'PENDING',
+      fee_breakdown: { statutory_fee: 250, in_situ_fee: 0, user_fee: 50, total_fee: 300 },
+      payment: { payment_mode: 'ONLINE', payment_status: 'PENDING', amount: 300 },
       created_at: now,
       updated_at: now
     }

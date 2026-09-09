@@ -61,6 +61,9 @@ const getHeaders = (extra = {}) => {
   }
   if (activeUser) {
     headers['x-user-id'] = activeUser.id;
+    if (activeUser.role) {
+      headers['x-user-role'] = activeUser.role;
+    }
   }
   return headers;
 };
@@ -135,6 +138,42 @@ export const api = {
     if (!r.ok) throw new Error(json.error || 'Failed to submit application');
     return json;
   }),
+  calculateFee: (data) => fetch(`${API_BASE}/applications/calculate-fee`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to calculate fee');
+    return json;
+  }),
+  recordPayment: (appId, paymentData) => fetch(`${API_BASE}/applications/${appId}/payment`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(paymentData)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to record payment');
+    return json;
+  }),
+  resubmitApplication: (appId, data) => fetch(`${API_BASE}/applications/${appId}/resubmit`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to resubmit application');
+    return json;
+  }),
+  returnApplication: (appId, returnReason) => fetch(`${API_BASE}/applications/${appId}/return`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ return_reason: returnReason })
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to return application');
+    return json;
+  }),
 
   // Authority Actions
   reviewApplication: (id) => fetch(`${API_BASE}/applications/${id}/review`, {
@@ -159,6 +198,24 @@ export const api = {
   }).then(async r => {
     const json = await r.json();
     if (!r.ok) throw new Error(json.error || 'Failed to assign verifier');
+    return json;
+  }),
+  approveApplication: (id, data = {}) => fetch(`${API_BASE}/applications/${id}/approve`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to approve application');
+    return json;
+  }),
+  rejectApplication: (id, rejectionReason) => fetch(`${API_BASE}/applications/${id}/reject`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ rejection_reason: rejectionReason })
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to reject application');
     return json;
   }),
 
@@ -268,6 +325,50 @@ export const api = {
     return Array.isArray(data) ? data : [];
   }).catch(() => []),
   getStats: () => fetch(`${API_BASE}/stats`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return r.ok ? data : null;
+  }).catch(() => null),
+
+  // Portal Admin Management
+  getAdminUsers: () => fetch(`${API_BASE}/admin/users`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
+  createAdminUser: (data) => fetch(`${API_BASE}/admin/users`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to create user account');
+    return json;
+  }),
+  updateUserStatus: (id, active) => fetch(`${API_BASE}/admin/users/${id}/status`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify({ active })
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to update user status');
+    return json;
+  }),
+  getAdminOrganizations: () => fetch(`${API_BASE}/admin/organizations`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
+  getAdminMasterData: () => fetch(`${API_BASE}/admin/master-data`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return r.ok ? data : { categories: [] };
+  }).catch(() => ({ categories: [] })),
+  getSystemHealth: () => fetch(`${API_BASE}/admin/system-health`, {
     headers: getHeaders()
   }).then(async r => {
     const data = await r.json();

@@ -54,33 +54,43 @@ export default function CertificatesList({
                   <td className="px-6 py-4">
                     <StatusBadge status={cert.status} />
                   </td>
-                  <td className="px-6 py-4 text-right space-x-1.5 whitespace-nowrap">
-                    <button
-                      onClick={() => onSelectCertificate(cert.id)}
-                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-semibold text-xs transition-colors"
-                    >
-                      Certificate
-                    </button>
-                    {onVerifyPublicToken && (
+                  <td className="px-6 py-4 text-right whitespace-nowrap">
+                    <div className="inline-flex items-center gap-2 justify-end">
                       <button
-                        onClick={() => onVerifyPublicToken(cert.public_token)}
-                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded font-semibold text-xs transition-colors"
-                        title="View the public QR verification view"
+                        onClick={() => onSelectCertificate(cert.id)}
+                        className="px-3 py-1.5 bg-[#002046] hover:bg-[#1b365d] text-white rounded-lg font-bold text-xs transition-all shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
+                        title="View Full Statutory Certificate"
                       >
-                        Verify
+                        <span className="material-symbols-outlined text-sm">visibility</span>
+                        <span>View Certificate</span>
                       </button>
-                    )}
-                    <button
-                      onClick={() => onOpenQR({
-                        certificate_no: cert.certificate_no,
-                        public_token: cert.public_token,
-                        status: cert.status
-                      })}
-                      className="px-2.5 py-1 bg-primary text-white rounded font-bold text-xs hover:bg-primary-container transition-all inline-flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-[15px]">qr_code_2</span>
-                      QR
-                    </button>
+
+                      {onVerifyPublicToken && (
+                        <button
+                          onClick={() => onVerifyPublicToken(cert.public_token)}
+                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                          title="Open Public QR Verification Registry"
+                        >
+                          <span className="material-symbols-outlined text-sm text-emerald-600">verified</span>
+                          <span>Verify</span>
+                        </button>
+                      )}
+
+                      {onOpenQR && (
+                        <button
+                          onClick={() => onOpenQR({
+                            certificate_no: cert.certificate_no,
+                            public_token: cert.public_token,
+                            status: cert.status
+                          })}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title="Display Cryptographic QR Code"
+                        >
+                          <span className="material-symbols-outlined text-sm text-[#002046]">qr_code_2</span>
+                          <span>QR</span>
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

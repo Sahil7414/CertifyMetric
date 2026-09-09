@@ -4,11 +4,17 @@ import StatusBadge from '../components/StatusBadge';
 export default function InstrumentsList({
   instruments = [],
   onOpenAddModal,
+  onOpenApplyModal,
   onSelectInstrument,
   onRequestVerification,
   onOpenQR
 }) {
   const safeInstruments = Array.isArray(instruments) ? instruments : [];
+
+  const handleApply = (id) => {
+    if (onOpenApplyModal) onOpenApplyModal(id);
+    else if (onRequestVerification) onRequestVerification(id);
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -17,13 +23,24 @@ export default function InstrumentsList({
           <h1 className="text-xl font-bold text-slate-900">Registered Instruments Registry</h1>
           <p className="text-xs text-slate-500 mt-0.5">Commercial instruments registered for statutory verification under Legal Metrology Act</p>
         </div>
-        <button
-          onClick={onOpenAddModal}
-          className="px-4 py-2 bg-primary text-white font-bold rounded-lg text-xs hover:bg-primary-container shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <span className="material-symbols-outlined text-[16px]">add_circle</span>
-          Register New Instrument
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          {onOpenApplyModal && (
+            <button
+              onClick={() => handleApply(null)}
+              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs shadow-xs transition-all flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">post_add</span>
+              Apply for Verification
+            </button>
+          )}
+          <button
+            onClick={onOpenAddModal}
+            className="px-3.5 py-2 bg-primary text-white font-bold rounded-lg text-xs hover:bg-primary-container shadow-xs transition-all flex items-center gap-1.5"
+          >
+            <span className="material-symbols-outlined text-[16px]">add_circle</span>
+            Register Instrument
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -72,15 +89,15 @@ export default function InstrumentsList({
                     </button>
                     {inst.status === 'REGISTERED' && (
                       <button
-                        onClick={() => onRequestVerification(inst.id)}
+                        onClick={() => handleApply(inst.id)}
                         className="px-3 py-1 bg-primary text-white rounded text-xs font-bold hover:bg-primary-container transition-all"
                       >
-                        Request Verification
+                        Apply
                       </button>
                     )}
                     {inst.status === 'EXPIRING' && (
                       <button
-                        onClick={() => onRequestVerification(inst.id)}
+                        onClick={() => handleApply(inst.id)}
                         className="px-3 py-1 bg-amber-600 text-white rounded text-xs font-bold hover:bg-amber-700 transition-all"
                       >
                         Re-verify

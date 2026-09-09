@@ -5,6 +5,30 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CertifyMetric — Online Verification System for Weighing & Measuring Instruments</title>
+    <script>
+      // Prevent third-party browser extensions or injected scripts from crashing page loading
+      window.addEventListener('error', function(event) {
+        if (event && event.message && event.message.includes('isFeatureEnabled')) {
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          return true;
+        }
+      }, true);
+
+      window.addEventListener('unhandledrejection', function(event) {
+        if (event && event.reason && String(event.reason).includes('isFeatureEnabled')) {
+          event.preventDefault();
+        }
+      });
+
+      try {
+        if (!window.chrome) window.chrome = {};
+        if (!window.chrome.runtime) window.chrome.runtime = {};
+        if (typeof window.isFeatureEnabled === 'undefined') {
+          window.isFeatureEnabled = function() { return false; };
+        }
+      } catch (e) {}
+    </script>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
