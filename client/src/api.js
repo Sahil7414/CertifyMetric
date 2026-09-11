@@ -83,6 +83,15 @@ export const api = {
     if (!r.ok) throw new Error(json.error || 'Authentication failed');
     return json;
   }),
+  register: (payload) => fetch(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Registration failed');
+    return json;
+  }),
   logout: () => fetch(`${API_BASE}/auth/logout`, {
     method: 'POST',
     headers: getHeaders()
@@ -97,6 +106,12 @@ export const api = {
   }).catch(() => null),
 
   // Instruments (Trader)
+  getInstrumentCategories: () => fetch(`${API_BASE}/instrument-categories`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => []),
   getInstruments: (ownerId) => fetch(`${API_BASE}/instruments${ownerId ? `?owner_id=${ownerId}` : ''}`, {
     headers: getHeaders()
   }).then(async r => {
@@ -145,6 +160,31 @@ export const api = {
   }).then(async r => {
     const json = await r.json();
     if (!r.ok) throw new Error(json.error || 'Failed to calculate fee');
+    return json;
+  }),
+  createRazorpayOrder: (appId) => fetch(`${API_BASE}/applications/${appId}/payment/razorpay-order`, {
+    method: 'POST',
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Could not start payment');
+    return json;
+  }),
+  verifyRazorpayPayment: (appId, data) => fetch(`${API_BASE}/applications/${appId}/payment/razorpay-verify`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Payment verification failed');
+    return json;
+  }),
+  resendReceiptEmail: (appId) => fetch(`${API_BASE}/applications/${appId}/receipt-email`, {
+    method: 'POST',
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Could not send the receipt email');
     return json;
   }),
   recordPayment: (appId, paymentData) => fetch(`${API_BASE}/applications/${appId}/payment`, {

@@ -26,6 +26,7 @@ import { seedAllDemoData } from './scripts/seedDemoUsers.js';
 import { ROLES, hasPermission, requirePermission } from './permissions.js';
 import { upload, STORAGE_DIR, deleteStoredFile, initStorage } from './storage.js';
 import { verifyPassword, hashPassword } from './auth-utils.js';
+import { sendEmail, buildPaymentReceiptEmail } from './email.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,6 +65,18 @@ if (process.env.MONGODB_URI) {
 
 // Initialize persistent storage directory
 initStorage();
+
+// Safety net: most route handlers below are async functions without try/catch,
+// so an error thrown inside one (e.g. a Mongoose validation error) becomes an
+// unhandled rejection that crashes this ENTIRE process — taking the server down
+// for every user over one bad request. This does not fix the underlying gap in
+// each route, but stops that one failure mode from being fatal.
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection (request likely failed, server stayed up):', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception (server stayed up):', err);
+});
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '4000', 10);
@@ -243,6 +256,92 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ token, user: safeUser, organization: org });
 });
 
+// Self-registration is open to statutory-facing roles per product decision, but
+// PLATFORM_ADMIN is deliberately excluded — no role may self-register as system admin.
+const SELF_REGISTERABLE_ROLES = [ROLES.TRADER, ROLES.VERIFIER, ROLES.AUTHORITY, ROLES.GATC];
+
+app.post('/api/auth/register', async (req, res) => {
+  const { full_name, email, password, phone, role, organization_name, jurisdictions } = req.body;
+
+  if (!full_name || !email || !password || !role) {
+    return res.status(400).json({ error: 'full_name, email, password, and role are required' });
+  }
+  if (!SELF_REGISTERABLE_ROLES.includes(role)) {
+    return res.status(400).json({ error: `Role '${role}' is not available for self-registration.` });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = await User.findOne({ email: normalizedEmail }).lean();
+  if (existing) {
+    return res.status(409).json({ error: 'An account with this email already exists.' });
+  }
+
+  // Statutory roles (LMO/Authority/GATC) must declare their notified jurisdiction —
+  // it's the hard eligibility key the allocation engine filters on (see server/server.js
+  // GET /api/applications/:id/candidates). Trader organizations don't need one.
+  // Split on ';' — district/circle names themselves routinely contain a comma
+  // (e.g. "Central District, Delhi"), so ',' cannot be the multi-jurisdiction separator.
+  const isStatutoryRole = role !== ROLES.TRADER;
+  const jurisdictionList = Array.isArray(jurisdictions)
+    ? jurisdictions.map(j => String(j).trim()).filter(Boolean)
+    : String(jurisdictions || '').split(';').map(j => j.trim()).filter(Boolean);
+
+  if (isStatutoryRole && jurisdictionList.length === 0) {
+    return res.status(400).json({ error: 'At least one notified jurisdiction (district/circle) is required for this role.' });
+  }
+  if (!organization_name || !organization_name.trim()) {
+    return res.status(400).json({ error: 'Organization / establishment name is required.' });
+  }
+
+  const now = new Date().toISOString();
+  const orgId = `ORG_${role}_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+  const orgType = role === ROLES.TRADER ? 'TRADER_ORG' : role === ROLES.GATC ? 'TEST_CENTRE' : 'STATUTORY_AUTHORITY';
+
+  await Organization.create({
+    id: orgId,
+    name: organization_name.trim(),
+    type: orgType,
+    jurisdictions: jurisdictionList,
+    created_at: now
+  });
+
+  const userId = `USR_${role}_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+  const password_hash = hashPassword(password);
+
+  await User.create({
+    id: userId,
+    email: normalizedEmail,
+    password_hash,
+    role,
+    full_name: full_name.trim(),
+    organization_id: orgId,
+    phone: phone || '',
+    is_demo: 0,
+    active: true,
+    created_at: now,
+    updated_at: now
+  });
+
+  const token = `tok_${userId}_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+  await UserSession.create({
+    token,
+    user_id: userId,
+    role,
+    created_at: now,
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  });
+
+  logAudit('UserAuth', userId, 'USER_REGISTERED', userId, role, { email: normalizedEmail, role, organization_id: orgId });
+
+  const user = await User.findOne({ id: userId }).lean();
+  const org = await Organization.findOne({ id: orgId }).lean();
+  const { password_hash: _ph, _id, ...safeUser } = user;
+  res.status(201).json({ token, user: safeUser, organization: org });
+});
+
 app.get('/api/auth/me', async (req, res) => {
   const actor = getActor(req);
   if (!actor || actor.role === 'ANONYMOUS') {
@@ -305,7 +404,8 @@ app.get('/api/instruments', async (req, res) => {
     return {
       ...i,
       category_name: cat.name || null,
-      category_code: cat.code || null
+      category_code: cat.code || null,
+      category_spec_schema: Array.isArray(cat.spec_schema) ? cat.spec_schema : []
     };
   });
   res.json(result);
@@ -354,10 +454,28 @@ app.get('/api/instruments/:id', async (req, res) => {
     ...instrument,
     category_name: cat ? cat.name : null,
     category_code: cat ? cat.code : null,
+    category_spec_schema: cat && Array.isArray(cat.spec_schema) ? cat.spec_schema : [],
     owner_name: user ? user.full_name : null,
     owner_org: org ? org.name : null,
     history
   });
+});
+
+// Automatic weighing instruments (belt conveyor scales, rail weighbridges, in-line
+// checkweighers, filling machines) are built into a process line and tested on site.
+const IN_SITU_ONLY_CATEGORY_CODES = ['WEIGHBRIDGE', 'FUEL_DISPENSER', 'GAS_FUEL_DISPENSER', 'AUTO_WEIGHING'];
+
+// Any authenticated user can read the active category list + spec_schema — needed
+// by the instrument registration form to render category-specific fields. This is
+// deliberately separate from /api/admin/master-data, which is admin-only and also
+// exposes rule sets (MPE tables, checklists) that aren't needed just to render a form.
+app.get('/api/instrument-categories', async (req, res) => {
+  const { role } = getActor(req);
+  if (role === 'ANONYMOUS') {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  const categories = await InstrumentCategory.find({ active: 1 }).lean();
+  res.json(categories);
 });
 
 app.post('/api/instruments', async (req, res) => {
@@ -376,40 +494,65 @@ app.post('/api/instruments', async (req, res) => {
     max_capacity,
     min_capacity,
     verification_scale_interval_e,
-    location
+    specs,
+    location,
+    district
   } = req.body;
 
   const targetOwnerId = owner_id || actorId;
-  if (!targetOwnerId || !serial_number || !manufacturer || !model) {
-    return res.status(400).json({ error: 'Missing mandatory instrument details' });
+  if (!targetOwnerId || !serial_number || !manufacturer || !model || !category_id || !location || !district) {
+    return res.status(400).json({ error: 'Missing mandatory instrument details (manufacturer, model, serial number, category, location, and district are all required)' });
   }
 
-  const existing = await Instrument.findOne({ serial_number }).lean();
-  if (existing) {
-    return res.status(400).json({ error: 'Instrument with this serial number is already registered' });
+  try {
+    const category = await InstrumentCategory.findOne({ id: category_id }).lean();
+    if (!category) {
+      return res.status(400).json({ error: `Unknown instrument category '${category_id}'` });
+    }
+
+    // Category-specific spec fields are declared server-side (category.spec_schema),
+    // not trusted blindly from the client — required ones must actually be present.
+    const specSchema = Array.isArray(category.spec_schema) ? category.spec_schema : [];
+    const providedSpecs = specs && typeof specs === 'object' ? specs : {};
+    const missingSpec = specSchema.find(f => f.required && !String(providedSpecs[f.key] ?? '').trim());
+    if (missingSpec) {
+      return res.status(400).json({ error: `Missing required field '${missingSpec.label || missingSpec.key}' for category '${category.name}'` });
+    }
+
+    const existing = await Instrument.findOne({ serial_number }).lean();
+    if (existing) {
+      return res.status(400).json({ error: 'Instrument with this serial number is already registered' });
+    }
+
+    const id = `INST_${Date.now()}`;
+    const now = new Date().toISOString();
+
+    await Instrument.create({
+      id,
+      owner_id: targetOwnerId,
+      category_id,
+      manufacturer,
+      model,
+      serial_number,
+      // Only meaningful for weight-based categories — left blank otherwise rather
+      // than defaulting to a NAWI-shaped value that would misdescribe the instrument.
+      max_capacity: max_capacity || '',
+      min_capacity: min_capacity || '',
+      verification_scale_interval_e: verification_scale_interval_e || '',
+      specs: providedSpecs,
+      location,
+      district,
+      status: 'REGISTERED',
+      created_at: now
+    });
+
+    logAudit('Instrument', id, 'REGISTER', actorId, role, { serial_number, manufacturer, model });
+
+    res.status(201).json({ id, message: 'Instrument registered successfully' });
+  } catch (err) {
+    console.error('Instrument registration failed:', err.message);
+    res.status(400).json({ error: `Instrument registration failed: ${err.message}` });
   }
-
-  const id = `INST_${Date.now()}`;
-  const now = new Date().toISOString();
-
-  await Instrument.create({
-    id,
-    owner_id: targetOwnerId,
-    category_id: category_id || 'CAT_NAWI_III',
-    manufacturer,
-    model,
-    serial_number,
-    max_capacity: max_capacity || '30 kg',
-    min_capacity: min_capacity || '100 g',
-    verification_scale_interval_e: verification_scale_interval_e || '5 g',
-    location,
-    status: 'REGISTERED',
-    created_at: now
-  });
-
-  logAudit('Instrument', id, 'REGISTER', actorId, role, { serial_number, manufacturer, model });
-
-  res.status(201).json({ id, message: 'Instrument registered successfully' });
 });
 
 // ==========================================
@@ -515,7 +658,7 @@ app.get('/api/applications/:id', async (req, res) => {
     trader_phone: trader ? trader.phone : null,
     trader_email: trader ? trader.email : null,
     trader_org: traderOrg ? traderOrg.name : null,
-    trader_jurisdiction: traderOrg ? traderOrg.jurisdiction : null,
+    trader_jurisdiction: traderOrg ? (traderOrg.jurisdictions || []).join(', ') : null,
     assignment_id: asn ? asn.id : null,
     assigned_type: asn ? asn.assigned_type : null,
     assigned_id: asn ? asn.assigned_id : null,
@@ -630,6 +773,13 @@ app.post('/api/applications', async (req, res) => {
     return res.status(403).json({ error: 'Forbidden: You can only apply for your own registered instruments.' });
   }
 
+  // Fixed installations can't be carried to a camp/centre — the officer must test them on site.
+  const instCategory = await InstrumentCategory.findOne({ id: inst.category_id }).lean();
+  const effectiveMode = verification_mode || 'CAMP';
+  if (instCategory && IN_SITU_ONLY_CATEGORY_CODES.includes(instCategory.code) && effectiveMode !== 'IN_SITU') {
+    return res.status(400).json({ error: `${instCategory.name} can only be verified in-situ (on premises); Camp/Centre presentation is not possible for this instrument.` });
+  }
+
   const activeApp = await Application.findOne({
     instrument_id,
     status: { $nin: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'REJECTED'] }
@@ -643,9 +793,10 @@ app.post('/api/applications', async (req, res) => {
   const appNo = `APP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
   const now = new Date().toISOString();
 
-  const isPaid = payment && (payment.payment_status === 'PAID' || payment.payment_status === 'VERIFIED');
-  const initialStatus = isPaid ? 'PENDING_VERIFICATION' : 'PAYMENT_PENDING';
-  const initialFeeStatus = isPaid ? 'PAID' : 'PENDING';
+  // A new application always starts unpaid; payment status is only ever set by the
+  // payment endpoints, never by what the client claims at submission.
+  const initialStatus = 'PAYMENT_PENDING';
+  const initialFeeStatus = 'PENDING';
 
   await Application.create({
     id,
@@ -654,7 +805,7 @@ app.post('/api/applications', async (req, res) => {
     trader_id: targetTraderId,
     request_type: request_type || (verification_type === 'RE_VERIFICATION' ? 'RE_VERIFICATION' : 'INITIAL_VERIFICATION'),
     verification_type: verification_type || (request_type === 'RE_VERIFICATION' ? 'RE_VERIFICATION' : 'ORIGINAL'),
-    verification_mode: verification_mode || 'CAMP',
+    verification_mode: effectiveMode,
     preferred_date: preferred_date || null,
     remarks: remarks || '',
     contact_person: contact_person || null,
@@ -664,7 +815,7 @@ app.post('/api/applications', async (req, res) => {
     documents: Array.isArray(documents) ? documents : [],
     fee_status: initialFeeStatus,
     fee_breakdown: fee_breakdown || {},
-    payment: payment || {},
+    payment: { payment_status: 'PENDING', amount: Number(fee_breakdown?.total_fee) || null },
     created_at: now,
     updated_at: now
   });
@@ -693,6 +844,13 @@ app.post('/api/applications/:id/payment', async (req, res) => {
   }
 
   const { payment_mode, payment_status, transaction_id, reference_no, amount, paid_at, receipt_url } = req.body;
+
+  // Online payments must go through the Razorpay order + signature-verification
+  // endpoints below. Accepting a client-supplied "ONLINE / PAID" here would let
+  // anyone mark an application paid without paying.
+  if ((payment_mode || 'ONLINE') === 'ONLINE') {
+    return res.status(400).json({ error: 'Online payments must be completed through the payment gateway.' });
+  }
 
   const now = new Date().toISOString();
   const txnId = transaction_id || `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
@@ -731,12 +889,271 @@ app.post('/api/applications/:id/payment', async (req, res) => {
     payment_status: pStatus
   });
 
+  const receiptEmail = await emailPaymentReceipt(applicationId, actorId, role);
   const updatedApp = await Application.findOne({ id: applicationId }).lean();
   res.json({
     message: 'Payment recorded successfully',
     application: updatedApp,
-    payment: paymentRecord
+    payment: updatedApp.payment,
+    receipt_email: { sent: receiptEmail.sent, to: receiptEmail.to || null }
   });
+});
+
+// Emails the payment receipt to the trader's registered address (looked up here, never
+// taken from the request). Failure is recorded but never undoes the payment.
+async function emailPaymentReceipt(applicationId, actorId, role) {
+  try {
+    const application = await Application.findOne({ id: applicationId }).lean();
+    if (!application) return { sent: false, reason: 'Application not found' };
+    const [trader, instrument] = await Promise.all([
+      User.findOne({ id: application.trader_id }).lean(),
+      Instrument.findOne({ id: application.instrument_id }).lean()
+    ]);
+    if (!trader?.email) return { sent: false, reason: 'Trader has no email on file' };
+    // Demo accounts use made-up *.local addresses; sending would bounce and damage the
+    // sender's reputation with Brevo.
+    if (/\.local$/i.test(trader.email)) {
+      return { sent: false, reason: 'Demo account address — receipt email not sent', to: trader.email };
+    }
+    const [category, org] = await Promise.all([
+      instrument ? InstrumentCategory.findOne({ id: instrument.category_id }).lean() : null,
+      trader.organization_id ? Organization.findOne({ id: trader.organization_id }).lean() : null
+    ]);
+
+    const { subject, html, text } = buildPaymentReceiptEmail({
+      application,
+      payment: application.payment || {},
+      instrument,
+      categoryName: category?.name,
+      traderName: trader.full_name,
+      establishmentName: org?.name
+    });
+    const result = await sendEmail({ to: { email: trader.email, name: trader.full_name }, subject, html, text });
+
+    const receiptEmail = {
+      to: trader.email,
+      status: result.sent ? 'SENT' : 'FAILED',
+      message_id: result.messageId || null,
+      error: result.sent ? null : result.reason,
+      at: new Date().toISOString()
+    };
+    await Application.updateOne({ id: applicationId }, { $set: { 'payment.receipt_email': receiptEmail } });
+    logAudit('Application', applicationId, result.sent ? 'RECEIPT_EMAIL_SENT' : 'RECEIPT_EMAIL_FAILED', actorId, role, {
+      to: trader.email,
+      ...(result.sent ? { message_id: result.messageId } : { reason: result.reason })
+    });
+    if (!result.sent) console.error('Receipt email failed:', result.reason);
+    return { ...result, to: trader.email };
+  } catch (err) {
+    console.error('Receipt email error:', err.message);
+    return { sent: false, reason: err.message };
+  }
+}
+
+const RECEIPT_RESEND_COOLDOWN_MS = 60 * 1000;
+
+app.post('/api/applications/:id/receipt-email', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+  if (!hasPermission(role, 'RECORD_PAYMENT')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot request receipts.` });
+  }
+  const appItem = await Application.findOne({ id: req.params.id }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+  if (appItem.trader_id !== actorId) {
+    return res.status(403).json({ error: 'Forbidden: You can only request receipts for your own applications.' });
+  }
+  if (appItem.fee_status !== 'PAID') {
+    return res.status(400).json({ error: 'No payment has been recorded for this application yet.' });
+  }
+  // Brevo's free plan is 300 emails/day for the whole platform — stop one user draining it.
+  const lastAt = appItem.payment?.receipt_email?.at ? new Date(appItem.payment.receipt_email.at).getTime() : 0;
+  if (Date.now() - lastAt < RECEIPT_RESEND_COOLDOWN_MS) {
+    return res.status(429).json({ error: 'A receipt was just sent. Please wait a minute before trying again.' });
+  }
+  const result = await emailPaymentReceipt(appItem.id, actorId, role);
+  if (!result.sent) return res.status(502).json({ error: `Could not send the receipt email: ${result.reason}` });
+  res.json({ sent: true, to: result.to });
+});
+
+// ------------------------------------------------------------------
+// Razorpay online payment: create order -> Checkout (browser) -> verify
+// ------------------------------------------------------------------
+const RAZORPAY_API = 'https://api.razorpay.com/v1';
+
+function razorpayAuthHeader() {
+  const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = process.env;
+  if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) return null;
+  return 'Basic ' + Buffer.from(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`).toString('base64');
+}
+
+async function razorpayRequest(method, path, body) {
+  const auth = razorpayAuthHeader();
+  if (!auth) throw new Error('Razorpay is not configured on the server (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET).');
+  const r = await fetch(`${RAZORPAY_API}${path}`, {
+    method,
+    headers: { Authorization: auth, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const json = await r.json();
+  if (!r.ok) throw new Error(json?.error?.description || `Razorpay request failed (${r.status})`);
+  return json;
+}
+
+async function loadPayableApplication(req, res) {
+  const { role, id: actorId } = getActor(req);
+  if (!hasPermission(role, 'RECORD_PAYMENT')) {
+    res.status(403).json({ error: `Forbidden: Role '${role}' cannot make payments.` });
+    return null;
+  }
+  const appItem = await Application.findOne({ id: req.params.id }).lean();
+  if (!appItem) {
+    res.status(404).json({ error: 'Application not found' });
+    return null;
+  }
+  if (appItem.trader_id !== actorId) {
+    res.status(403).json({ error: 'Forbidden: You can only pay for your own application.' });
+    return null;
+  }
+  if (appItem.fee_status === 'PAID') {
+    res.status(400).json({ error: 'This application has already been paid.' });
+    return null;
+  }
+  return { appItem, role, actorId };
+}
+
+app.post('/api/applications/:id/payment/razorpay-order', async (req, res) => {
+  try {
+    const ctx = await loadPayableApplication(req, res);
+    if (!ctx) return;
+    const { appItem, role, actorId } = ctx;
+
+    // Amount comes from the stored application, never from this request.
+    const rupees = Number(appItem.fee_breakdown?.total_fee);
+    if (!Number.isFinite(rupees) || rupees <= 0) {
+      return res.status(400).json({ error: 'No payable fee is recorded for this application.' });
+    }
+    const amountPaise = Math.round(rupees * 100);
+
+    const order = await razorpayRequest('POST', '/orders', {
+      amount: amountPaise,
+      currency: 'INR',
+      receipt: appItem.application_no,
+      notes: { application_id: appItem.id, application_no: appItem.application_no }
+    });
+
+    const now = new Date().toISOString();
+    await Application.updateOne(
+      { id: appItem.id },
+      {
+        $set: {
+          payment: {
+            ...(appItem.payment || {}),
+            payment_mode: 'ONLINE',
+            gateway: 'RAZORPAY',
+            payment_status: 'PENDING',
+            razorpay_order_id: order.id,
+            amount: rupees
+          },
+          updated_at: now
+        }
+      }
+    );
+    logAudit('Application', appItem.id, 'PAYMENT_ORDER_CREATED', actorId, role, { razorpay_order_id: order.id, amount: rupees });
+
+    res.json({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      application_no: appItem.application_no
+    });
+  } catch (err) {
+    console.error('Razorpay order creation failed:', err.message);
+    res.status(502).json({ error: `Could not start payment: ${err.message}` });
+  }
+});
+
+app.post('/api/applications/:id/payment/razorpay-verify', async (req, res) => {
+  try {
+    const ctx = await loadPayableApplication(req, res);
+    if (!ctx) return;
+    const { appItem, role, actorId } = ctx;
+
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: 'Missing Razorpay payment details.' });
+    }
+    if (razorpay_order_id !== appItem.payment?.razorpay_order_id) {
+      return res.status(400).json({ error: 'Payment does not belong to this application.' });
+    }
+
+    // Razorpay signs "<order_id>|<payment_id>" with the key secret.
+    const expected = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+    const sigOk = expected.length === String(razorpay_signature).length &&
+      crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(razorpay_signature)));
+    if (!sigOk) {
+      logAudit('Application', appItem.id, 'PAYMENT_SIGNATURE_INVALID', actorId, role, { razorpay_order_id, razorpay_payment_id });
+      return res.status(400).json({ error: 'Payment signature verification failed.' });
+    }
+
+    // Confirm with Razorpay itself that the money actually moved for this order.
+    let payment = await razorpayRequest('GET', `/payments/${razorpay_payment_id}`);
+    const expectedPaise = Math.round(Number(appItem.payment?.amount || appItem.fee_breakdown?.total_fee) * 100);
+    if (payment.order_id !== razorpay_order_id || payment.amount !== expectedPaise) {
+      return res.status(400).json({ error: 'Payment amount or order mismatch.' });
+    }
+    if (payment.status === 'authorized') {
+      payment = await razorpayRequest('POST', `/payments/${razorpay_payment_id}/capture`, {
+        amount: payment.amount,
+        currency: payment.currency
+      });
+    }
+    if (payment.status !== 'captured') {
+      return res.status(400).json({ error: `Payment not completed (status: ${payment.status}).` });
+    }
+
+    const now = new Date().toISOString();
+    const paymentRecord = {
+      payment_mode: 'ONLINE',
+      gateway: 'RAZORPAY',
+      payment_status: 'PAID',
+      transaction_id: razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_payment_id,
+      method: payment.method || null,
+      test_mode: String(process.env.RAZORPAY_KEY_ID || '').startsWith('rzp_test_'),
+      reference_no: appItem.application_no,
+      amount: payment.amount / 100,
+      paid_at: payment.created_at ? new Date(payment.created_at * 1000).toISOString() : now
+    };
+
+    await Application.updateOne(
+      { id: appItem.id },
+      { $set: { payment: paymentRecord, fee_status: 'PAID', status: 'PENDING_VERIFICATION', updated_at: now } }
+    );
+    logAudit('Application', appItem.id, 'PAYMENT_RECORDED', actorId, role, {
+      transaction_id: razorpay_payment_id,
+      payment_mode: 'ONLINE',
+      gateway: 'RAZORPAY',
+      amount: paymentRecord.amount,
+      payment_status: 'PAID'
+    });
+
+    const receiptEmail = await emailPaymentReceipt(appItem.id, actorId, role);
+    const updatedApp = await Application.findOne({ id: appItem.id }).lean();
+    res.json({
+      message: 'Payment verified successfully',
+      application: updatedApp,
+      payment: updatedApp.payment,
+      receipt_email: { sent: receiptEmail.sent, to: receiptEmail.to || null }
+    });
+  } catch (err) {
+    console.error('Razorpay verification failed:', err.message);
+    res.status(502).json({ error: `Payment verification failed: ${err.message}` });
+  }
 });
 
 // Resubmit Returned Application (Trader Action)
@@ -865,6 +1282,9 @@ app.get('/api/applications/:id/candidates', async (req, res) => {
   const appItem = await Application.findOne({ id: req.params.id }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const instrumentDistrict = inst ? inst.district : null;
+
   const verifiers = await User.find({ role: { $in: ['VERIFIER', 'GATC'] } }).lean();
   const orgIds = [...new Set(verifiers.map(u => u.organization_id).filter(Boolean))];
   const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
@@ -876,33 +1296,54 @@ app.get('/api/applications/:id/candidates', async (req, res) => {
     workloadMap.set(a.assigned_id, (workloadMap.get(a.assigned_id) || 0) + 1);
   }
 
+  // Hard eligibility filter: a candidate has statutory authority to verify this
+  // instrument only if the instrument's district is among their office's notified
+  // jurisdictions. Workload/score is a soft ranking applied ONLY within that set —
+  // an idle officer in another district is never a valid recommendation, regardless
+  // of score. (See docs/ARCHITECTURE.md §3.2 for the real-world basis of this rule.)
   const scored = verifiers.map(c => {
     const org = orgMap.get(c.organization_id) || {};
+    const jurisdictions = org.jurisdictions || [];
+    const is_eligible = !!instrumentDistrict && jurisdictions.includes(instrumentDistrict);
     const current_workload = workloadMap.get(c.id) || 0;
+
     let score = 100 - (current_workload * 12);
     let matchReason = 'Authorized statutory Legal Metrology Officer';
     if (c.role === 'GATC') {
       score += 5;
       matchReason = 'Approved test centre with verified mass standard laboratory';
     }
+
+    if (!is_eligible) {
+      score = 0;
+      matchReason = jurisdictions.length > 0
+        ? `Outside notified jurisdiction (covers: ${jurisdictions.join(', ')})`
+        : 'No notified jurisdiction on record for this office';
+    }
+
     return {
       id: c.id,
       full_name: c.full_name,
       role: c.role,
       phone: c.phone,
       organization_name: org.name || null,
-      jurisdiction: org.jurisdiction || null,
+      jurisdictions,
       current_workload,
-      suitability_score: Math.max(score, 40),
+      suitability_score: is_eligible ? Math.max(score, 40) : 0,
       match_reason: matchReason,
-      is_eligible: true
+      is_eligible
     };
-  }).sort((a, b) => b.suitability_score - a.suitability_score);
+  }).sort((a, b) => {
+    if (a.is_eligible !== b.is_eligible) return a.is_eligible ? -1 : 1;
+    return b.suitability_score - a.suitability_score;
+  });
 
-  const recommendedId = scored.length > 0 ? scored[0].id : null;
+  const topEligible = scored.find(c => c.is_eligible);
+  const recommendedId = topEligible ? topEligible.id : null;
 
   res.json({
     application_id: req.params.id,
+    instrument_district: instrumentDistrict,
     recommended_id: recommendedId,
     candidates: scored
   });
@@ -932,6 +1373,25 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     return res.status(400).json({ error: 'Assignee must have role VERIFIER or GATC' });
   }
 
+  // Re-derive jurisdiction eligibility server-side — never trust the client's
+  // is_override flag alone. An out-of-jurisdiction assignee is only permitted
+  // when an explicit override reason is recorded (e.g. covering a vacant post),
+  // matching the real-world exception process, not a routine choice.
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const assigneeOrg = assignee.organization_id ? await Organization.findOne({ id: assignee.organization_id }).lean() : null;
+  const assigneeJurisdictions = assigneeOrg ? (assigneeOrg.jurisdictions || []) : [];
+  const isJurisdictionMatch = !!(inst && inst.district && assigneeJurisdictions.includes(inst.district));
+
+  if (!isJurisdictionMatch && !(override_reason && override_reason.trim())) {
+    return res.status(400).json({
+      error: `Assignee's notified jurisdiction (${assigneeJurisdictions.join(', ') || 'none on record'}) does not cover the instrument's district (${inst ? inst.district : 'unknown'}). An override_reason is required to assign outside jurisdiction.`
+    });
+  }
+
+  // Cross-jurisdiction assignments are always recorded as an override, even if the
+  // client didn't flag it, so the audit trail reflects the actual statutory exception.
+  const recordedOverride = (is_override || !isJurisdictionMatch) ? 1 : 0;
+
   const assignmentId = `ASN_${Date.now()}`;
   const now = new Date().toISOString();
 
@@ -943,7 +1403,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
         $set: {
           assigned_id,
           assigned_type: assignee.role,
-          is_override: is_override ? 1 : 0,
+          is_override: recordedOverride,
           override_reason: override_reason || '',
           assigned_by: actorId
         }
@@ -956,7 +1416,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
       assigned_type: assignee.role,
       assigned_id,
       recommended_id: recommended_id || assigned_id,
-      is_override: is_override ? 1 : 0,
+      is_override: recordedOverride,
       override_reason: override_reason || '',
       assigned_by: actorId,
       created_at: now
@@ -1138,7 +1598,7 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
     trader_phone: trader ? trader.phone : null,
     trader_email: trader ? trader.email : null,
     trader_org: traderOrg ? traderOrg.name : null,
-    trader_jurisdiction: traderOrg ? traderOrg.jurisdiction : null,
+    trader_jurisdiction: traderOrg ? (traderOrg.jurisdictions || []).join(', ') : null,
     assigned_id: asn ? asn.assigned_id : null,
     assigned_type: asn ? asn.assigned_type : null,
     assigned_at: asn ? asn.created_at : null,
@@ -2002,7 +2462,7 @@ app.get('/api/public/verify/:token', async (req, res) => {
     verification_authority: {
       officer: cert.issuing_officer,
       authority: cert.issuing_authority,
-      jurisdiction: torg ? torg.jurisdiction : 'National Capital Territory of Delhi'
+      jurisdiction: torg ? (torg.jurisdictions || []).join(', ') : 'National Capital Territory of Delhi'
     },
     business: {
       enterprise_name: torg ? torg.name : 'Authorized Commercial Establishment'

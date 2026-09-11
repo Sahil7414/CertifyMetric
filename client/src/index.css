@@ -62,3 +62,73 @@
   }
 }
 
+/* Payment receipt: hidden on screen; while printing (body.printing-receipt) it is
+   the only thing on the page. Scoped so certificate/timeline printing is unaffected. */
+#receipt-print-root {
+  display: none;
+}
+@media print {
+  body.printing-receipt > *:not(#receipt-print-root) {
+    display: none !important;
+  }
+  body.printing-receipt #receipt-print-root {
+    display: block !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Slide-over Drawer Animations */
+@keyframes slideInFromRight {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutToRight {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fadeInBackdrop {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOutBackdrop {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInFromRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-out-right {
+  animation: slideOutToRight 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-backdrop-in {
+  animation: fadeInBackdrop 0.3s ease-out forwards;
+}
+
+.animate-backdrop-out {
+  animation: fadeOutBackdrop 0.25s ease-in forwards;
+}
+
+

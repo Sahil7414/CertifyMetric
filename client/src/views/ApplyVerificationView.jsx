@@ -1,11 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
+import PaymentReceipt from '../components/PaymentReceipt';
+
+const printReceipt = () => {
+  document.body.classList.add('printing-receipt');
+  const cleanup = () => {
+    document.body.classList.remove('printing-receipt');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+};
+
+const RAZORPAY_CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+
+function loadRazorpayCheckout() {
+  if (window.Razorpay) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const existing = document.querySelector(`script[src="${RAZORPAY_CHECKOUT_SRC}"]`);
+    const script = existing || document.createElement('script');
+    script.addEventListener('load', () => resolve(true));
+    script.addEventListener('error', () => resolve(false));
+    if (!existing) {
+      script.src = RAZORPAY_CHECKOUT_SRC;
+      document.body.appendChild(script);
+    }
+  });
+}
+
+// Keep in sync with IN_SITU_ONLY_CATEGORY_CODES in server/server.js (the server enforces it).
+const IN_SITU_ONLY_CATEGORY_CODES = ['WEIGHBRIDGE', 'FUEL_DISPENSER', 'GAS_FUEL_DISPENSER', 'AUTO_WEIGHING'];
 
 const STEPS = [
   { id: 1, title: 'Type', label: 'Verification Type', icon: 'verified' },
-  { id: 2, title: 'Mode', label: 'Verification Mode', icon: 'business' },
-  { id: 3, title: 'Instrument', label: 'Select Instrument', icon: 'scale' },
+  { id: 2, title: 'Instrument', label: 'Select Instrument', icon: 'scale' },
+  { id: 3, title: 'Mode', label: 'Verification Mode', icon: 'business' },
   { id: 4, title: 'Details', label: 'Premises & Contact', icon: 'description' },
   { id: 5, title: 'Documents', label: 'Upload Documents', icon: 'upload_file' },
   { id: 6, title: 'Fees', label: 'Fee Calculation', icon: 'calculate' },
@@ -57,7 +87,9 @@ export default function ApplyVerificationView({
 
   // 4. Establishment & Contact Details
   const [applicantName, setApplicantName] = useState(currentUser?.full_name || 'Authorized Trader');
-  const [firmName, setFirmName] = useState(currentUser?.organization_id || 'Commercial Enterprise');
+  // Registered establishment name comes from the trader's Organization record, not
+  // the user object (which only carries organization_id).
+  const [firmName, setFirmName] = useState('');
   const [contactPerson, setContactPerson] = useState(() => {
     return pendingPaymentApplication?.contact_person || resubmitApplicationData?.contact_person || currentUser?.full_name || '';
   });
@@ -119,15 +151,59 @@ export default function ApplyVerificationView({
     pendingPaymentApplication || resubmitApplicationData || null
   );
   const [paymentResult, setPaymentResult] = useState(null);
+  const [receiptEmail, setReceiptEmail] = useState(null); // { sent, to } from the server
+  const [resendingReceipt, setResendingReceipt] = useState(false);
+  const [resendMessage, setResendMessage] = useState('');
+
+  const handleResendReceipt = async () => {
+    setResendingReceipt(true);
+    setResendMessage('');
+    try {
+      const res = await api.resendReceiptEmail(createdApp.id);
+      setReceiptEmail({ sent: true, to: res.to });
+      setResendMessage(`Receipt sent again to ${res.to}.`);
+    } catch (err) {
+      setResendMessage(err.message);
+    } finally {
+      setResendingReceipt(false);
+    }
+  };
+
+  // Once an application exists, the amount due is what the server stored for it (the
+  // Razorpay order is created from that), not a fresh in-browser recalculation.
+  const amountDue = Number(
+    createdApp?.fee_breakdown?.total_fee ?? createdApp?.payment?.amount ?? feeBreakdown?.total_fee ?? 0
+  );
 
   // Find currently selected instrument
   const selectedInst = instruments.find(i => i.id === selectedInstrumentId) || instruments[0] || null;
 
-  // Auto-fill premises address when instrument is picked
+  // Fixed installations can't be carried to a camp — must match the server-side list.
+  // The instrument is chosen (step 2) before the mode (step 3), so this is always known.
+  const campLocked = IN_SITU_ONLY_CATEGORY_CODES.includes(selectedInst?.category_code);
+
   useEffect(() => {
-    if (selectedInst && !premisesAddress) {
-      setPremisesAddress(selectedInst.location || '');
-    }
+    if (campLocked && verificationMode !== 'IN_SITU') setVerificationMode('IN_SITU');
+  }, [campLocked, verificationMode]);
+
+  useEffect(() => {
+    api.getMe().then(res => {
+      if (res?.organization?.name) setFirmName(res.organization.name);
+    });
+  }, []);
+
+  // Prefill the premises address from the instrument's registered location + district
+  // whenever the chosen instrument changes (but keep a saved address when resuming
+  // a returned/unpaid application on its original instrument).
+  const lastPrefilledInstId = useRef(
+    pendingPaymentApplication?.location_address || resubmitApplicationData?.location_address
+      ? selectedInstrumentId
+      : null
+  );
+  useEffect(() => {
+    if (!selectedInst || lastPrefilledInstId.current === selectedInst.id) return;
+    lastPrefilledInstId.current = selectedInst.id;
+    setPremisesAddress([selectedInst.location, selectedInst.district].filter(Boolean).join(', '));
   }, [selectedInst]);
 
   // If preselected instrument passed, use it
@@ -195,17 +271,17 @@ export default function ApplyVerificationView({
         return false;
       }
     } else if (step === 2) {
-      if (!verificationMode) {
-        setError('Please select an inspection verification mode (In-situ or Camp).');
-        return false;
-      }
-    } else if (step === 3) {
       if (!selectedInstrumentId && instruments.length > 0) {
         setError('Please select an instrument from your registered inventory.');
         return false;
       }
       if (instruments.length === 0) {
         setError('You have no registered instruments. Please register an instrument first.');
+        return false;
+      }
+    } else if (step === 3) {
+      if (!verificationMode) {
+        setError('Please select an inspection verification mode (In-situ or Camp).');
         return false;
       }
     } else if (step === 4) {
@@ -217,12 +293,14 @@ export default function ApplyVerificationView({
         setError('A valid 10-digit mobile number is required.');
         return false;
       }
-      if (!premisesAddress.trim()) {
-        setError('Complete premises address is required.');
+      // The officer only needs a site address and visit date when coming on site;
+      // camp dates are fixed by the department's own schedule.
+      if (verificationMode === 'IN_SITU' && !premisesAddress.trim()) {
+        setError('Premises address is required so the officer can visit for in-situ verification.');
         return false;
       }
-      if (!preferredDate) {
-        setError('Preferred verification date is required.');
+      if (verificationMode === 'IN_SITU' && !preferredDate) {
+        setError('Preferred visit date is required for in-situ verification.');
         return false;
       }
     } else if (step === 5) {
@@ -324,25 +402,82 @@ export default function ApplyVerificationView({
     setPaymentProcessing(true);
     setError('');
 
+    if (paymentMethod === 'ONLINE') {
+      await handleRazorpayPayment();
+      return;
+    }
+
     try {
       const paymentData = {
-        payment_mode: paymentMethod,
-        payment_status: paymentMethod === 'ONLINE' ? 'PAID' : 'PAYMENT_VERIFIED',
-        transaction_id: paymentMethod === 'ONLINE'
-          ? `TXN_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`
-          : offlineChallanNo.trim(),
+        payment_mode: 'OFFLINE',
+        payment_status: 'PAYMENT_VERIFIED',
+        transaction_id: offlineChallanNo.trim(),
         reference_no: `REF-${Math.floor(100000 + Math.random() * 900000)}`,
-        amount: feeBreakdown?.total_fee || createdApp?.payment?.amount || createdApp?.amount || 300,
+        amount: amountDue,
         paid_at: new Date().toISOString()
       };
 
       const res = await api.recordPayment(createdApp.id, paymentData);
       setPaymentResult(res.payment);
+      setReceiptEmail(res.receipt_email || null);
       setCreatedApp(res.application);
       setCurrentStep(10); // Move to Acknowledgement step
     } catch (err) {
       setError(err.message || 'Payment processing failed. Please try again.');
     } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  // Online: server creates a Razorpay order, Checkout collects the payment, and the
+  // server verifies the signature with Razorpay before marking the application paid.
+  const handleRazorpayPayment = async () => {
+    try {
+      const loaded = await loadRazorpayCheckout();
+      if (!loaded) throw new Error('Could not load the Razorpay payment window. Check your internet connection.');
+
+      const order = await api.createRazorpayOrder(createdApp.id);
+
+      const rzp = new window.Razorpay({
+        key: order.key_id,
+        order_id: order.order_id,
+        amount: order.amount,
+        currency: order.currency,
+        name: 'CertifyMetric — Legal Metrology',
+        description: `Verification fee • ${order.application_no}`,
+        prefill: {
+          name: contactPerson || currentUser?.full_name || '',
+          email: currentUser?.email || '',
+          contact: (contactPhone || '').replace(/[^\d+]/g, '')
+        },
+        notes: { application_no: order.application_no },
+        theme: { color: '#002046' },
+        handler: async (response) => {
+          try {
+            const res = await api.verifyRazorpayPayment(createdApp.id, response);
+            setPaymentResult(res.payment);
+            setReceiptEmail(res.receipt_email || null);
+            setCreatedApp(res.application);
+            setCurrentStep(10);
+          } catch (err) {
+            setError(err.message || 'Payment could not be verified. If money was deducted, it will be reconciled — please contact support with your payment ID.');
+          } finally {
+            setPaymentProcessing(false);
+          }
+        },
+        modal: {
+          ondismiss: () => setPaymentProcessing(false)
+        }
+      });
+
+      rzp.on('payment.failed', (resp) => {
+        setError(`Payment failed: ${resp?.error?.description || 'Please try again.'}`);
+        setPaymentProcessing(false);
+      });
+
+      rzp.open();
+    } catch (err) {
+      setError(err.message || 'Could not start payment.');
       setPaymentProcessing(false);
     }
   };
@@ -365,9 +500,11 @@ export default function ApplyVerificationView({
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                 {isPaymentMode ? 'Statutory Fee Remittance' : isResubmitMode ? 'Resubmit Verification Application' : 'Apply for Verification'}
               </h1>
-              <span className="px-2.5 py-0.5 rounded text-[10.5px] font-bold bg-amber-400 text-[#002046] uppercase tracking-wide shadow-2xs">
-                Schedule V NAWI
-              </span>
+              {selectedInst?.category_name && (
+                <span className="px-2.5 py-0.5 rounded text-[10.5px] font-bold bg-amber-400 text-[#002046] uppercase tracking-wide shadow-2xs">
+                  {selectedInst.category_name}
+                </span>
+              )}
               <span className="px-2.5 py-0.5 rounded text-[10.5px] font-bold bg-blue-100 text-blue-800 uppercase tracking-wide">
                 Section 24
               </span>
@@ -404,12 +541,14 @@ export default function ApplyVerificationView({
                 <h2 className="text-base sm:text-lg font-extrabold tracking-tight text-white">
                   {isResubmitMode ? 'Resubmit Verification Application' : isPaymentMode ? 'Statutory Payment Gateway' : 'Verification Application Form'}
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-[#002046] uppercase">
-                  Schedule V NAWI
-                </span>
+                {selectedInst?.category_name && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400 text-[#002046] uppercase">
+                    {selectedInst.category_name}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-300 font-medium mt-0.5">
-                Statutory filing under Legal Metrology Act, 2009 & General Rules, 2011 (Form under Rule 14 / Rule 21)
+                Statutory filing under Section 24 of the Legal Metrology Act, 2009
               </p>
             </div>
           </div>
@@ -524,7 +663,7 @@ export default function ApplyVerificationView({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 uppercase">
-                        Rule 14 • First Filing
+                        First Filing
                       </span>
                       <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                         verificationType === 'ORIGINAL' ? 'border-[#002046] bg-[#002046]' : 'border-slate-300'
@@ -557,7 +696,7 @@ export default function ApplyVerificationView({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 uppercase">
-                        Rule 21 • Periodic Renewal
+                        Periodic Renewal
                       </span>
                       <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                         verificationType === 'RE_VERIFICATION' ? 'border-[#002046] bg-[#002046]' : 'border-slate-300'
@@ -584,23 +723,38 @@ export default function ApplyVerificationView({
           {/* ====================================================
               STEP 2: VERIFICATION MODE
              ==================================================== */}
-          {currentStep === 2 && (
+          {currentStep === 3 && (
             <div className="space-y-4">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Step 2: Select Verification Mode</h3>
+                <h3 className="text-sm font-bold text-slate-900">Step 3: Select Verification Mode</h3>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Choose where the physical testing and calibration verification will be conducted by the Legal Metrology Officer.
                 </p>
               </div>
 
+              {campLocked && (
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                  <span className="material-symbols-outlined text-base text-amber-600 shrink-0">info</span>
+                  <span>
+                    <strong>{selectedInst?.category_name}</strong> is a fixed installation and can only be verified on your premises — Camp/Centre presentation isn't available.
+                  </span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                 {/* Option 1: Camp / Verification Centre */}
                 <div
-                  onClick={() => setVerificationMode('CAMP')}
-                  className={`p-5 rounded-xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
-                    verificationMode === 'CAMP'
-                      ? 'border-[#002046] bg-[#002046]/5 shadow-sm'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  onClick={() => {
+                    if (campLocked) return;
+                    setVerificationMode('CAMP');
+                  }}
+                  aria-disabled={campLocked}
+                  className={`p-5 rounded-xl border-2 transition-all flex flex-col justify-between ${
+                    campLocked
+                      ? 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed'
+                      : verificationMode === 'CAMP'
+                        ? 'border-[#002046] bg-[#002046]/5 shadow-sm cursor-pointer'
+                        : 'border-slate-200 hover:border-slate-300 bg-white cursor-pointer'
                   }`}
                 >
                   <div className="space-y-2">
@@ -656,7 +810,7 @@ export default function ApplyVerificationView({
                     </p>
                   </div>
                   <div className="mt-4 pt-3 border-t border-slate-200/80 text-[10.5px] text-slate-500">
-                    Mandatory for: Weighbridges, fuel dispensers, bulk storage tanks, heavy platform scales.
+                    Mandatory for: Weighbridges, fuel/CNG/LPG dispensers, automatic weighing systems (belt conveyor scales, checkweighers), bulk storage tanks.
                   </div>
                 </div>
               </div>
@@ -666,11 +820,11 @@ export default function ApplyVerificationView({
           {/* ====================================================
               STEP 3: SELECT INSTRUMENT
              ==================================================== */}
-          {currentStep === 3 && (
+          {currentStep === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Step 3: Select Registered Instrument</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Step 2: Select Registered Instrument</h3>
                   <p className="text-slate-500 text-[11px] mt-0.5">
                     Pick the registered weighing or measuring instrument from your commercial inventory.
                   </p>
@@ -735,28 +889,42 @@ export default function ApplyVerificationView({
                         <StatusBadge status={selectedInst.status} />
                       </div>
 
+                      {/* Only the instrument's real registered details — NAWI's capacity/interval
+                          columns plus whatever fields its category's spec_schema declares. */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">Capacity</span>
-                          <strong className="text-slate-800">{selectedInst.max_capacity}</strong>
+                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">Category</span>
+                          <strong className="text-slate-800">{selectedInst.category_name || '—'}</strong>
                         </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">Accuracy Class</span>
-                          <strong className="text-slate-800">{selectedInst.accuracy_class || 'Class III'}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verification Interval (e)</span>
-                          <strong className="text-slate-800 font-mono">{selectedInst.verification_scale_interval_e || '1g'}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">Model Approval No</span>
-                          <strong className="text-slate-800 font-mono">{selectedInst.model_approval_number || 'IND/09/2024/712'}</strong>
-                        </div>
+                        {selectedInst.category_code === 'NAWI' && (
+                          <>
+                            <div>
+                              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Max / Min Capacity</span>
+                              <strong className="text-slate-800">{selectedInst.max_capacity || '—'} / {selectedInst.min_capacity || '—'}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verification Interval (e)</span>
+                              <strong className="text-slate-800 font-mono">{selectedInst.verification_scale_interval_e || '—'}</strong>
+                            </div>
+                          </>
+                        )}
+                        {(selectedInst.category_spec_schema || []).map((field) => (
+                          <div key={field.key}>
+                            <span className="text-slate-400 block text-[10px] uppercase font-semibold">{field.label}</span>
+                            <strong className="text-slate-800">
+                              {selectedInst.specs?.[field.key]
+                                ? `${selectedInst.specs[field.key]}${field.unit ? ` ${field.unit}` : ''}`
+                                : '—'}
+                            </strong>
+                          </div>
+                        ))}
                       </div>
 
                       <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-600 flex items-center gap-1.5">
                         <span className="material-symbols-outlined text-sm text-slate-400">location_on</span>
-                        <span>Installed Location: <strong>{selectedInst.location || 'Main Counter'}</strong></span>
+                        <span>
+                          Installed Location: <strong>{[selectedInst.location, selectedInst.district].filter(Boolean).join(', ') || '—'}</strong>
+                        </span>
                       </div>
                     </div>
                   )}
@@ -779,13 +947,14 @@ export default function ApplyVerificationView({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Commercial Firm / Establishment Name *</label>
+                  <label className="block text-slate-700 font-bold mb-1">Registered Establishment Name</label>
                   <input
                     type="text"
-                    value={firmName}
-                    onChange={(e) => setFirmName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs"
+                    value={firmName || 'Loading...'}
+                    readOnly
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-600 cursor-not-allowed"
                   />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">From your account registration.</span>
                 </div>
 
                 <div>
@@ -811,7 +980,9 @@ export default function ApplyVerificationView({
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Preferred Verification Date *</label>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    {verificationMode === 'IN_SITU' ? 'Preferred Visit Date *' : 'Preferred Camp Date (optional)'}
+                  </label>
                   <input
                     type="date"
                     value={preferredDate}
@@ -819,10 +990,17 @@ export default function ApplyVerificationView({
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:border-primary"
                   />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    {verificationMode === 'IN_SITU'
+                      ? 'The officer will confirm the final visit date.'
+                      : "The final date is set by the department's camp schedule."}
+                  </span>
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-slate-700 font-bold mb-1">Complete Premises Address *</label>
+                  <label className="block text-slate-700 font-bold mb-1">
+                    {verificationMode === 'IN_SITU' ? 'Premises Address for Officer Visit *' : 'Place Where Instrument Is Used (optional)'}
+                  </label>
                   <textarea
                     rows={2}
                     value={premisesAddress}
@@ -830,6 +1008,9 @@ export default function ApplyVerificationView({
                     placeholder="Floor, Shop/Godown No, Street, Landmark, District, Pincode"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:border-primary"
                   />
+                  <span className="text-[10px] text-slate-400 mt-0.5 block">
+                    Prefilled from the instrument's registered location — add shop/floor number and pincode if missing.
+                  </span>
                 </div>
 
                 <div className="sm:col-span-2">
@@ -1018,11 +1199,11 @@ export default function ApplyVerificationView({
                 </div>
                 <div className="p-3.5 bg-slate-50 flex justify-between">
                   <span className="text-slate-500">Premises / Inspection Site:</span>
-                  <strong className="text-slate-900 max-w-xs text-right">{premisesAddress}</strong>
+                  <strong className="text-slate-900 max-w-xs text-right">{premisesAddress || '—'}</strong>
                 </div>
                 <div className="p-3.5 flex justify-between">
                   <span className="text-slate-500">Preferred Date & Contact:</span>
-                  <strong className="text-slate-900">{preferredDate} • {contactPerson} ({contactPhone})</strong>
+                  <strong className="text-slate-900">{preferredDate || 'As per camp schedule'} • {contactPerson} ({contactPhone})</strong>
                 </div>
                 <div className="p-3.5 bg-slate-50 flex justify-between">
                   <span className="text-slate-500">Attached Documents:</span>
@@ -1145,7 +1326,7 @@ export default function ApplyVerificationView({
                 <div>
                   <span className="text-[11px] text-emerald-800 font-semibold uppercase block">Total Amount Due</span>
                   <span className="text-2xl font-extrabold text-emerald-900 font-mono">
-                    ₹{(feeBreakdown?.total_fee || createdApp?.payment?.amount || createdApp?.amount || 300).toFixed(2)}
+                    ₹{amountDue.toFixed(2)}
                   </span>
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-900 uppercase">
@@ -1167,7 +1348,7 @@ export default function ApplyVerificationView({
                     <span className="material-symbols-outlined text-primary text-base">credit_card</span>
                     <span>Online / UPI / NetBanking</span>
                   </div>
-                  <p className="text-[10.5px] text-slate-500 mt-1">Instant reconciliation via Government Payment Gateway (e-GRAS).</p>
+                  <p className="text-[10.5px] text-slate-500 mt-1">Pay instantly via Razorpay — UPI, cards, net banking or wallets.</p>
                 </div>
 
                 <div
@@ -1189,18 +1370,13 @@ export default function ApplyVerificationView({
               {/* Online Mock Payment Interface */}
               {paymentMethod === 'ONLINE' && (
                 <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <span className="text-xs font-bold text-slate-800 block">Select Instant Channel:</span>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold hover:border-primary cursor-pointer">
-                      UPI / QR Code
-                    </div>
-                    <div className="p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold hover:border-primary cursor-pointer">
-                      Net Banking
-                    </div>
-                    <div className="p-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold hover:border-primary cursor-pointer">
-                      Debit / Corporate Card
-                    </div>
-                  </div>
+                  <p className="text-[11px] text-slate-600 flex items-start gap-1.5">
+                    <span className="material-symbols-outlined text-sm text-slate-400 shrink-0">verified_user</span>
+                    <span>
+                      A secure Razorpay window will open where you can choose UPI, card, net banking or wallet.
+                      Your application is marked paid only after the payment is confirmed with Razorpay.
+                    </span>
+                  </p>
 
                   <div className="pt-2">
                     <button
@@ -1212,12 +1388,12 @@ export default function ApplyVerificationView({
                       {paymentProcessing ? (
                         <>
                           <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                          <span>Securing Payment Authorization...</span>
+                          <span>Waiting for payment...</span>
                         </>
                       ) : (
                         <>
                           <span className="material-symbols-outlined text-sm">lock</span>
-                          <span>Authorize Payment of ₹{(feeBreakdown?.total_fee || 300).toFixed(2)}</span>
+                          <span>Pay ₹{amountDue.toFixed(2)} with Razorpay</span>
                         </>
                       )}
                     </button>
@@ -1331,28 +1507,62 @@ export default function ApplyVerificationView({
                   </div>
                   <div className="flex justify-between">
                     <span>Transaction Ref:</span>
-                    <strong className="text-slate-900 font-mono">{paymentResult?.transaction_id || 'TXN_VERIFIED'}</strong>
+                    <strong className="text-slate-900 font-mono">{paymentResult?.transaction_id || '—'}</strong>
                   </div>
                   <div className="flex justify-between">
                     <span>Statutory Amount:</span>
-                    <strong className="text-emerald-700 font-mono font-bold">₹{(feeBreakdown?.total_fee || 300).toFixed(2)}</strong>
+                    <strong className="text-emerald-700 font-mono font-bold">₹{Number(paymentResult?.amount ?? amountDue).toFixed(2)}</strong>
                   </div>
                 </div>
 
                 <div className="pt-3 border-t border-slate-200 text-[10px] text-slate-500">
-                  An authorized Legal Metrology Officer will review the Schedule V eligibility and issue appointment allocation.
+                  The Assistant Controller for your district will review the application and assign an officer or GATC lab.
                 </div>
               </div>
+
+              {receiptEmail && (
+                <div className={`max-w-lg mx-auto p-3 rounded-xl border text-[11px] text-left flex items-start gap-2 ${
+                  receiptEmail.sent ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  <span className="material-symbols-outlined text-base shrink-0">{receiptEmail.sent ? 'mark_email_read' : 'mail_off'}</span>
+                  <div className="flex-1">
+                    {receiptEmail.sent
+                      ? <>A copy of this receipt has been emailed to <strong>{receiptEmail.to}</strong>.</>
+                      : <>Your payment is recorded, but we couldn't email the receipt. You can print it below or try sending it again.</>}
+                    {resendMessage && <div className="mt-1 font-semibold">{resendMessage}</div>}
+                  </div>
+                  {!receiptEmail.sent && (
+                    <button
+                      type="button"
+                      onClick={handleResendReceipt}
+                      disabled={resendingReceipt}
+                      className="px-2.5 py-1 rounded-lg bg-white border border-amber-300 font-bold text-amber-900 hover:bg-amber-100 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                    >
+                      {resendingReceipt ? 'Sending...' : 'Resend email'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <PaymentReceipt
+                application={createdApp}
+                payment={paymentResult}
+                instrument={selectedInst}
+                establishmentName={firmName}
+                email={currentUser?.email}
+                contactPerson={contactPerson}
+                contactPhone={contactPhone}
+              />
 
               {/* Actions */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={printReceipt}
                   className="px-4 py-2 border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer text-xs"
                 >
                   <span className="material-symbols-outlined text-sm">print</span>
-                  <span>Print Acknowledgement</span>
+                  <span>Print Receipt</span>
                 </button>
 
                 {onViewApplicationTimeline && (

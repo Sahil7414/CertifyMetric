@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import StatusBadge from './StatusBadge';
 
 export default function ApplicationDetailsModal({
@@ -10,6 +10,37 @@ export default function ApplicationDetailsModal({
   onSelectCertificate,
   onViewTimeline
 }) {
+  const [isClosing, setIsClosing] = useState(false);
+
+  const handleClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 240);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, isClosing]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
   if (!isOpen || !application) return null;
 
   const isReturned = application.status === 'RETURNED';
@@ -21,9 +52,20 @@ export default function ApplicationDetailsModal({
   const totalFee = application.fee_breakdown?.total_fee || application.payment?.amount || application.amount || 300;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-      <div 
-        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      {/* Backdrop overlay */}
+      <div
+        className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer transition-opacity duration-300 ${
+          isClosing ? 'animate-backdrop-out' : 'animate-backdrop-in'
+        }`}
+        onClick={handleClose}
+      />
+
+      {/* Slide-over Drawer Panel occupying half the screen on desktop */}
+      <div
+        className={`fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 xl:w-1/2 bg-white shadow-2xl border-l border-slate-200 cursor-default ${
+          isClosing ? 'animate-slide-out-right' : 'animate-slide-in-right'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -44,12 +86,15 @@ export default function ApplicationDetailsModal({
               Application Details & Statutory Status
             </h2>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <StatusBadge status={application.status} />
+            <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-medium text-white/70 bg-white/10 border border-white/20 rounded">
+              ESC
+            </kbd>
             <button
-              onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-              title="Close"
+              onClick={handleClose}
+              className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+              title="Close panel (ESC)"
             >
               <span className="material-symbols-outlined text-lg">close</span>
             </button>
@@ -57,7 +102,7 @@ export default function ApplicationDetailsModal({
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700">
+        <div className="p-6 flex-1 overflow-y-auto space-y-6 text-xs text-slate-700">
           
           {/* 1. RETURN DEFICIENCY BANNER (When Status is RETURNED) */}
           {isReturned && (
@@ -340,7 +385,7 @@ export default function ApplicationDetailsModal({
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
             >
               Close

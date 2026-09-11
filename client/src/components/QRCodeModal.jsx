@@ -2,9 +2,36 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
 export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }) {
+  const [isClosing, setIsClosing] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
   const verifyUrl = `${window.location.origin}/verify/${certificate?.public_token || 'demo-token'}`;
+
+  const handleClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 240);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isClosing]);
+
+  useEffect(() => {
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, []);
 
   useEffect(() => {
     if (certificate?.public_token) {
@@ -22,60 +49,113 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
   if (!certificate) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-surface-container-lowest rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-outline-variant/40 flex flex-col items-center text-center relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-outline hover:text-on-surface p-1 rounded-full hover:bg-surface transition-colors"
-        >
-          <span className="material-symbols-outlined">close</span>
-        </button>
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      {/* Backdrop overlay */}
+      <div
+        className={`fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer transition-opacity duration-300 ${
+          isClosing ? 'animate-backdrop-out' : 'animate-backdrop-in'
+        }`}
+        onClick={handleClose}
+      />
 
-        <div className="w-12 h-12 rounded-xl bg-primary-container/10 flex items-center justify-center text-primary mb-3">
-          <span className="material-symbols-outlined text-2xl">qr_code_2</span>
+      {/* Slide-over Drawer Panel occupying half the screen on desktop */}
+      <div
+        className={`fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 xl:w-1/2 bg-white shadow-2xl border-l border-slate-200 cursor-default ${
+          isClosing ? 'animate-slide-out-right' : 'animate-slide-in-right'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+              <span className="material-symbols-outlined text-2xl">qr_code_2</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base md:text-lg font-bold text-primary tracking-tight">Statutory Verification QR</h2>
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
+                  Digital Seal
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium">
+                Official anti-counterfeiting verification code
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <kbd className="hidden sm:inline-flex items-center px-2 py-0.5 text-[10px] font-medium text-slate-400 bg-slate-100 border border-slate-200 rounded">
+              ESC
+            </kbd>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+              title="Close panel (ESC)"
+            >
+              <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+          </div>
         </div>
 
-        <h3 className="text-lg font-bold text-primary">Statutory Verification QR</h3>
-        <p className="text-xs text-on-surface-variant mt-1 mb-4">
-          Scan with any mobile camera or scanner to verify authenticity.
-        </p>
+        {/* Scrollable Content Body */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col items-center text-center space-y-6">
+          <div className="w-full max-w-sm flex flex-col items-center">
+            <p className="text-xs text-slate-600 mb-4 leading-relaxed">
+              Scan with any mobile camera, QR scanner, or consumer app to verify authenticity directly on the legal metrology portal.
+            </p>
 
-        <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-sm mb-4">
-          {qrDataUrl ? (
-            <img src={qrDataUrl} alt="Certificate QR Code" className="w-52 h-52 object-contain" />
-          ) : (
-            <div className="w-52 h-52 flex items-center justify-center text-outline">Loading QR...</div>
-          )}
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-md mb-5">
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="Certificate QR Code" className="w-56 h-56 object-contain" />
+              ) : (
+                <div className="w-56 h-56 flex items-center justify-center text-slate-400 text-xs">
+                  Loading QR Code...
+                </div>
+              )}
+            </div>
+
+            <div className="w-full bg-slate-50 rounded-xl p-4 text-left border border-slate-200/80 text-xs space-y-2">
+              <div className="flex justify-between py-1 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Certificate No:</span>
+                <span className="font-mono font-bold text-primary">{certificate.certificate_no}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Statutory Status:</span>
+                <span className="font-bold text-emerald-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  {certificate.status}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 items-center">
+                <span className="text-slate-500 font-medium">Public Token:</span>
+                <span className="font-mono text-[11px] text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 truncate max-w-[170px]">
+                  {certificate.public_token}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="w-full bg-surface-container-low rounded-lg p-3 text-left mb-4 border border-outline-variant/30 text-xs">
-          <div className="flex justify-between py-1 border-b border-outline-variant/20">
-            <span className="text-on-surface-variant">Certificate No:</span>
-            <span className="font-mono font-semibold text-primary">{certificate.certificate_no}</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-outline-variant/20">
-            <span className="text-on-surface-variant">Status:</span>
-            <span className="font-semibold text-emerald-600">{certificate.status}</span>
-          </div>
-          <div className="flex justify-between py-1">
-            <span className="text-on-surface-variant">Non-Guessable Token:</span>
-            <span className="font-mono text-[10px] text-outline truncate max-w-[130px]">{certificate.public_token}</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2 w-full">
+        {/* Drawer Footer */}
+        <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-between shrink-0">
           <button
-            onClick={() => onNavigateToVerify(certificate.public_token)}
-            className="w-full py-2.5 px-4 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary-container transition-all flex items-center justify-center gap-2 shadow-sm"
-          >
-            <span className="material-symbols-outlined text-sm">open_in_new</span>
-            Open Public Verification Page
-          </button>
-          <button
-            onClick={onClose}
-            className="w-full py-2 px-4 border border-slate-300 text-on-surface rounded-lg text-sm font-medium hover:bg-surface transition-all"
+            type="button"
+            onClick={handleClose}
+            className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
           >
             Close
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              handleClose();
+              if (onNavigateToVerify) onNavigateToVerify(certificate.public_token);
+            }}
+            className="px-5 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary-container transition-all flex items-center gap-2 shadow-sm"
+          >
+            <span className="material-symbols-outlined text-sm">open_in_new</span>
+            Open Verification Page
           </button>
         </div>
       </div>

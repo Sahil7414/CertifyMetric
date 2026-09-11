@@ -19,6 +19,7 @@ import PortalLanding from './views/PortalLanding';
 import VendorApplyVerificationView from './views/VendorApplyVerificationView';
 import QRCodeModal from './components/QRCodeModal';
 import LoginView from './views/LoginView';
+import RegisterView from './views/RegisterView';
 import AuditLogView from './views/AuditLogView';
 import GatcDashboard from './views/GatcDashboard';
 import AdminDashboard from './views/AdminDashboard';
@@ -41,10 +42,24 @@ const getInitialRoleTab = (role) => {
   return 'dashboard';
 };
 
+// Reads the current path once at module scope so the initial render already
+// matches the URL — avoids a flash of the wrong screen on refresh/deep-link.
+const getInitialPreAuthState = () => {
+  const path = window.location.pathname;
+  if (path === '/register') return { showLanding: false, showRegister: true };
+  if (path === '/login') return { showLanding: false, showRegister: false };
+  return { showLanding: true, showRegister: false };
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getStoredAuth().user);
   const [currentRole, setCurrentRole] = useState(() => getStoredAuth().user?.role || null);
-  const [showLanding, setShowLanding] = useState(() => !getStoredAuth().user);
+  const [showLanding, setShowLanding] = useState(() =>
+    getStoredAuth().user ? false : getInitialPreAuthState().showLanding
+  );
+  const [showRegister, setShowRegister] = useState(() =>
+    getStoredAuth().user ? false : getInitialPreAuthState().showRegister
+  );
   const [activeTab, setActiveTab] = useState(() => {
     const role = getStoredAuth().user?.role;
     return getInitialRoleTab(role);
@@ -129,9 +144,30 @@ export default function App() {
       const path = window.location.pathname;
       if (path.startsWith('/verify/')) {
         setPublicVerifyToken(path.replace('/verify/', '').trim() || null);
-      } else {
-        const params = new URLSearchParams(window.location.search);
-        setPublicVerifyToken(params.get('verify') || null);
+        return;
+      }
+      const params = new URLSearchParams(window.location.search);
+      const verifyParam = params.get('verify');
+      if (verifyParam) {
+        setPublicVerifyToken(verifyParam);
+        return;
+      }
+      setPublicVerifyToken(null);
+
+      // Pre-auth screen transitions (Landing / Login / Register) — this makes the
+      // browser's Back button move between these screens instead of leaving the
+      // app entirely, since without pushState history had nowhere else to go.
+      if (!getStoredAuth().user) {
+        if (path === '/register') {
+          setShowLanding(false);
+          setShowRegister(true);
+        } else if (path === '/login') {
+          setShowLanding(false);
+          setShowRegister(false);
+        } else {
+          setShowLanding(true);
+          setShowRegister(false);
+        }
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -149,6 +185,8 @@ export default function App() {
     setCurrentRole(user.role);
     setApiUser(user, token);
     setShowLanding(false);
+    setShowRegister(false);
+    window.history.pushState({}, '', '/dashboard');
 
     // Determine portal / dashboard strictly based on database role:
     const targetTab = getInitialRoleTab(user.role);
@@ -177,6 +215,8 @@ export default function App() {
     setCurrentUser(null);
     setCurrentRole(null);
     setShowLanding(true);
+    setShowRegister(false);
+    window.history.pushState({}, '', '/');
     setInstruments([]);
     setApplications([]);
     setCertificates([]);
@@ -218,13 +258,31 @@ export default function App() {
 
   // Render Landing Page or Login Screen if not authenticated
   if (!currentUser) {
+    const goToLogin = () => {
+      window.history.pushState({}, '', '/login');
+      setShowLanding(false);
+    };
+    const goToLanding = () => {
+      window.history.pushState({}, '', '/');
+      setShowLanding(true);
+      setShowRegister(false);
+    };
+    const goToRegister = () => {
+      window.history.pushState({}, '', '/register');
+      setShowRegister(true);
+    };
+    const backToLoginFromRegister = () => {
+      window.history.pushState({}, '', '/login');
+      setShowRegister(false);
+    };
+
     if (showLanding) {
       return (
         <PortalLanding
-          onGoToLogin={() => setShowLanding(false)}
+          onGoToLogin={goToLogin}
           onTrackApplication={(appNo) => {
             // Switch to login for secure access to application tracking
-            setShowLanding(false);
+            goToLogin();
           }}
           onVerifyCertificate={handleVerifyPublicToken}
           onDirectDemoLogin={handleDirectDemoLogin}
@@ -232,10 +290,20 @@ export default function App() {
       );
     }
 
+    if (showRegister) {
+      return (
+        <RegisterView
+          onRegisterSuccess={handleLoginSuccess}
+          onBackToLogin={backToLoginFromRegister}
+        />
+      );
+    }
+
     return (
       <LoginView
         onLoginSuccess={handleLoginSuccess}
-        onBackToLanding={() => setShowLanding(true)}
+        onBackToLanding={goToLanding}
+        onGoToRegister={goToRegister}
       />
     );
   }

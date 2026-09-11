@@ -91,24 +91,35 @@ export default function InstrumentDetail({
           </div>
         </div>
 
-        {/* Technical Specification Matrix */}
+        {/* Technical Specification Matrix — NAWI keeps its dedicated capacity/interval
+            columns (backward-compatible with the MPE-testing workspace); every other
+            category renders whatever fields its InstrumentCategory.spec_schema declares,
+            so a water meter shows its diameter/type instead of a nonsensical "kg" figure. */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 text-xs">
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-slate-400 block font-medium">Max Capacity</span>
-            <span className="text-sm font-bold text-slate-900 mt-0.5 block">{instrument.max_capacity}</span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-slate-400 block font-medium">Min Capacity</span>
-            <span className="text-sm font-bold text-slate-900 mt-0.5 block">{instrument.min_capacity}</span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-slate-400 block font-medium">Verification Interval (e)</span>
-            <span className="text-sm font-bold text-slate-900 mt-0.5 block">{instrument.verification_scale_interval_e}</span>
-          </div>
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
-            <span className="text-slate-400 block font-medium">Class Standard</span>
-            <span className="text-sm font-bold text-primary mt-0.5 block">OIML Class III (Commercial)</span>
-          </div>
+          {instrument.category_code === 'NAWI' ? (
+            <>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block font-medium">Max Capacity</span>
+                <span className="text-sm font-bold text-slate-900 mt-0.5 block">{instrument.max_capacity || '—'}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block font-medium">Min Capacity</span>
+                <span className="text-sm font-bold text-slate-900 mt-0.5 block">{instrument.min_capacity || '—'}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="text-slate-400 block font-medium">Verification Interval (e)</span>
+                <span className="text-sm font-bold text-slate-900 mt-0.5 block">{instrument.verification_scale_interval_e || '—'}</span>
+              </div>
+            </>
+          ) : null}
+          {(instrument.category_spec_schema || []).map((field) => (
+            <div key={field.key} className="p-3.5 rounded-xl bg-slate-50 border border-slate-100">
+              <span className="text-slate-400 block font-medium">{field.label}</span>
+              <span className="text-sm font-bold text-slate-900 mt-0.5 block">
+                {instrument.specs?.[field.key] || '—'}{instrument.specs?.[field.key] && field.unit ? ` ${field.unit}` : ''}
+              </span>
+            </div>
+          ))}
         </div>
 
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col md:flex-row justify-between gap-3 text-xs text-slate-600">

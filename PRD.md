@@ -432,14 +432,16 @@ Actions may include:
 
 The MVP demonstrates **decision support**, not autonomous legal decision-making.
 
+**"Hard Eligibility" is, concretely, a jurisdiction match — this is a researched real-world fact, not a design choice.** An LMO or GATC lab only has statutory authority to verify an instrument within their government-notified jurisdiction (district/circle). An officer outside that jurisdiction is never eligible for recommendation, regardless of availability or workload — e.g. an idle LMO in Thane cannot be recommended for a case in Mumbai Suburban District, even if the assigned Mumbai Suburban LMO is overloaded. The only legitimate exception is an officer formally holding "additional charge" of a neighbouring jurisdiction (a vacancy-coverage arrangement), which is data (multiple notified jurisdictions on one office), not an override.
+
 Process:
 
 ```text
-Application
+Application (has an instrument district)
     ↓
-Hard Eligibility
+Hard Eligibility — jurisdiction match (statutory, non-negotiable)
     ↓
-Eligible Officers / GATCs
+Eligible Officers / GATCs (within that jurisdiction only)
     ↓
 Availability
     ↓
@@ -450,12 +452,14 @@ Other configured operational factors
 Recommended Candidate
 ```
 
-The authority can:
+The authority (Assistant Controller — see [Architecture.md §3.2](docs/ARCHITECTURE.md)) can:
 
 ```text
 Accept Recommendation
         OR
-Select Another Eligible Candidate
+Select Another Eligible Candidate (still jurisdiction-bound)
+        OR
+Override outside jurisdiction — requires an explicit reason (rare, e.g. vacancy surge)
 ```
 
 If overridden:
@@ -464,7 +468,9 @@ If overridden:
 - timestamp;
 - previous recommendation/assignment;
 - final assignment;
-- reason if required.
+- **reason is mandatory whenever the override crosses jurisdiction** — the backend rejects a cross-jurisdiction assignment with no reason and always logs it as an override in the audit trail, even if the caller didn't flag it as one.
+
+**Honesty check for the demo pitch:** the real manual process today does static jurisdiction-only routing, with no workload-based ranking. The recommendation/ranking step here is this product's own proposed improvement (Category C) layered on top of a real statutory constraint (Category B) — say so explicitly rather than implying LMOMS already ranks candidates this way.
 
 ---
 

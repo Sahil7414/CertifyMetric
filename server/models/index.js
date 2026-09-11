@@ -35,7 +35,11 @@ const organizationSchema = new Schema({
   id: { type: String, required: true, unique: true, index: true },
   name: { type: String, required: true },
   type: { type: String, required: true },
-  jurisdiction: { type: String },
+  // Notified jurisdiction(s) this office/LMO/GATC has statutory authority over.
+  // An array (not a single value) because an officer can hold "additional charge"
+  // of a neighbouring district/circle when that post is vacant — this is the only
+  // legitimate way a candidate legally covers more than one jurisdiction.
+  jurisdictions: { type: [String], default: [] },
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
 
@@ -45,6 +49,14 @@ const instrumentCategorySchema = new Schema({
   code: { type: String, required: true },
   name: { type: String, required: true },
   description: { type: String },
+  // What physical quantity this category measures — informs which fields/units
+  // are relevant (a water meter has no "kg capacity", a length tape has no "flow rate").
+  measurement_type: { type: String, default: 'MASS' },
+  // Ordered list of category-specific spec fields the registration form renders
+  // dynamically, e.g. [{ key, label, type: 'select'|'text'|'number', unit, options, required }].
+  // Common fields (manufacturer/model/serial/location) are NOT listed here — those
+  // apply to every category and are handled by the form directly.
+  spec_schema: { type: Schema.Types.Mixed, default: [] },
   active: { type: Number, default: 1 }
 }, { versionKey: false, timestamps: false });
 
@@ -66,10 +78,19 @@ const instrumentSchema = new Schema({
   manufacturer: { type: String, required: true },
   model: { type: String, required: true },
   serial_number: { type: String, required: true, unique: true, index: true },
-  max_capacity: { type: String, required: true },
-  min_capacity: { type: String, required: true },
-  verification_scale_interval_e: { type: String, required: true },
+  // These three only apply to weight-based categories (NAWI, automatic weighing
+  // instruments, weighbridges) — NOT required, since e.g. a water meter or a
+  // length tape has no "kg capacity". Category-specific attributes for every
+  // other category (nominal diameter, fuel type, nozzle count, etc.) live in `specs`.
+  max_capacity: { type: String },
+  min_capacity: { type: String },
+  verification_scale_interval_e: { type: String },
+  specs: { type: Schema.Types.Mixed, default: {} },
   location: { type: String, required: true },
+  // Structured jurisdiction key (district/circle) derived from the premises address,
+  // used to hard-filter eligible LMOs/GATCs — kept separate from the free-text
+  // `location` (which is a human-readable address, not something to match on).
+  district: { type: String, required: true, index: true },
   status: { type: String, default: 'REGISTERED', index: true },
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });

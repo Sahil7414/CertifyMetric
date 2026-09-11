@@ -35,6 +35,7 @@ server/uploads/evidence/*
 Thumbs.db
 .vscode/*
 !.vscode/extensions.json
+.claude/
 .idea/
 *.suo
 *.ntvs*

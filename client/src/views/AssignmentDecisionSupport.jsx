@@ -40,17 +40,13 @@ export default function AssignmentDecisionSupport({
 
     setSubmitting(true);
     try {
-      // 1. Assign verifier
+      // The backend's /assign endpoint records the assignment AND the appointment
+      // schedule in one request — there is no separate scheduling endpoint.
       await api.assignVerifier(applicationId, {
         assigned_id: selectedCandidateId,
         recommended_id: data.recommended_id,
         is_override: isOverride,
         override_reason: overrideReason,
-        authority_id: currentUser?.id
-      });
-
-      // 2. Schedule appointment
-      await api.scheduleAppointment(applicationId, {
         scheduled_date: scheduleDate,
         time_slot: scheduleSlot,
         arrangement_type: arrangementType,
@@ -134,6 +130,11 @@ export default function AssignmentDecisionSupport({
                       ★ System Recommended
                     </span>
                   )}
+                  {c.is_eligible === false && (
+                    <span className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide bg-rose-600 text-white shadow-xs">
+                      Outside Jurisdiction
+                    </span>
+                  )}
 
                   <div className="flex items-center justify-between mt-1 mb-3">
                     <div className="flex items-center gap-2.5">
@@ -153,8 +154,8 @@ export default function AssignmentDecisionSupport({
 
                   <div className="space-y-2 py-3 border-y border-slate-100 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-slate-400">Jurisdiction:</span>
-                      <span className="font-medium text-slate-700">{c.jurisdiction}</span>
+                      <span className="text-slate-400">Notified Jurisdiction:</span>
+                      <span className="font-medium text-slate-700 text-right">{(c.jurisdictions || []).join(', ') || '—'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-slate-400">Active Workload:</span>

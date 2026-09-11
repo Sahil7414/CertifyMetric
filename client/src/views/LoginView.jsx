@@ -54,7 +54,7 @@ const DEMO_ROLES = [
   }
 ];
 
-export default function LoginView({ onLoginSuccess, onBackToLanding }) {
+export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegister }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -281,6 +281,15 @@ export default function LoginView({ onLoginSuccess, onBackToLanding }) {
               )}
             </button>
           </form>
+
+          {onGoToRegister && (
+            <p className="text-center text-[11px] text-slate-500">
+              New to CertifyMetric?{' '}
+              <button onClick={onGoToRegister} className="font-bold text-primary hover:underline">
+                Create an account
+              </button>
+            </p>
+          )}
 
           {/* Local Development Reference Notice */}
           <div className="pt-2 text-center">

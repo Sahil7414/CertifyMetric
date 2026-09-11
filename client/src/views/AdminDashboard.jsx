@@ -320,7 +320,7 @@ export default function AdminDashboard({
                     {org.type === 'GATC' ? 'Approved Testing Laboratory' : 'Legal Metrology Office'}
                   </span>
                   <h4 className="font-bold text-slate-900 text-sm mt-1">{org.name}</h4>
-                  <p className="text-xs text-slate-500">Jurisdiction: <strong>{org.jurisdiction}</strong></p>
+                  <p className="text-xs text-slate-500">Jurisdiction: <strong>{(org.jurisdictions || []).join(', ') || '—'}</strong></p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600">
                   <span className="material-symbols-outlined text-xl">
@@ -479,32 +479,55 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* Inspect Audit Log Modal */}
+      {/* Inspect Audit Log Drawer */}
       {selectedAuditLog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 border border-slate-200 shadow-xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-sm">Audit Record Details</h3>
-              <button onClick={() => setSelectedAuditLog(null)} className="text-slate-400 hover:text-slate-700">
-                <span className="material-symbols-outlined">close</span>
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer animate-backdrop-in"
+            onClick={() => setSelectedAuditLog(null)}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-2xl">receipt_long</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Audit Record Details</h3>
+                  <p className="text-xs text-slate-500">Immutable governance ledger entry</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAuditLog(null)}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                title="Close"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
               </button>
             </div>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between"><span className="text-slate-500">Action:</span> <strong className="font-mono text-primary">{selectedAuditLog.action}</strong></div>
-              <div className="flex justify-between"><span className="text-slate-500">Entity:</span> <span>{selectedAuditLog.entity_name} ({selectedAuditLog.entity_id})</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Actor:</span> <span>{selectedAuditLog.actor_id} ({selectedAuditLog.actor_role})</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Timestamp:</span> <span>{selectedAuditLog.created_at}</span></div>
-              <div className="pt-2">
-                <span className="text-slate-500 block mb-1">Payload:</span>
-                <pre className="p-3 bg-slate-900 text-emerald-300 rounded-xl font-mono text-[11px] overflow-x-auto max-h-48">
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 text-xs">
+              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                <div className="flex justify-between"><span className="text-slate-500">Action:</span> <strong className="font-mono text-primary">{selectedAuditLog.action}</strong></div>
+                <div className="flex justify-between"><span className="text-slate-500">Entity:</span> <span>{selectedAuditLog.entity_name} ({selectedAuditLog.entity_id})</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Actor:</span> <span>{selectedAuditLog.actor_id} ({selectedAuditLog.actor_role})</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Timestamp:</span> <span>{selectedAuditLog.created_at}</span></div>
+              </div>
+              <div>
+                <span className="text-slate-700 font-bold block mb-1">Audit Ledger Payload:</span>
+                <pre className="p-4 bg-slate-900 text-emerald-300 rounded-xl font-mono text-[11px] overflow-x-auto max-h-96">
                   {JSON.stringify(selectedAuditLog.details, null, 2)}
                 </pre>
               </div>
             </div>
-            <div className="text-right pt-2 border-t border-slate-100">
+            <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex justify-end shrink-0">
               <button
+                type="button"
                 onClick={() => setSelectedAuditLog(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold"
+                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold transition-colors"
               >
                 Close
               </button>
@@ -513,121 +536,141 @@ export default function AdminDashboard({
         </div>
       )}
 
-      {/* Provision User Modal */}
+      {/* Provision User Drawer */}
       {showCreateUser && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleCreateUser} className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm">Provision New User Account</h3>
-                <p className="text-xs text-slate-500">Assign statutory role and system credentials</p>
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer animate-backdrop-in"
+            onClick={() => setShowCreateUser(false)}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-2xl">person_add</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Provision New User Account</h3>
+                  <p className="text-xs text-slate-500">Assign statutory role and system credentials</p>
+                </div>
               </div>
-              <button type="button" onClick={() => setShowCreateUser(false)} className="text-slate-400 hover:text-slate-700">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            {createError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs">
-                {createError}
-              </div>
-            )}
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newUser.full_name}
-                  onChange={e => setNewUser({ ...newUser, full_name: e.target.value })}
-                  placeholder="e.g. Dr. Rajesh Kumar"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={newUser.email}
-                  onChange={e => setNewUser({ ...newUser, email: e.target.value })}
-                  placeholder="e.g. rajesh.kumar@certifymetric.local"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Initial Password</label>
-                <input
-                  type="password"
-                  required
-                  value={newUser.password}
-                  onChange={e => setNewUser({ ...newUser, password: e.target.value })}
-                  placeholder="Minimum 8 characters"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Statutory Role Assignment</label>
-                <select
-                  value={newUser.role}
-                  onChange={e => setNewUser({ ...newUser, role: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                >
-                  <option value="TRADER">TRADER (Commercial Applicant / Owner)</option>
-                  <option value="AUTHORITY">AUTHORITY (Legal Metrology Officer / Approver)</option>
-                  <option value="VERIFIER">VERIFIER (Field Inspector)</option>
-                  <option value="GATC">GATC (Laboratory Testing Centre)</option>
-                  <option value="PLATFORM_ADMIN">PLATFORM_ADMIN (System Administration)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Organization / Office</label>
-                <select
-                  value={newUser.organization_id}
-                  onChange={e => setNewUser({ ...newUser, organization_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                >
-                  <option value="">Independent / None</option>
-                  {organizations.map(o => (
-                    <option key={o.id} value={o.id}>{o.name} ({o.type})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Phone Number (Optional)</label>
-                <input
-                  type="text"
-                  value={newUser.phone}
-                  onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
-                  placeholder="+91 98765 43210"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowCreateUser(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                title="Close"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <form id="create-user-form" onSubmit={handleCreateUser} className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 text-xs">
+              {createError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs">
+                  {createError}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newUser.full_name}
+                    onChange={e => setNewUser({ ...newUser, full_name: e.target.value })}
+                    placeholder="e.g. Dr. Rajesh Kumar"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={newUser.email}
+                    onChange={e => setNewUser({ ...newUser, email: e.target.value })}
+                    placeholder="e.g. rajesh.kumar@certifymetric.local"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Initial Password *</label>
+                  <input
+                    type="password"
+                    required
+                    value={newUser.password}
+                    onChange={e => setNewUser({ ...newUser, password: e.target.value })}
+                    placeholder="Minimum 8 characters"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Statutory Role Assignment *</label>
+                  <select
+                    value={newUser.role}
+                    onChange={e => setNewUser({ ...newUser, role: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none bg-white font-medium"
+                  >
+                    <option value="TRADER">TRADER (Commercial Applicant / Owner)</option>
+                    <option value="AUTHORITY">AUTHORITY (Legal Metrology Officer / Approver)</option>
+                    <option value="VERIFIER">VERIFIER (Field Inspector)</option>
+                    <option value="GATC">GATC (Laboratory Testing Centre)</option>
+                    <option value="PLATFORM_ADMIN">PLATFORM_ADMIN (System Administration)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Organization / Office</label>
+                  <select
+                    value={newUser.organization_id}
+                    onChange={e => setNewUser({ ...newUser, organization_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none bg-white font-medium"
+                  >
+                    <option value="">Independent / None</option>
+                    {organizations.map(o => (
+                      <option key={o.id} value={o.id}>{o.name} ({o.type})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Phone Number (Optional)</label>
+                  <input
+                    type="text"
+                    value={newUser.phone}
+                    onChange={e => setNewUser({ ...newUser, phone: e.target.value })}
+                    placeholder="+91 98765 43210"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                  />
+                </div>
+              </div>
+            </form>
+
+            <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowCreateUser(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
+                form="create-user-form"
                 disabled={creatingUser}
-                className="px-5 py-2 bg-primary hover:bg-primary-container text-white rounded-xl text-xs font-bold shadow-xs"
+                className="px-5 py-2 bg-primary hover:bg-primary-container text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
               >
                 {creatingUser ? 'Provisioning...' : 'Provision User'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
     </div>

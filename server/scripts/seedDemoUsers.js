@@ -80,6 +80,17 @@ export const DEMO_ACCOUNTS = [
     description: 'Government Approved Test Centre that performs laboratory verification for complex instruments.'
   },
   {
+    id: 'USR_VERIFIER_02',
+    email: 'demo.verifier.outofjurisdiction@certifymetric.local',
+    password: 'DemoVerifier2@2026',
+    role: 'VERIFIER',
+    full_name: 'Demo Field Verifier (Anjali Deshmukh LMO)',
+    organization_id: 'ORG_GOV_MUMBAI',
+    phone: '+91 98220 11009',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150',
+    description: 'Seed-only illustration account: an LMO notified for Mumbai Suburban District only, used to demonstrate that the allocation engine correctly excludes out-of-jurisdiction officers from Delhi-based applications, even when idle.'
+  },
+  {
     id: 'USR_ADMIN_01',
     email: 'demo.admin@certifymetric.local',
     password: 'DemoAdmin@2026',
@@ -101,21 +112,46 @@ export async function seedDemoUsers() {
       id: 'ORG_TRADER_01',
       name: 'Apex Retail Traders Pvt Ltd',
       type: 'TRADER_ORG',
-      jurisdiction: 'Central District, Delhi',
+      jurisdictions: ['Central Delhi, Delhi'],
       created_at: now
     },
     {
       id: 'ORG_GOV_DOCA',
       name: 'Department of Consumer Affairs - Legal Metrology Division',
       type: 'STATUTORY_AUTHORITY',
-      jurisdiction: 'National Capital Territory of Delhi',
+      // This office's LMOs hold notified charge across these Delhi districts —
+      // listed at the same granularity as Instrument.district so the hard
+      // jurisdiction filter can actually match on them.
+      jurisdictions: [
+        'Central Delhi, Delhi',
+        'South East Delhi, Delhi',
+        'South West Delhi, Delhi',
+        'South Delhi, Delhi',
+        'North West Delhi, Delhi'
+      ],
       created_at: now
     },
     {
       id: 'ORG_GATC_01',
       name: 'National Metrology Testing Centre (GATC Lab 04)',
       type: 'TEST_CENTRE',
-      jurisdiction: 'Northern Region',
+      jurisdictions: [
+        'Central Delhi, Delhi',
+        'South East Delhi, Delhi',
+        'South West Delhi, Delhi',
+        'South Delhi, Delhi',
+        'North West Delhi, Delhi'
+      ],
+      created_at: now
+    },
+    {
+      id: 'ORG_GOV_MUMBAI',
+      name: 'Department of Consumer Affairs - Legal Metrology Division (Mumbai Suburban)',
+      type: 'STATUTORY_AUTHORITY',
+      // Seed-only illustration org: deliberately a DIFFERENT jurisdiction from every
+      // Delhi-based instrument in this demo, so the allocation engine's hard
+      // jurisdiction filter has something real to exclude.
+      jurisdictions: ['Mumbai Suburban, Maharashtra'],
       created_at: now
     }
   ];
@@ -161,35 +197,193 @@ export async function seedDemoData() {
   const validUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   // 1. Categories
-  const category = {
-    id: 'CAT_NAWI_III',
-    code: 'NAWI_CLASS_III',
-    name: 'Non-Automatic Weighing Instruments (Class III)',
-    description: 'Commercial counter scales, platform scales, and retail computing scales up to 150 kg.',
-    active: 1
-  };
-  await InstrumentCategory.findOneAndUpdate({ id: category.id }, { $set: category }, { upsert: true });
+  // NOTE ON DATA PROVENANCE: NAWI's accuracy classes, weighbridge/dispenser/water-meter/
+  // gas-meter sub-types and size ranges below are sourced from real OIML/ISO/BIS
+  // documentation (see Memory.md for citations). The mpe_rules/checklist_schema for
+  // every category OTHER than NAWI are simplified placeholders, NOT transcribed from a
+  // verified primary statutory table — treat them as structurally correct but not yet
+  // domain-validated (flagged as an OPEN item in Memory.md).
+  const categories = [
+    {
+      id: 'CAT_NAWI_III',
+      code: 'NAWI',
+      name: 'Non-Automatic Weighing Instrument (NAWI)',
+      description: 'Ordinary shop/platform scales where a human loads and reads the weight — counter scales, platform scales, retail computing scales.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['I', 'II', 'III', 'IIII'], required: true, help: 'III = standard retail/shop scale; I = lab precision; II = jewellery/pharmacy; IIII = coarse industrial.' }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_AUTO_WEIGH',
+      code: 'AUTO_WEIGHING',
+      name: 'Automatic Weighing Instrument',
+      description: 'Weighs without a human loading each reading — checkweighers, belt conveyor scales, automatic rail-weighbridges, gravimetric filling instruments.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'sub_type', label: 'Sub-Type', type: 'select', options: ['Checkweigher / Catchweigher', 'Belt Conveyor Scale', 'Automatic Rail-Weighbridge', 'Automatic Gravimetric Filling Instrument'], required: true },
+        { key: 'max_capacity_kg', label: 'Max Capacity', type: 'text', unit: 'kg', required: true },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['0.2', '0.5', '1', '2'], required: false, help: 'OIML R61 operational class X(x) — approximate.' }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_WEIGHBRIDGE',
+      code: 'WEIGHBRIDGE',
+      name: 'Weighbridge',
+      description: 'Large-capacity vehicle/truck scale used for freight billing, mandi transactions, and toll/excise weighing.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'installation_type', label: 'Installation Type', type: 'select', options: ['Pit Type', 'Pitless / Surface-Mounted'], required: true },
+        { key: 'platform_length_m', label: 'Platform Length', type: 'text', unit: 'm', required: true },
+        { key: 'platform_width_m', label: 'Platform Width', type: 'text', unit: 'm', required: false },
+        { key: 'max_capacity_ton', label: 'Max Capacity', type: 'text', unit: 'ton', required: true },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['III', 'IIII'], required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_FUEL_DISPENSER',
+      code: 'FUEL_DISPENSER',
+      name: 'Fuel Dispensing Pump (Petrol/Diesel)',
+      description: 'Retail motor fuel dispenser at a petrol pump — the classic "is my litre really a litre" consumer protection case.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'product_type', label: 'Product Type', type: 'select', options: ['Petrol', 'Diesel', 'Multi-Product (Petrol + Diesel)'], required: true },
+        { key: 'number_of_nozzles', label: 'Number of Nozzles', type: 'number', required: true },
+        { key: 'flow_rate_lpm', label: 'Flow Rate', type: 'text', unit: 'L/min', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_GAS_FUEL_DISPENSER',
+      code: 'GAS_FUEL_DISPENSER',
+      name: 'CNG / LPG / LNG / Hydrogen Dispenser',
+      description: 'Clean-fuel dispenser now within the expanded GATC verification scope alongside conventional petrol/diesel pumps.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'fuel_type', label: 'Fuel Type', type: 'select', options: ['CNG', 'LPG', 'LNG', 'Hydrogen'], required: true },
+        { key: 'number_of_dispensing_points', label: 'Number of Dispensing Points', type: 'number', required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_WATER_METER',
+      code: 'WATER_METER',
+      name: 'Water Meter',
+      description: 'Domestic or commercial water utility billing meter — governed by IS 779 / ISO 4064.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'meter_type', label: 'Meter Type', type: 'select', options: ['Mechanical — Single Jet', 'Mechanical — Multi Jet', 'Electromagnetic', 'Ultrasonic'], required: true },
+        { key: 'nominal_diameter_mm', label: 'Nominal Diameter (DN)', type: 'select', options: ['15', '20', '25', '32', '40', '50', '65', '80', '100', '150', '200'], unit: 'mm', required: true },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['Class A (legacy)', 'Class B (legacy)', 'Class 1 (ISO 4064:2014)', 'Class 2 (ISO 4064:2014)'], required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_ENERGY_METER',
+      code: 'ENERGY_METER',
+      name: 'Energy Meter (Electricity)',
+      description: 'Household or commercial electricity billing meter — over-billing from a miscalibrated meter is a Legal Metrology consumer protection issue.',
+      measurement_type: 'ENERGY',
+      spec_schema: [
+        { key: 'phase', label: 'Phase', type: 'select', options: ['Single Phase', 'Three Phase'], required: true },
+        { key: 'meter_type', label: 'Meter Type', type: 'select', options: ['Electromechanical (Induction)', 'Static (Electronic)'], required: true },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['0.2S', '0.5S', '1', '2'], required: false, help: 'Industry-standard IEC 62053 classes — not yet checked against a specific Indian statutory schedule.' }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_GAS_METER',
+      code: 'GAS_METER',
+      name: 'Gas Meter',
+      description: 'Domestic or commercial piped-gas meter. India has been actively drafting new Legal Metrology rules for this category as recently as 2025.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'meter_type', label: 'Meter Type', type: 'select', options: ['Diaphragm', 'Rotary', 'Turbine'], required: true },
+        { key: 'size', label: 'Size', type: 'select', options: ['G1.6', 'G2.5', 'G4', 'G6', 'G10', 'G16', 'G25'], required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_LENGTH_MEASURE',
+      code: 'LENGTH_MEASURE',
+      name: 'Length Measure',
+      description: 'Measuring tapes, rigid rules, and chains used commercially — cloth merchants, construction material sellers.',
+      measurement_type: 'LENGTH',
+      spec_schema: [
+        { key: 'measure_type', label: 'Type', type: 'select', options: ['Steel Tape', 'Fiberglass Tape', 'Cloth Tape', 'Rigid Rule', 'Chain'], required: true },
+        { key: 'nominal_length_m', label: 'Nominal Length', type: 'select', options: ['1', '2', '3', '5', '10', '15', '20', '25', '30', '50', '100'], unit: 'm', required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_VOLUME_MEASURE',
+      code: 'VOLUME_MEASURE',
+      name: 'Volumetric / Capacity Measure',
+      description: 'Liquid measures used outside metered dispensers — milk cans, oil measuring vessels — in traditional trade settings with no pump/meter.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'measure_type', label: 'Type', type: 'select', options: ['Liquid Measure (Metal)', 'Liquid Measure (Plastic)', 'Dry Measure'], required: true },
+        { key: 'nominal_capacity', label: 'Nominal Capacity', type: 'select', options: ['5 ml', '10 ml', '20 ml', '50 ml', '100 ml', '200 ml', '500 ml', '1 L', '2 L', '5 L', '10 L', '20 L'], required: true }
+      ],
+      active: 1
+    }
+  ];
+
+  for (const cat of categories) {
+    await InstrumentCategory.findOneAndUpdate({ id: cat.id }, { $set: cat }, { upsert: true });
+  }
 
   // 2. Rule Sets
-  const ruleSet = {
-    id: 'RULE_NAWI_III_2011',
-    category_id: 'CAT_NAWI_III',
-    name: 'Legal Metrology General Rules 2011 Schedule IX',
-    validity_period_months: 12,
-    mpe_rules: [
-      { max_e: 500, initial_mpe_e: 0.5, subsequent_mpe_e: 1.0 },
-      { max_e: 2000, initial_mpe_e: 1.0, subsequent_mpe_e: 2.0 },
-      { max_e: 10000, initial_mpe_e: 1.5, subsequent_mpe_e: 3.0 }
-    ],
-    checklist_schema: [
-      { id: 'CHK_01', text: 'Platter, frame, and housing are free from cracks or intentional tampering.', mandatory: true },
-      { id: 'CHK_02', text: 'Model approval number and Class III mark are clearly legible on stamping plate.', mandatory: true },
-      { id: 'CHK_03', text: 'Level indicator bubble is precisely centered in inner reference circle.', mandatory: true },
-      { id: 'CHK_04', text: 'Lead/wire calibration seal is intact with valid previous stamp.', mandatory: true },
-      { id: 'CHK_05', text: 'Operating environment is stable, draft-free, and within statutory temperature range.', mandatory: true }
-    ]
-  };
-  await RuleSet.findOneAndUpdate({ id: ruleSet.id }, { $set: ruleSet }, { upsert: true });
+  const ruleSets = [
+    {
+      id: 'RULE_NAWI_III_2011',
+      category_id: 'CAT_NAWI_III',
+      name: 'Legal Metrology General Rules 2011 Schedule IX',
+      validity_period_months: 12,
+      mpe_rules: [
+        { max_e: 500, initial_mpe_e: 0.5, subsequent_mpe_e: 1.0 },
+        { max_e: 2000, initial_mpe_e: 1.0, subsequent_mpe_e: 2.0 },
+        { max_e: 10000, initial_mpe_e: 1.5, subsequent_mpe_e: 3.0 }
+      ],
+      checklist_schema: [
+        { id: 'CHK_01', text: 'Platter, frame, and housing are free from cracks or intentional tampering.', mandatory: true },
+        { id: 'CHK_02', text: 'Model approval number and Class III mark are clearly legible on stamping plate.', mandatory: true },
+        { id: 'CHK_03', text: 'Level indicator bubble is precisely centered in inner reference circle.', mandatory: true },
+        { id: 'CHK_04', text: 'Lead/wire calibration seal is intact with valid previous stamp.', mandatory: true },
+        { id: 'CHK_05', text: 'Operating environment is stable, draft-free, and within statutory temperature range.', mandatory: true }
+      ]
+    },
+    // The rule sets below are simplified placeholders (12-month default validity,
+    // generic seal/nameplate checklist) — NOT transcribed from a verified primary
+    // statutory MPE table for that category. Domain validation is an open item.
+    ...[
+      ['RULE_AUTO_WEIGH', 'CAT_AUTO_WEIGH', 'Automatic Weighing Instrument — Placeholder Rules'],
+      ['RULE_WEIGHBRIDGE', 'CAT_WEIGHBRIDGE', 'Weighbridge — Placeholder Rules'],
+      ['RULE_FUEL_DISPENSER', 'CAT_FUEL_DISPENSER', 'Fuel Dispensing Pump — Placeholder Rules'],
+      ['RULE_GAS_FUEL_DISPENSER', 'CAT_GAS_FUEL_DISPENSER', 'CNG/LPG/LNG/Hydrogen Dispenser — Placeholder Rules'],
+      ['RULE_WATER_METER', 'CAT_WATER_METER', 'Water Meter — Placeholder Rules'],
+      ['RULE_ENERGY_METER', 'CAT_ENERGY_METER', 'Energy Meter — Placeholder Rules'],
+      ['RULE_GAS_METER', 'CAT_GAS_METER', 'Gas Meter — Placeholder Rules'],
+      ['RULE_LENGTH_MEASURE', 'CAT_LENGTH_MEASURE', 'Length Measure — Placeholder Rules'],
+      ['RULE_VOLUME_MEASURE', 'CAT_VOLUME_MEASURE', 'Volumetric/Capacity Measure — Placeholder Rules']
+    ].map(([id, category_id, name]) => ({
+      id,
+      category_id,
+      name,
+      validity_period_months: 12,
+      mpe_rules: [],
+      checklist_schema: [
+        { id: 'CHK_SEAL', text: 'Statutory seal/stamp and nameplate details are intact and legible.', mandatory: true },
+        { id: 'CHK_TAMPER', text: 'No evidence of tampering, damage, or unauthorized modification.', mandatory: true }
+      ]
+    }))
+  ];
+  for (const rs of ruleSets) {
+    await RuleSet.findOneAndUpdate({ id: rs.id }, { $set: rs }, { upsert: true });
+  }
 
   // 3. Instruments
   const instruments = [
@@ -203,7 +397,9 @@ export async function seedDemoData() {
       max_capacity: '30 kg',
       min_capacity: '100 g',
       verification_scale_interval_e: '5 g',
+      specs: { accuracy_class: 'III' },
       location: 'Counter 1, Main Grocery Section, Connaught Place, New Delhi',
+      district: 'Central Delhi, Delhi',
       status: 'UNDER_VERIFICATION',
       created_at: now
     },
@@ -217,7 +413,9 @@ export async function seedDemoData() {
       max_capacity: '30 kg',
       min_capacity: '100 g',
       verification_scale_interval_e: '5 g',
+      specs: { accuracy_class: 'III' },
       location: 'Depot 4, Okhla Phase III, New Delhi',
+      district: 'South East Delhi, Delhi',
       status: 'VERIFIED',
       created_at: now
     },
@@ -231,7 +429,9 @@ export async function seedDemoData() {
       max_capacity: '15 kg',
       min_capacity: '40 g',
       verification_scale_interval_e: '2 g',
+      specs: { accuracy_class: 'III' },
       location: 'Store 18, Terminal 3, IGI Airport, New Delhi',
+      district: 'South West Delhi, Delhi',
       status: 'VERIFIED',
       created_at: now
     },
@@ -245,7 +445,9 @@ export async function seedDemoData() {
       max_capacity: '20 kg',
       min_capacity: '50 g',
       verification_scale_interval_e: '2 g',
+      specs: { accuracy_class: 'III' },
       location: 'Billing Counter 3, South Extension Part II, New Delhi',
+      district: 'South Delhi, Delhi',
       status: 'EXPIRING',
       created_at: now
     },
@@ -259,7 +461,9 @@ export async function seedDemoData() {
       max_capacity: '30 kg',
       min_capacity: '100 g',
       verification_scale_interval_e: '5 g',
+      specs: { accuracy_class: 'III' },
       location: 'Fruit Market Stall 12, Azadpur Mandi, Delhi',
+      district: 'North West Delhi, Delhi',
       status: 'REGISTERED',
       created_at: now
     }

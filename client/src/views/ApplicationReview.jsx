@@ -461,143 +461,219 @@ export default function ApplicationReview({
         )}
       </div>
 
-      {/* Return Application Modal */}
+      {/* Return Application Drawer */}
       {showReturnModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleReturnSubmit} className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-slate-900 text-sm">Return Application with Remarks</h3>
-                <p className="text-xs text-slate-500">Applicant will be notified to correct and resubmit</p>
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer animate-backdrop-in"
+            onClick={() => setShowReturnModal(false)}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-2xl">assignment_return</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Return Application with Remarks</h3>
+                  <p className="text-xs text-slate-500">Applicant will be notified to correct and resubmit</p>
+                </div>
               </div>
-              <button type="button" onClick={() => setShowReturnModal(false)} className="text-slate-400 hover:text-slate-700">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-            <div>
-              <label className="font-bold text-slate-700 block text-xs mb-1">Deficiency Remarks / Required Action</label>
-              <textarea
-                required
-                rows={4}
-                value={returnReason}
-                onChange={e => setReturnReason(e.target.value)}
-                placeholder="Specify missing documents, discrepancy in serial number, or clarification required..."
-                className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              ></textarea>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowReturnModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                title="Close"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <form id="return-app-form" onSubmit={handleReturnSubmit} className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 text-xs">
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs leading-relaxed flex items-start gap-2">
+                <span className="material-symbols-outlined text-base text-amber-600 shrink-0 mt-0.5">info</span>
+                <span>The applicant will receive a statutory deficiency notification with these instructions and can upload corrected documentation.</span>
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block text-xs mb-1">Deficiency Remarks / Required Action *</label>
+                <textarea
+                  required
+                  rows={6}
+                  value={returnReason}
+                  onChange={e => setReturnReason(e.target.value)}
+                  placeholder="Specify missing documents, discrepancy in serial number, or clarification required..."
+                  className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                ></textarea>
+              </div>
+            </form>
+
+            <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowReturnModal(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
+                form="return-app-form"
                 disabled={returning}
-                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs"
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
               >
                 {returning ? 'Returning...' : 'Return Application'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
-      {/* Reject Application Modal */}
+      {/* Reject Application Drawer */}
       {showRejectModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleRejectSubmit} className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-rose-900 text-sm">Reject Verification Application</h3>
-                <p className="text-xs text-slate-500">Statutory rejection records instrument as non-compliant</p>
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer animate-backdrop-in"
+            onClick={() => setShowRejectModal(false)}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-2xl">cancel</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-rose-900 text-base">Reject Verification Application</h3>
+                  <p className="text-xs text-slate-500">Statutory rejection records instrument as non-compliant</p>
+                </div>
               </div>
-              <button type="button" onClick={() => setShowRejectModal(false)} className="text-slate-400 hover:text-slate-700">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-            <div>
-              <label className="font-bold text-slate-700 block text-xs mb-1">Statutory Rejection Grounds</label>
-              <textarea
-                required
-                rows={4}
-                value={rejectReason}
-                onChange={e => setRejectReason(e.target.value)}
-                placeholder="State the statutory grounds under the Legal Metrology Act (e.g. repeated failure to meet MPE limits, unapproved model)..."
-                className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500"
-              ></textarea>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                title="Close"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <form id="reject-app-form" onSubmit={handleRejectSubmit} className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 text-xs">
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs leading-relaxed flex items-start gap-2">
+                <span className="material-symbols-outlined text-base text-rose-600 shrink-0 mt-0.5">warning</span>
+                <span>Warning: Rejection under the Legal Metrology Act is a permanent determination on this filing and will revoke operational permission for this instrument.</span>
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block text-xs mb-1">Statutory Rejection Grounds *</label>
+                <textarea
+                  required
+                  rows={6}
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  placeholder="State the statutory grounds under the Legal Metrology Act (e.g. repeated failure to meet MPE limits, unapproved model)..."
+                  className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 outline-none"
+                ></textarea>
+              </div>
+            </form>
+
+            <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowRejectModal(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
+                form="reject-app-form"
                 disabled={rejecting}
-                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-xs"
+                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
               >
                 {rejecting ? 'Rejecting...' : 'Confirm Rejection'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
-      {/* Approve Application Modal */}
+      {/* Approve Application Drawer */}
       {showApproveModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <form onSubmit={handleApproveSubmit} className="bg-white rounded-2xl max-w-md w-full p-6 border border-slate-200 shadow-xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-emerald-900 text-sm">Approve Application & Issue Certificate</h3>
-                <p className="text-xs text-slate-500">Statutory Legal Metrology verification seal</p>
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm cursor-pointer animate-backdrop-in"
+            onClick={() => setShowApproveModal(false)}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-50 flex flex-col h-full w-full sm:w-[85vw] md:w-1/2 lg:w-1/2 bg-white shadow-2xl border-l border-slate-200 animate-slide-in-right cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-2xl">verified</span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-emerald-900 text-base">Approve Application & Issue Certificate</h3>
+                  <p className="text-xs text-slate-500">Statutory Legal Metrology verification seal</p>
+                </div>
               </div>
-              <button type="button" onClick={() => setShowApproveModal(false)} className="text-slate-400 hover:text-slate-700">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-1">
-              <div className="font-bold flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-base text-emerald-600">verified</span>
-                Statutory Determination Notice
-              </div>
-              <p className="text-[11px] text-emerald-800 leading-relaxed">
-                Approving this case will transition the application to <strong>CERTIFICATE_ISSUED</strong>, update instrument state to <strong>VERIFIED</strong>, and issue an official verification certificate with a unique public QR verification token.
-              </p>
-            </div>
-            <div>
-              <label className="font-bold text-slate-700 block text-xs mb-1">Official Approval Remarks</label>
-              <textarea
-                required
-                rows={3}
-                value={approvalRemarks}
-                onChange={e => setApprovalRemarks(e.target.value)}
-                className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-              ></textarea>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowApproveModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                title="Close"
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+            </div>
+
+            <form id="approve-app-form" onSubmit={handleApproveSubmit} className="flex-1 overflow-y-auto p-6 md:p-8 space-y-4 text-xs">
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 space-y-2">
+                <div className="font-bold flex items-center gap-1.5 text-emerald-800">
+                  <span className="material-symbols-outlined text-base text-emerald-600">verified</span>
+                  Statutory Determination Notice
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">
+                  Approving this case will transition the application to <strong>CERTIFICATE_ISSUED</strong>, update instrument state to <strong>VERIFIED</strong>, and issue an official verification certificate with a unique public QR verification token.
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block text-xs mb-1">Official Approval Remarks *</label>
+                <textarea
+                  required
+                  rows={4}
+                  value={approvalRemarks}
+                  onChange={e => setApprovalRemarks(e.target.value)}
+                  placeholder="Enter endorsement details, inspection report reference, or statutory remarks..."
+                  className="w-full p-3 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                ></textarea>
+              </div>
+            </form>
+
+            <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowApproveModal(false)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
+                form="approve-app-form"
                 disabled={approving}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md"
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
               >
                 {approving ? 'Authorizing...' : 'Approve & Issue Certificate'}
               </button>
             </div>
-          </form>
+          </div>
         </div>
       )}
     </div>
