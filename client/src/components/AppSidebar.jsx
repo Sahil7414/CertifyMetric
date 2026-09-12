@@ -432,7 +432,7 @@ export default function AppSidebar({
               {/* Action Buttons */}
               <div className="pt-1 flex items-center justify-between border-t border-[#1b365d]/60 text-[11px]">
                 <span className="text-[10px] text-slate-400 font-mono">
-                  SIH 26036
+                  LMOMS
                 </span>
                 {onLogout && (
                   <button

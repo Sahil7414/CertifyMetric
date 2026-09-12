@@ -196,7 +196,7 @@ export default function PublicVerify({ token, onBackToPortal }) {
       </div>
 
       <p className="text-[10px] text-slate-400 mt-4 text-center">
-        Legal Metrology Verification Engine • Smart India Hackathon PS 26036
+        Legal Metrology Verification Engine • National Compliance Portal
       </p>
     </div>
   );

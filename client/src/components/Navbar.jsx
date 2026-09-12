@@ -23,7 +23,7 @@ export default function Navbar({
           <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-slate-300">
-          <span className="hidden sm:inline">Online Management System (SIH 26036)</span>
+          <span className="hidden sm:inline">Online Verification Management System</span>
           {onVerifyPublicToken && (
             <button
               onClick={() => onVerifyPublicToken('e1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b')}

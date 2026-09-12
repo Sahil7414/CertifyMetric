@@ -68,7 +68,7 @@ export default function TopHeader({
           <span className="hidden md:inline text-slate-400">Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
         </div>
         <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
-          <span>SIH 26036 • CertifyMetric</span>
+          <span>LMOMS • CertifyMetric</span>
         </div>
       </div>
 

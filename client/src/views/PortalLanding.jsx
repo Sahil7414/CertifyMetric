@@ -107,7 +107,7 @@ export default function PortalLanding({
               <div className="flex items-center gap-2">
                 <span className="text-xl font-extrabold text-primary tracking-tight">CertifyMetric</span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                  LMOMS • SIH 26036
+                  LMOMS Legal Metrology
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium leading-none mt-0.5">
@@ -416,7 +416,7 @@ export default function PortalLanding({
       <footer className="mt-auto bg-slate-900 text-slate-400 py-6 px-4 text-xs border-t border-slate-800">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-center md:text-left space-y-1">
-            <p className="font-bold text-white">CertifyMetric • Online Verification System (SIH 26036)</p>
+            <p className="font-bold text-white">CertifyMetric • Online Verification System</p>
             <p className="text-[11px]">Department of Consumer Affairs • Ministry of Consumer Affairs, Food & Public Distribution, Government of India</p>
           </div>
           <div className="text-center md:text-right text-[11px]">
