@@ -51,6 +51,7 @@ export default function ApplyVerificationView({
   preselectedInstrumentId = null,
   resubmitApplicationData = null,
   pendingPaymentApplication = null,
+  initialStep = null,
   onClose,
   onApplicationCreated,
   onOpenAddInstrument,
@@ -58,11 +59,34 @@ export default function ApplyVerificationView({
 }) {
   const isResubmitMode = Boolean(resubmitApplicationData);
   const isPaymentMode = Boolean(pendingPaymentApplication);
-  const [currentStep, setCurrentStep] = useState(
-    isPaymentMode ? 9 : (isResubmitMode ? 4 : 1)
-  );
+  const [currentStep, setCurrentStep] = useState(() => {
+    if (isPaymentMode) return 9;
+    if (isResubmitMode) return 4;
+    if (initialStep && initialStep >= 1 && initialStep <= 10) return initialStep;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const s = parseInt(params.get('step'), 10);
+      if (s >= 1 && s <= 10) return s;
+    } catch {}
+    return 1;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Sync step on browser Back/Forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const s = parseInt(params.get('step'), 10);
+        if (s >= 1 && s <= 10) {
+          setCurrentStep(s);
+        }
+      } catch {}
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // 1. Verification Type: 'ORIGINAL' | 'RE_VERIFICATION'
   const [verificationType, setVerificationType] = useState(() => {
@@ -318,16 +342,28 @@ export default function ApplyVerificationView({
     return true;
   };
 
+  const updateUrlStep = (stepNum) => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('step', String(stepNum));
+      window.history.pushState({ tab: 'apply-verification', step: stepNum }, '', url.pathname + url.search);
+    } catch {}
+  };
+
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setError('');
-      setCurrentStep(prev => Math.min(prev + 1, 10));
+      const nextStep = Math.min(currentStep + 1, 10);
+      setCurrentStep(nextStep);
+      updateUrlStep(nextStep);
     }
   };
 
   const handleBack = () => {
     setError('');
-    setCurrentStep(prev => Math.max(prev - 1, 1));
+    const prevStep = Math.max(currentStep - 1, 1);
+    setCurrentStep(prevStep);
+    updateUrlStep(prevStep);
   };
 
   // Handle Step 8: Submit Application
@@ -352,6 +388,7 @@ export default function ApplyVerificationView({
           onApplicationCreated(result.application.id, result.application.application_no);
         }
         setCurrentStep(10); // Go straight to acknowledgement
+        updateUrlStep(10);
       } else {
         // New Application Submission
         const payload = {
@@ -379,6 +416,7 @@ export default function ApplyVerificationView({
           onApplicationCreated(result.id, result.application_no);
         }
         setCurrentStep(9); // Move to Payment Step
+        updateUrlStep(9);
       }
     } catch (err) {
       setError(err.message || 'Failed to submit verification application.');
@@ -578,7 +616,10 @@ export default function ApplyVerificationView({
                       type="button"
                       disabled={!isPassed && !isActive}
                       onClick={() => {
-                        if (isPassed) setCurrentStep(step.id);
+                        if (isPassed) {
+                          setCurrentStep(step.id);
+                          updateUrlStep(step.id);
+                        }
                       }}
                       className={`
                         w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 transition-all
