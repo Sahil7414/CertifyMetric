@@ -53,6 +53,7 @@ export default function ApplyVerificationView({
   pendingPaymentApplication = null,
   onClose,
   onApplicationCreated,
+  onPaymentCompleted,
   onOpenAddInstrument,
   onViewApplicationTimeline
 }) {
@@ -422,6 +423,7 @@ export default function ApplyVerificationView({
       setReceiptEmail(res.receipt_email || null);
       setCreatedApp(res.application);
       setCurrentStep(10); // Move to Acknowledgement step
+      if (onPaymentCompleted) onPaymentCompleted(res.application?.id);
     } catch (err) {
       setError(err.message || 'Payment processing failed. Please try again.');
     } finally {
@@ -459,6 +461,7 @@ export default function ApplyVerificationView({
             setReceiptEmail(res.receipt_email || null);
             setCreatedApp(res.application);
             setCurrentStep(10);
+            if (onPaymentCompleted) onPaymentCompleted(res.application?.id);
           } catch (err) {
             setError(err.message || 'Payment could not be verified. If money was deducted, it will be reconciled — please contact support with your payment ID.');
           } finally {

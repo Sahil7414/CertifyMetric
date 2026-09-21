@@ -27,6 +27,7 @@ import { ROLES, hasPermission, requirePermission } from './permissions.js';
 import { upload, STORAGE_DIR, deleteStoredFile, initStorage } from './storage.js';
 import { verifyPassword, hashPassword } from './auth-utils.js';
 import { sendEmail, buildPaymentReceiptEmail } from './email.js';
+import { DESIGNATIONS, DEFAULT_DESIGNATION, designationLabel, getRequirement, checkCompetence, isValidDesignation } from './verificationPolicy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -261,7 +262,7 @@ app.post('/api/auth/login', async (req, res) => {
 const SELF_REGISTERABLE_ROLES = [ROLES.TRADER, ROLES.VERIFIER, ROLES.AUTHORITY, ROLES.GATC];
 
 app.post('/api/auth/register', async (req, res) => {
-  const { full_name, email, password, phone, role, organization_name, jurisdictions } = req.body;
+  const { full_name, email, password, phone, role, organization_name, jurisdictions, designation } = req.body;
 
   if (!full_name || !email || !password || !role) {
     return res.status(400).json({ error: 'full_name, email, password, and role are required' });
@@ -295,6 +296,9 @@ app.post('/api/auth/register', async (req, res) => {
   if (!organization_name || !organization_name.trim()) {
     return res.status(400).json({ error: 'Organization / establishment name is required.' });
   }
+  if (role === ROLES.VERIFIER && designation && !isValidDesignation(designation)) {
+    return res.status(400).json({ error: 'Invalid officer designation.' });
+  }
 
   const now = new Date().toISOString();
   const orgId = `ORG_${role}_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
@@ -319,6 +323,7 @@ app.post('/api/auth/register', async (req, res) => {
     full_name: full_name.trim(),
     organization_id: orgId,
     phone: phone || '',
+    designation: role === ROLES.VERIFIER ? (designation || DEFAULT_DESIGNATION) : undefined,
     is_demo: 0,
     active: true,
     created_at: now,
@@ -513,10 +518,46 @@ app.post('/api/instruments', async (req, res) => {
     // Category-specific spec fields are declared server-side (category.spec_schema),
     // not trusted blindly from the client — required ones must actually be present.
     const specSchema = Array.isArray(category.spec_schema) ? category.spec_schema : [];
-    const providedSpecs = specs && typeof specs === 'object' ? specs : {};
-    const missingSpec = specSchema.find(f => f.required && !String(providedSpecs[f.key] ?? '').trim());
+    const rawSpecs = specs && typeof specs === 'object' && !Array.isArray(specs) ? specs : {};
+
+    const missingSpec = specSchema.find(f => f.required && !String(rawSpecs[f.key] ?? '').trim());
     if (missingSpec) {
       return res.status(400).json({ error: `Missing required field '${missingSpec.label || missingSpec.key}' for category '${category.name}'` });
+    }
+
+    // Keep only fields this category actually declares. A spec object is free-form
+    // Mixed in Mongoose, so without this a client could persist arbitrary keys, and
+    // switching category mid-form would leave the previous category's fields behind
+    // on the record (a water meter carrying a `platform_length_m`).
+    const cleanSpecs = {};
+    for (const f of specSchema) {
+      const raw = rawSpecs[f.key];
+      if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+      const value = String(raw).trim();
+
+      // A `select` field is a closed list — anything outside it is either a stale
+      // value from a different category or a hand-crafted request.
+      if (f.type === 'select' && Array.isArray(f.options) && !f.options.includes(value)) {
+        return res.status(400).json({
+          error: `Invalid value '${value}' for '${f.label || f.key}'. Allowed: ${f.options.join(', ')}`
+        });
+      }
+      if (f.type === 'number') {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0) {
+          return res.status(400).json({ error: `'${f.label || f.key}' must be a positive number` });
+        }
+      }
+      cleanSpecs[f.key] = value;
+    }
+    const providedSpecs = cleanSpecs;
+
+    // The Max/Min/Interval(e) columns exist for the NAWI MPE engine. Accepting them
+    // for a category whose form never collects them would write NAWI-shaped data
+    // onto, say, a taximeter record.
+    const acceptsCapacityFields = category.form_meta?.capacity_fields === true;
+    if (acceptsCapacityFields && (!max_capacity || !min_capacity || !verification_scale_interval_e)) {
+      return res.status(400).json({ error: `Max Capacity, Min Capacity and Interval (e) are required for category '${category.name}'` });
     }
 
     const existing = await Instrument.findOne({ serial_number }).lean();
@@ -536,9 +577,9 @@ app.post('/api/instruments', async (req, res) => {
       serial_number,
       // Only meaningful for weight-based categories — left blank otherwise rather
       // than defaulting to a NAWI-shaped value that would misdescribe the instrument.
-      max_capacity: max_capacity || '',
-      min_capacity: min_capacity || '',
-      verification_scale_interval_e: verification_scale_interval_e || '',
+      max_capacity: acceptsCapacityFields ? max_capacity : '',
+      min_capacity: acceptsCapacityFields ? min_capacity : '',
+      verification_scale_interval_e: acceptsCapacityFields ? verification_scale_interval_e : '',
       specs: providedSpecs,
       location,
       district,
@@ -643,6 +684,23 @@ app.get('/api/applications/:id', async (req, res) => {
 
   const verif = await Verification.findOne({ application_id: application.id }).lean();
   const cert = verif ? await Certificate.findOne({ verification_id: verif.id }).lean() : null;
+  const ruleSet = cat ? await RuleSet.findOne({ category_id: cat.id }).lean() : null;
+
+  // Category-specific specs as label/value rows, driven by the category's own
+  // spec_schema — a taximeter has a tariff version, not a "max capacity".
+  const specFields = [];
+  if (inst) {
+    if (cat?.measurement_type === 'MASS') {
+      if (inst.max_capacity) specFields.push({ label: 'Max Capacity', value: inst.max_capacity });
+      if (inst.min_capacity) specFields.push({ label: 'Min Capacity', value: inst.min_capacity });
+      if (inst.verification_scale_interval_e) specFields.push({ label: 'Verification Interval (e)', value: inst.verification_scale_interval_e });
+    }
+    for (const field of (Array.isArray(cat?.spec_schema) ? cat.spec_schema : [])) {
+      const value = inst.specs ? inst.specs[field.key] : undefined;
+      if (value === undefined || value === null || value === '') continue;
+      specFields.push({ label: field.label, value: field.unit ? `${value} ${field.unit}` : String(value) });
+    }
+  }
 
   res.json({
     ...application,
@@ -654,6 +712,15 @@ app.get('/api/applications/:id', async (req, res) => {
     verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
     location: inst ? inst.location : null,
     category_name: cat ? cat.name : null,
+    category_code: cat ? cat.code : null,
+    instrument_district: inst ? inst.district : null,
+    spec_fields: specFields,
+    rule_set: ruleSet ? {
+      name: ruleSet.name,
+      validity_period_months: ruleSet.validity_period_months,
+      has_mpe_rules: Array.isArray(ruleSet.mpe_rules) && ruleSet.mpe_rules.length > 0
+    } : null,
+    verification_requirement: getRequirement(cat, inst),
     trader_name: trader ? trader.full_name : null,
     trader_phone: trader ? trader.phone : null,
     trader_email: trader ? trader.email : null,
@@ -1273,6 +1340,171 @@ app.post('/api/applications/:id/review', async (req, res) => {
   res.json({ message: 'Application is now under statutory review', status: 'UNDER_REVIEW' });
 });
 
+// Application states in which an assignment no longer occupies the officer's time.
+const CLOSED_APPLICATION_STATES = ['APPROVED', 'CERTIFICATE_ISSUED', 'REJECTED', 'RETURNED', 'VERIFICATION_FAILED', 'CANCELLED', 'WITHDRAWN'];
+
+// States in which an officer can be allocated (or re-allocated before inspection starts).
+const ASSIGNABLE_STATES = ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_VERIFICATION', 'ASSIGNED'];
+
+// Allocation engine. Every candidate goes through the same HARD checks — failing
+// any one makes them ineligible no matter how idle they are:
+//   1. active account
+//   2. competence: GATC First Schedule + approval scope, or LMO designation rank
+//   3. jurisdiction: instrument district is within the office's notified districts
+// Only eligible candidates are then RANKED (scoreCandidate) by open workload,
+// home district vs additional charge, free capacity on the preferred date and mode fit.
+async function evaluateCandidates(appItem) {
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const category = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const requirement = getRequirement(category, inst);
+  const district = inst ? inst.district : null;
+
+  const people = await User.find({ role: { $in: [ROLES.VERIFIER, ROLES.GATC] } }).lean();
+  const orgs = await Organization.find({ id: { $in: [...new Set(people.map(u => u.organization_id).filter(Boolean))] } }).lean();
+  const orgMap = new Map(orgs.map(o => [o.id, o]));
+
+  // Workload = open assignments only; closed cases no longer occupy the officer.
+  const assignments = await Assignment.find({ assigned_id: { $in: people.map(p => p.id) } }).lean();
+  const assignedApps = await Application.find(
+    { id: { $in: assignments.map(x => x.application_id) } },
+    { id: 1, status: 1 }
+  ).lean();
+  const appStatus = new Map(assignedApps.map(x => [x.id, x.status]));
+  const openAssignments = assignments.filter(x =>
+    x.application_id !== appItem.id && !CLOSED_APPLICATION_STATES.includes(appStatus.get(x.application_id))
+  );
+  const workload = new Map();
+  for (const x of openAssignments) workload.set(x.assigned_id, (workload.get(x.assigned_id) || 0) + 1);
+
+  // Visits already booked on the trader's preferred date, per officer.
+  const preferredDate = appItem.preferred_date || null;
+  const busyOnDate = new Map();
+  if (preferredDate) {
+    const apts = await Appointment.find({
+      assignment_id: { $in: openAssignments.map(x => x.id) },
+      scheduled_date: preferredDate
+    }).lean();
+    const asnOwner = new Map(openAssignments.map(x => [x.id, x.assigned_id]));
+    for (const apt of apts) {
+      const owner = asnOwner.get(apt.assignment_id);
+      busyOnDate.set(owner, (busyOnDate.get(owner) || 0) + 1);
+    }
+  }
+
+  const candidates = people.map(person => {
+    const org = orgMap.get(person.organization_id) || {};
+    const jurisdictions = org.jurisdictions || [];
+    const competence = checkCompetence(person, org, requirement);
+    const inJurisdiction = !!district && jurisdictions.includes(district);
+
+    const checks = [
+      {
+        key: 'active',
+        label: 'Active account',
+        ok: person.active !== false,
+        detail: person.active !== false ? 'Account active' : 'Account is deactivated'
+      },
+      {
+        key: 'competence',
+        label: person.role === ROLES.GATC ? 'GATC scope' : 'Designation',
+        ok: competence.ok,
+        detail: competence.reason
+      },
+      {
+        key: 'jurisdiction',
+        label: 'Jurisdiction',
+        ok: inJurisdiction,
+        detail: inJurisdiction
+          ? `Covers ${district}`
+          : `Covers ${jurisdictions.join('; ') || 'no districts on record'}, not ${district || 'the instrument district'}`
+      }
+    ];
+    const isEligible = checks.every(c => c.ok);
+
+    const current_workload = workload.get(person.id) || 0;
+    const bookings_on_preferred_date = busyOnDate.get(person.id) || 0;
+    const isHomeDistrict = inJurisdiction && jurisdictions[0] === district;
+
+    const factors = isEligible ? scoreCandidate({
+      workload: current_workload,
+      isHomeDistrict,
+      bookingsOnDate: bookings_on_preferred_date,
+      hasPreferredDate: !!preferredDate,
+      role: person.role,
+      mode: appItem.verification_mode
+    }) : [];
+    const score = isEligible ? Math.max(0, Math.min(100, factors.reduce((sum, f) => sum + f.points, 0))) : 0;
+
+    return {
+      id: person.id,
+      full_name: person.full_name,
+      role: person.role,
+      designation: person.role === ROLES.VERIFIER ? (person.designation || DEFAULT_DESIGNATION) : null,
+      designation_label: person.role === ROLES.VERIFIER ? designationLabel(person.designation) : 'Government Approved Test Centre',
+      phone: person.phone || null,
+      organization_name: org.name || null,
+      jurisdictions,
+      is_home_district: isHomeDistrict,
+      current_workload,
+      bookings_on_preferred_date,
+      is_eligible: isEligible,
+      checks,
+      ineligible_reason: isEligible ? null : checks.find(c => !c.ok).detail,
+      score,
+      score_factors: factors
+    };
+  });
+
+  candidates.sort((x, y) => {
+    if (x.is_eligible !== y.is_eligible) return x.is_eligible ? -1 : 1;
+    if (y.score !== x.score) return y.score - x.score;
+    return x.current_workload - y.current_workload;
+  });
+
+  const recommended = candidates.find(c => c.is_eligible) || null;
+  return {
+    instrument: inst,
+    requirement,
+    district,
+    candidates,
+    recommended_id: recommended ? recommended.id : null
+  };
+}
+
+// Transparent ranking: every point is itemised so the authority can see WHY a
+// candidate is on top. Base 50 for being eligible, 100 max.
+function scoreCandidate({ workload, isHomeDistrict, bookingsOnDate, hasPreferredDate, role, mode }) {
+  const factors = [{ key: 'base', label: 'Meets all requirements', points: 50 }];
+
+  factors.push({
+    key: 'workload',
+    label: workload === 0 ? 'No open cases' : `${workload} open case${workload === 1 ? '' : 's'}`,
+    points: Math.max(0, 25 - workload * 5)
+  });
+
+  factors.push(isHomeDistrict
+    ? { key: 'location', label: 'Home district', points: 10 }
+    : { key: 'location', label: 'Additional-charge district', points: 3 });
+
+  if (hasPreferredDate) {
+    factors.push(bookingsOnDate === 0
+      ? { key: 'availability', label: 'Free on preferred date', points: 10 }
+      : { key: 'availability', label: `${bookingsOnDate} visit${bookingsOnDate === 1 ? '' : 's'} on preferred date`, points: bookingsOnDate === 1 ? 4 : 0 });
+  }
+
+  // On-site (in-situ) inspections need a field officer; camp/centre presentations suit a test centre.
+  const modeFit = (mode === 'IN_SITU' && role === ROLES.VERIFIER) || (mode !== 'IN_SITU' && role === ROLES.GATC);
+  if (modeFit) {
+    factors.push({ key: 'mode', label: mode === 'IN_SITU' ? 'Field officer for on-site visit' : 'Test centre for camp presentation', points: 5 });
+  }
+
+  return factors;
+}
+
+app.get('/api/verification-policy/designations', (req, res) => {
+  res.json(DESIGNATIONS);
+});
+
 app.get('/api/applications/:id/candidates', async (req, res) => {
   const { role } = getActor(req);
   if (!hasPermission(role, 'ASSIGN_VERIFIER')) {
@@ -1282,70 +1514,31 @@ app.get('/api/applications/:id/candidates', async (req, res) => {
   const appItem = await Application.findOne({ id: req.params.id }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
-  const instrumentDistrict = inst ? inst.district : null;
-
-  const verifiers = await User.find({ role: { $in: ['VERIFIER', 'GATC'] } }).lean();
-  const orgIds = [...new Set(verifiers.map(u => u.organization_id).filter(Boolean))];
-  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
-  const orgMap = new Map(orgs.map(o => [o.id, o]));
-
-  const assignments = await Assignment.find().lean();
-  const workloadMap = new Map();
-  for (const a of assignments) {
-    workloadMap.set(a.assigned_id, (workloadMap.get(a.assigned_id) || 0) + 1);
-  }
-
-  // Hard eligibility filter: a candidate has statutory authority to verify this
-  // instrument only if the instrument's district is among their office's notified
-  // jurisdictions. Workload/score is a soft ranking applied ONLY within that set —
-  // an idle officer in another district is never a valid recommendation, regardless
-  // of score. (See docs/ARCHITECTURE.md §3.2 for the real-world basis of this rule.)
-  const scored = verifiers.map(c => {
-    const org = orgMap.get(c.organization_id) || {};
-    const jurisdictions = org.jurisdictions || [];
-    const is_eligible = !!instrumentDistrict && jurisdictions.includes(instrumentDistrict);
-    const current_workload = workloadMap.get(c.id) || 0;
-
-    let score = 100 - (current_workload * 12);
-    let matchReason = 'Authorized statutory Legal Metrology Officer';
-    if (c.role === 'GATC') {
-      score += 5;
-      matchReason = 'Approved test centre with verified mass standard laboratory';
-    }
-
-    if (!is_eligible) {
-      score = 0;
-      matchReason = jurisdictions.length > 0
-        ? `Outside notified jurisdiction (covers: ${jurisdictions.join(', ')})`
-        : 'No notified jurisdiction on record for this office';
-    }
-
-    return {
-      id: c.id,
-      full_name: c.full_name,
-      role: c.role,
-      phone: c.phone,
-      organization_name: org.name || null,
-      jurisdictions,
-      current_workload,
-      suitability_score: is_eligible ? Math.max(score, 40) : 0,
-      match_reason: matchReason,
-      is_eligible
-    };
-  }).sort((a, b) => {
-    if (a.is_eligible !== b.is_eligible) return a.is_eligible ? -1 : 1;
-    return b.suitability_score - a.suitability_score;
-  });
-
-  const topEligible = scored.find(c => c.is_eligible);
-  const recommendedId = topEligible ? topEligible.id : null;
+  const result = await evaluateCandidates(appItem);
+  const existing = await Assignment.findOne({ application_id: appItem.id }).lean();
+  const trader = await User.findOne({ id: appItem.trader_id }, { full_name: 1 }).lean();
 
   res.json({
-    application_id: req.params.id,
-    instrument_district: instrumentDistrict,
-    recommended_id: recommendedId,
-    candidates: scored
+    application: {
+      id: appItem.id,
+      application_no: appItem.application_no,
+      status: appItem.status,
+      verification_mode: appItem.verification_mode,
+      preferred_date: appItem.preferred_date || null,
+      location_address: appItem.location_address || result.instrument?.location || null,
+      trader_name: trader?.full_name || null
+    },
+    instrument: result.instrument ? {
+      manufacturer: result.instrument.manufacturer,
+      model: result.instrument.model,
+      serial_number: result.instrument.serial_number,
+      district: result.instrument.district
+    } : null,
+    requirement: result.requirement,
+    instrument_district: result.district,
+    recommended_id: result.recommended_id,
+    current_assignee_id: existing ? existing.assigned_id : null,
+    candidates: result.candidates
   });
 });
 
@@ -1360,7 +1553,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   const appItem = await Application.findOne({ id: applicationId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  if (!['SUBMITTED', 'UNDER_REVIEW', 'PENDING_VERIFICATION'].includes(appItem.status)) {
+  if (!ASSIGNABLE_STATES.includes(appItem.status)) {
     return res.status(400).json({ error: `Invalid state transition: Cannot assign verifier to application in state '${appItem.status}'` });
   }
 
@@ -1373,24 +1566,34 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     return res.status(400).json({ error: 'Assignee must have role VERIFIER or GATC' });
   }
 
-  // Re-derive jurisdiction eligibility server-side — never trust the client's
-  // is_override flag alone. An out-of-jurisdiction assignee is only permitted
-  // when an explicit override reason is recorded (e.g. covering a vacant post),
-  // matching the real-world exception process, not a routine choice.
-  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
-  const assigneeOrg = assignee.organization_id ? await Organization.findOne({ id: assignee.organization_id }).lean() : null;
-  const assigneeJurisdictions = assigneeOrg ? (assigneeOrg.jurisdictions || []) : [];
-  const isJurisdictionMatch = !!(inst && inst.district && assigneeJurisdictions.includes(inst.district));
+  // Re-run the allocation engine server-side — never trust the client's view of
+  // eligibility. Competence (GATC scope / LMO designation) and an active account are
+  // statutory and cannot be overridden. Jurisdiction can be, but only with a
+  // recorded reason (e.g. covering a vacant post), matching the real exception process.
+  const evaluation = await evaluateCandidates(appItem);
+  const candidate = evaluation.candidates.find(c => c.id === assigned_id);
+  if (!candidate) return res.status(400).json({ error: 'Assignee is not a verification candidate.' });
 
+  const failedChecks = candidate.checks.filter(c => !c.ok);
+  const blocking = failedChecks.find(c => c.key !== 'jurisdiction');
+  if (blocking) {
+    return res.status(400).json({ error: `${candidate.full_name} cannot verify this instrument: ${blocking.detail}.` });
+  }
+  const isJurisdictionMatch = !failedChecks.some(c => c.key === 'jurisdiction');
   if (!isJurisdictionMatch && !(override_reason && override_reason.trim())) {
     return res.status(400).json({
-      error: `Assignee's notified jurisdiction (${assigneeJurisdictions.join(', ') || 'none on record'}) does not cover the instrument's district (${inst ? inst.district : 'unknown'}). An override_reason is required to assign outside jurisdiction.`
+      error: `${candidate.full_name} is outside the instrument's jurisdiction (${evaluation.district || 'unknown'}). A reason is required to assign outside jurisdiction.`
     });
+  }
+  // Choosing anyone other than the engine's recommendation must be justified for the audit trail.
+  const deviatesFromRecommendation = !!evaluation.recommended_id && assigned_id !== evaluation.recommended_id;
+  if (deviatesFromRecommendation && !(override_reason && override_reason.trim())) {
+    return res.status(400).json({ error: 'A reason is required when assigning someone other than the recommended officer.' });
   }
 
   // Cross-jurisdiction assignments are always recorded as an override, even if the
   // client didn't flag it, so the audit trail reflects the actual statutory exception.
-  const recordedOverride = (is_override || !isJurisdictionMatch) ? 1 : 0;
+  const recordedOverride = (deviatesFromRecommendation || !isJurisdictionMatch) ? 1 : 0;
 
   const assignmentId = `ASN_${Date.now()}`;
   const now = new Date().toISOString();
@@ -1403,6 +1606,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
         $set: {
           assigned_id,
           assigned_type: assignee.role,
+          recommended_id: evaluation.recommended_id || assigned_id,
           is_override: recordedOverride,
           override_reason: override_reason || '',
           assigned_by: actorId
@@ -1415,7 +1619,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
       application_id: applicationId,
       assigned_type: assignee.role,
       assigned_id,
-      recommended_id: recommended_id || assigned_id,
+      recommended_id: evaluation.recommended_id || assigned_id,
       is_override: recordedOverride,
       override_reason: override_reason || '',
       assigned_by: actorId,
@@ -1450,18 +1654,20 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     });
   }
 
-  // Transition: -> PENDING_VERIFICATION (statutory queue)
-  await Application.updateOne({ id: applicationId }, { $set: { status: 'PENDING_VERIFICATION', updated_at: now } });
+  // Transition: -> ASSIGNED. Distinct from PENDING_VERIFICATION, which means the
+  // fee is paid but no officer has been allocated yet.
+  await Application.updateOne({ id: applicationId }, { $set: { status: 'ASSIGNED', updated_at: now } });
 
-  logAudit('Application', applicationId, is_override ? 'ASSIGNMENT_OVERRIDE' : 'ASSIGNMENT_CONFIRMED', actorId, role, {
+  logAudit('Application', applicationId, recordedOverride ? 'ASSIGNMENT_OVERRIDE' : 'ASSIGNMENT_CONFIRMED', actorId, role, {
     assigned_id,
     assignee_name: assignee.full_name,
-    recommended_id,
-    is_override: !!is_override,
+    recommended_id: evaluation.recommended_id,
+    score: candidate.score,
+    is_override: !!recordedOverride,
     override_reason
   });
 
-  res.json({ message: 'Verifier assigned successfully', status: 'PENDING_VERIFICATION' });
+  res.json({ message: 'Verifier assigned successfully', status: 'ASSIGNED' });
 });
 
 // ==========================================
@@ -2569,7 +2775,7 @@ app.get('/api/admin/users', requirePermission('MANAGE_USERS'), async (req, res) 
 // 2. Create User
 app.post('/api/admin/users', requirePermission('MANAGE_USERS'), async (req, res) => {
   const { role: actorRole, id: actorId } = getActor(req);
-  const { email, password, role, full_name, organization_id, phone } = req.body;
+  const { email, password, role, full_name, organization_id, phone, designation } = req.body;
 
   if (!email || !password || !role || !full_name) {
     return res.status(400).json({ error: 'Email, password, role, and full name are mandatory.' });
@@ -2596,6 +2802,7 @@ app.post('/api/admin/users', requirePermission('MANAGE_USERS'), async (req, res)
     full_name: full_name.trim(),
     organization_id: organization_id || null,
     phone: phone || null,
+    designation: role === ROLES.VERIFIER ? (isValidDesignation(designation) ? designation : DEFAULT_DESIGNATION) : undefined,
     active: true,
     is_demo: 0,
     created_at: now,

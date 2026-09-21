@@ -286,7 +286,7 @@ export default function AppSidebar({
       >
         {/* Top Branding Header */}
         <div className={`h-16 px-3.5 border-b border-[#1b365d] bg-[#001733] flex items-center shrink-0 ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
-          <div className={`flex items-center gap-3 min-w-0 ${isCollapsed ? 'justify-center' : ''}`}>
+          <div className={`flex items-center gap-3 min-w-0 ${isCollapsed && !mobileOpen ? 'md:hidden' : ''}`}>
             {/* Government Seal Icon Badge */}
             <div
               className="w-10 h-10 rounded-xl bg-[#1b365d]/80 border border-[#38598b]/50 text-amber-400 flex items-center justify-center font-bold shadow-xs shrink-0 cursor-pointer hover:bg-[#1b365d] transition-colors"
@@ -317,16 +317,17 @@ export default function AppSidebar({
             )}
           </div>
 
-          {/* Desktop In-Header Collapse Toggle (Cleanly integrated on right) */}
-          {onToggleCollapse && !isCollapsed && (
+          {/* Desktop Collapse / Expand Toggle (same slot in both states) */}
+          {onToggleCollapse && (
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-              title="Collapse sidebar"
-              aria-label="Collapse sidebar"
+              className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-hidden"
+              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!isCollapsed}
             >
-              <span className="material-symbols-outlined text-xl">menu_open</span>
+              <span className="material-symbols-outlined text-xl">{isCollapsed ? 'menu' : 'menu_open'}</span>
             </button>
           )}
 

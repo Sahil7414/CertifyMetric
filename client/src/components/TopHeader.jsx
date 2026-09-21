@@ -79,7 +79,7 @@ export default function TopHeader({
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-[#002046] transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-hidden"
+            className="md:hidden p-2 rounded-lg text-slate-700 hover:bg-slate-100 hover:text-[#002046] transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:outline-hidden"
             title={isSidebarCollapsed ? "Expand Navigation Menu" : "Collapse Navigation Menu"}
             aria-label={isSidebarCollapsed ? "Expand Navigation Menu" : "Collapse Navigation Menu"}
             aria-expanded={!isSidebarCollapsed}

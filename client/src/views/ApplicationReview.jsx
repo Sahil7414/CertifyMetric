@@ -128,7 +128,13 @@ export default function ApplicationReview({
     return <div className="p-12 text-center text-rose-500">Application not found.</div>;
   }
 
-  const isScrutinyPending = ['SUBMITTED', 'UNDER_REVIEW'].includes(app.status);
+  // PENDING_VERIFICATION means the fee is paid but no officer is allocated yet —
+  // it is NOT an assigned state. Only an actual assignee makes a case "assigned".
+  const hasAssignee = Boolean(app.assigned_to_name);
+  const isScrutinyPending = ['SUBMITTED', 'UNDER_REVIEW'].includes(app.status)
+    || (app.status === 'PENDING_VERIFICATION' && !hasAssignee);
+  const isAssignedAwaitingInspection = app.status === 'ASSIGNED'
+    || (app.status === 'PENDING_VERIFICATION' && hasAssignee);
   const isReportSubmitted = ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED'].includes(app.status);
   const isApproved = ['APPROVED', 'CERTIFICATE_ISSUED'].includes(app.status);
 
@@ -167,28 +173,28 @@ export default function ApplicationReview({
 
       {/* Case Header Card */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between pb-6 border-b border-slate-100 gap-4">
-          <div>
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between pb-6 border-b border-slate-100 gap-4">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-sm px-2.5 py-0.5 rounded-md bg-primary text-white font-bold">
                 {app.application_no}
               </span>
               <span className="text-xs text-slate-400">•</span>
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{app.request_type ? app.request_type.replace('_', ' ') : 'VERIFICATION'}</span>
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{app.request_type ? app.request_type.replace(/_/g, ' ') : 'VERIFICATION'}</span>
               <span className="text-xs text-slate-400">•</span>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
                 {app.verification_mode === 'IN_SITU' ? 'In-situ (On-Site Visit)' : 'Camp / Centre Presentation'}
               </span>
             </div>
-            <h1 className="text-xl font-bold text-slate-900 mt-2">
-              Statutory Verification Review for {app.manufacturer} {app.model}
+            <h1 className="text-xl font-bold text-slate-900 mt-2 leading-snug">
+              {app.manufacturer} {app.model}
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 mt-1">
               Applicant: <strong>{app.trader_name}</strong> • Establishment: <strong>{app.trader_org}</strong> ({app.trader_jurisdiction || 'District Jurisdiction'})
             </p>
           </div>
 
-          <div className="flex items-center gap-2 self-end md:self-center flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
             {/* Scrutiny Stage Actions */}
             {isScrutinyPending && (
               <>
@@ -212,15 +218,25 @@ export default function ApplicationReview({
                   className="px-5 py-2 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-sm transition-all flex items-center gap-1.5"
                 >
                   <span className="material-symbols-outlined text-[18px]">assignment_ind</span>
-                  {reviewing ? 'Opening Review...' : 'Proceed to Allocation'}
+                  {reviewing ? 'Opening Review...' : 'Assign Verifier'}
                 </button>
               </>
             )}
 
-            {['ASSIGNED', 'PENDING_VERIFICATION'].includes(app.status) && (
-              <div className="text-right bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Assigned Verifier</span>
-                <span className="font-semibold text-slate-800 text-xs">{app.assigned_to_name || 'Designated Officer'}</span>
+            {isAssignedAwaitingInspection && (
+              <div className="flex items-center gap-2">
+                <div className="text-right bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Assigned Verifier</span>
+                  <span className="font-semibold text-slate-800 text-xs">{app.assigned_to_name}</span>
+                </div>
+                <button
+                  onClick={() => onProceedToAssignment(applicationId)}
+                  className="px-3.5 py-2 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
+                  title="Change the assigned officer before the inspection starts"
+                >
+                  <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                  Reassign
+                </button>
               </div>
             )}
 
@@ -361,21 +377,98 @@ export default function ApplicationReview({
           </div>
         )}
 
-        {/* 1. Statutory Rule Evaluation Box */}
-        <div className="mt-6 p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-2">
-          <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
-            <span className="material-symbols-outlined text-emerald-600">verified</span>
-            Automated Statutory Eligibility Evaluation: PASSED
-          </div>
-          <p className="text-emerald-800 leading-relaxed">
-            The submitted instrument specifications conform to <strong>Schedule V (Commercial NAWI Class III)</strong> under the Legal Metrology (General) Rules, 2011. Device parameters fall within statutory jurisdiction limits.
-          </p>
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-emerald-200/60 font-medium text-emerald-900">
-            <div>• Validity Term: 12 Months</div>
-            <div>• Max Permissible Error: Standard OIML R76</div>
-            <div>• Testing Type: Field / GATC presentation</div>
-          </div>
-        </div>
+        {/* 1. Pre-assignment checks — derived from the instrument's actual category,
+            rule set and verification policy, never a fixed template. */}
+        {(() => {
+          const req = app.verification_requirement;
+          const feeOk = ['PAID', 'EXEMPTED'].includes(app.fee_status);
+          const docCount = Array.isArray(app.documents) ? app.documents.length : 0;
+          const checks = [
+            {
+              ok: Boolean(app.rule_set),
+              label: 'Verification rules',
+              detail: app.rule_set
+                ? `${app.rule_set.name}${app.rule_set.has_mpe_rules ? '' : ' (error limits not configured yet)'}`
+                : `No rule set configured for ${app.category_name || 'this category'}`
+            },
+            {
+              ok: feeOk,
+              label: 'Fee',
+              detail: feeOk ? 'Paid' : 'Payment pending'
+            },
+            {
+              ok: docCount > 0,
+              label: 'Documents',
+              detail: docCount > 0 ? `${docCount} attached` : 'None attached'
+            },
+            {
+              ok: Boolean(app.instrument_district),
+              label: 'District',
+              detail: app.instrument_district || 'Not recorded, so no officer can be matched'
+            }
+          ];
+          const allOk = checks.every(c => c.ok);
+          const tone = allOk
+            ? { box: 'bg-emerald-50/70 border-emerald-200', title: 'text-emerald-900', icon: 'text-emerald-600' }
+            : { box: 'bg-amber-50/70 border-amber-200', title: 'text-amber-900', icon: 'text-amber-600' };
+
+          const passed = checks.filter(c => c.ok).length;
+          const pending = checks.length - passed;
+
+          return (
+            <div className={`mt-6 rounded-xl border text-xs ${tone.box}`}>
+              <div className="flex items-center justify-between gap-3 px-4 pt-4">
+                <div className={`flex items-center gap-2 font-bold text-sm ${tone.title}`}>
+                  <span className={`material-symbols-outlined ${tone.icon}`}>{allOk ? 'verified' : 'error'}</span>
+                  {allOk ? 'Ready for assignment' : `${pending} item${pending === 1 ? '' : 's'} to check before assignment`}
+                </div>
+                <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">{passed} of {checks.length} checks passed</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 p-4">
+                {checks.map(c => (
+                  <div
+                    key={c.label}
+                    className={`flex items-start gap-2 rounded-lg border bg-white/80 px-3 py-2.5 min-w-0 ${c.ok ? 'border-slate-200' : 'border-amber-300'}`}
+                  >
+                    <span className={`material-symbols-outlined text-[18px] shrink-0 ${c.ok ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {c.ok ? 'check_circle' : 'warning'}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{c.label}</p>
+                      <p className="font-semibold text-slate-800 leading-snug break-words">{c.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {req && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-px border-t border-slate-200/70 bg-slate-200/70 rounded-b-xl overflow-hidden">
+                  <div className="bg-white/60 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Legal Metrology Officer</p>
+                    <p className="font-semibold text-slate-800 mt-0.5">{req.min_designation_label} or above</p>
+                  </div>
+                  <div className="bg-white/60 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">GATC</p>
+                    <p className="font-semibold text-slate-800 mt-0.5 flex items-center gap-1">
+                      <span className={`material-symbols-outlined text-[16px] ${req.gatc_allowed ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {req.gatc_allowed ? 'check_circle' : 'block'}
+                      </span>
+                      {req.gatc_allowed ? 'Allowed' : 'Not allowed'}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{req.gatc_note}</p>
+                  </div>
+                  <div className="bg-white/60 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Certificate validity</p>
+                    <p className="font-semibold text-slate-800 mt-0.5">
+                      {app.rule_set ? `${app.rule_set.validity_period_months} months` : 'Not configured'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 2. Detailed Technical & Operational Matrix */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
@@ -386,7 +479,7 @@ export default function ApplicationReview({
             </h3>
             <div className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-slate-500">Category / Class:</span>
+                <span className="text-slate-500">Category:</span>
                 <span className="font-semibold text-slate-800">{app.category_name}</span>
               </div>
               <div className="flex justify-between">
@@ -397,14 +490,12 @@ export default function ApplicationReview({
                 <span className="text-slate-500">Device Serial Number:</span>
                 <span className="font-mono font-bold text-primary">{app.serial_number}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Max / Min Capacity:</span>
-                <span className="font-semibold text-slate-800">{app.max_capacity} / {app.min_capacity}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Verification Interval (e):</span>
-                <span className="font-semibold text-slate-800">{app.verification_scale_interval_e}</span>
-              </div>
+              {(app.spec_fields || []).map(f => (
+                <div key={f.label} className="flex justify-between gap-4">
+                  <span className="text-slate-500">{f.label}:</span>
+                  <span className="font-semibold text-slate-800 text-right">{f.value}</span>
+                </div>
+              ))}
             </div>
           </div>
 

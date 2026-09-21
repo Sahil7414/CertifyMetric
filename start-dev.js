@@ -30,6 +30,7 @@ async function start() {
     console.log('▶ Starting Backend API server on http://localhost:4000...');
     const serverProc = spawn('node', ['server.js'], {
       cwd: path.join(__dirname, 'server'),
+      env: { ...process.env, PORT: '4000' },
       stdio: 'inherit',
       shell: true
     });

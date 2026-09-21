@@ -14,6 +14,9 @@ const userSchema = new Schema({
   full_name: { type: String, required: true },
   organization_id: { type: String, index: true },
   phone: { type: String },
+  // LMO rank (INSPECTOR, ASSISTANT_CONTROLLER, ...). Decides which instrument
+  // categories the officer may be assigned — see server/verificationPolicy.js.
+  designation: { type: String },
   avatar: { type: String },
   is_demo: { type: Number, default: 0 },
   active: { type: Boolean, default: true },
@@ -40,6 +43,9 @@ const organizationSchema = new Schema({
   // of a neighbouring district/circle when that post is vacant — this is the only
   // legitimate way a candidate legally covers more than one jurisdiction.
   jurisdictions: { type: [String], default: [] },
+  // GATC only: instrument category codes listed on the centre's approval
+  // certificate. Empty = scope not recorded, treated as the full First Schedule.
+  approved_categories: { type: [String], default: [] },
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
 
@@ -57,6 +63,14 @@ const instrumentCategorySchema = new Schema({
   // Common fields (manufacturer/model/serial/location) are NOT listed here — those
   // apply to every category and are handled by the form directly.
   spec_schema: { type: Schema.Types.Mixed, default: [] },
+  // How the registration form should present THIS category: header icon, the
+  // heading for its spec group, the right word for its identifier (a batch of
+  // weights has a set number, a storage tank a painted tank number — calling
+  // either a "device serial number" is wrong), realistic placeholders, and a
+  // notice for categories registered unusually (as a batch, as a component, or
+  // tied to a vehicle). Lives here rather than in the React component so adding
+  // a category stays a pure data change.
+  form_meta: { type: Schema.Types.Mixed, default: {} },
   active: { type: Number, default: 1 }
 }, { versionKey: false, timestamps: false });
 

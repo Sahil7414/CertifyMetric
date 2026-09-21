@@ -6,10 +6,39 @@ const FLAT_DISTRICTS = INDIA_STATES_DISTRICTS.flatMap(s =>
   s.districts.map(d => ({ label: `${d}, ${s.state}`, district: d, state: s.state }))
 );
 
-// NAWI's capacity/interval fields are dedicated top-level Instrument columns (kept
-// for backward compatibility with existing MPE-calculation code elsewhere), not part
-// of its spec_schema — so this one category gets special-cased fields in the form.
-const NAWI_CATEGORY_ID = 'CAT_NAWI_III';
+// The form is driven entirely by the selected category's `spec_schema` (which fields
+// to collect) and `form_meta` (how to label and present them) — both come from the
+// database, so adding a statutory category is a seed change, not a component change.
+// The only thing still keyed to a category is the Max/Min/Interval(e) trio, and even
+// that is now a `form_meta.capacity_fields` flag rather than a hardcoded id: those
+// three are dedicated top-level Instrument columns read by the NAWI MPE engine.
+
+// Fallbacks for a category seeded before form_meta existed, so the form degrades
+// to something sane instead of rendering blank labels.
+const DEFAULT_FORM_META = {
+  icon: 'category',
+  spec_section: 'Technical Specifications',
+  capacity_fields: false,
+  serial_label: 'Device Serial Number',
+  serial_hint: 'Must match the permanent stamping on the official plate.',
+  manufacturer_placeholder: 'Manufacturer name',
+  model_placeholder: 'Model name or number',
+  location_label: 'Operational Location / Establishment',
+  location_placeholder: 'Premises where the instrument is used'
+};
+
+// Grouping the category <select> by the physical quantity measured. With 26 statutory
+// categories a flat list is a scroll-and-hunt exercise; the quantity is the first
+// thing a trader knows about their own instrument.
+const MEASUREMENT_GROUPS = [
+  ['MASS', 'Mass & Weighing'],
+  ['VOLUME', 'Volume & Flow'],
+  ['LENGTH', 'Length'],
+  ['ENERGY', 'Electrical Energy'],
+  ['TEMPERATURE', 'Temperature'],
+  ['PRESSURE', 'Pressure'],
+  ['FARE', 'Fare Computation']
+];
 
 function SpecField({ field, value, onChange }) {
   if (field.type === 'select') {
@@ -27,9 +56,14 @@ function SpecField({ field, value, onChange }) {
       </select>
     );
   }
+  const isNumber = field.type === 'number';
   return (
     <input
-      type={field.type === 'number' ? 'number' : 'text'}
+      type={isNumber ? 'number' : 'text'}
+      // Counts (nozzles, compartments, pieces in a set) are positive integers —
+      // the browser should reject 0 and -3 before the request is ever made.
+      min={isNumber ? 1 : undefined}
+      step={isNumber ? 1 : undefined}
       required={field.required}
       value={value || ''}
       onChange={(e) => onChange(e.target.value)}
@@ -101,7 +135,25 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
   }, []);
 
   const selectedCategory = categories.find((c) => c.id === selectedCategoryId);
-  const isNawi = selectedCategoryId === NAWI_CATEGORY_ID;
+  const meta = { ...DEFAULT_FORM_META, ...(selectedCategory?.form_meta || {}) };
+  const showCapacityFields = meta.capacity_fields === true;
+
+  // Bucket the categories by measurement type for the grouped <select>. Anything
+  // with an unexpected measurement_type still gets rendered, under "Other" — a new
+  // category must never silently vanish from the dropdown.
+  const groupedCategories = useMemo(() => {
+    const seen = new Set();
+    const groups = MEASUREMENT_GROUPS
+      .map(([key, label]) => {
+        const items = categories.filter((c) => c.measurement_type === key);
+        items.forEach((c) => seen.add(c.id));
+        return { label, items };
+      })
+      .filter((g) => g.items.length > 0);
+    const leftovers = categories.filter((c) => !seen.has(c.id));
+    if (leftovers.length > 0) groups.push({ label: 'Other', items: leftovers });
+    return groups;
+  }, [categories]);
 
   const filteredDistricts = useMemo(() => {
     const q = districtSearch.trim().toLowerCase();
@@ -111,7 +163,21 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
 
   const handleCategoryChange = (categoryId) => {
     setSelectedCategoryId(categoryId);
+    // The previous category's answers are meaningless here — a weighbridge's platform
+    // length is not a water meter's DN. Clearing avoids carrying stale values over.
     setSpecValues({});
+    const nextMeta = categories.find((c) => c.id === categoryId)?.form_meta || {};
+    if (nextMeta.capacity_fields !== true) {
+      // Blank the NAWI-only trio so a non-NAWI submission never carries "30 kg".
+      setFormData((prev) => ({ ...prev, max_capacity: '', min_capacity: '', verification_scale_interval_e: '' }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        max_capacity: prev.max_capacity || '30 kg',
+        min_capacity: prev.min_capacity || '100 g',
+        verification_scale_interval_e: prev.verification_scale_interval_e || '5 g'
+      }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -136,7 +202,14 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
       setError(`Please fill "${missingSpec.label}".`);
       return;
     }
-    if (isNawi && (!formData.max_capacity || !formData.min_capacity || !formData.verification_scale_interval_e)) {
+    const badNumber = specSchema.find(
+      (f) => f.type === 'number' && String(specValues[f.key] ?? '').trim() && !(Number(specValues[f.key]) > 0)
+    );
+    if (badNumber) {
+      setError(`"${badNumber.label}" must be a positive number.`);
+      return;
+    }
+    if (showCapacityFields && (!formData.max_capacity || !formData.min_capacity || !formData.verification_scale_interval_e)) {
       setError('Please fill Max Capacity, Min Capacity, and Interval (e).');
       return;
     }
@@ -153,7 +226,7 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
         category_id: selectedCategoryId,
         specs: specValues
       };
-      if (isNawi) {
+      if (showCapacityFields) {
         payload.max_capacity = formData.max_capacity;
         payload.min_capacity = formData.min_capacity;
         payload.verification_scale_interval_e = formData.verification_scale_interval_e;
@@ -190,7 +263,7 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
         <div className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
-              <span className="material-symbols-outlined text-2xl">scale</span>
+              <span className="material-symbols-outlined text-2xl">{meta.icon}</span>
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -249,8 +322,12 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
                 onChange={(e) => handleCategoryChange(e.target.value)}
                 className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-white text-xs font-medium text-slate-800 shadow-2xs"
               >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {groupedCategories.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.items.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             )}
@@ -259,6 +336,17 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
               <div className="p-2.5 bg-primary/5 rounded-lg border border-primary/10 text-[11px] text-slate-600 flex items-start gap-2 leading-relaxed">
                 <span className="material-symbols-outlined text-sm text-primary shrink-0 mt-0.5">info</span>
                 <span>{selectedCategory.description}</span>
+              </div>
+            )}
+
+            {/* Some categories are not registered one-device-at-a-time: weights and
+                thermometers are stamped as a batch, load cells and indicators are
+                approved as components, taximeters and tankers are tied to a vehicle.
+                Saying so up front prevents a whole class of wrong submissions. */}
+            {meta.notice && (
+              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2 leading-relaxed">
+                <span className="material-symbols-outlined text-sm text-amber-600 shrink-0 mt-0.5">gavel</span>
+                <span>{meta.notice}</span>
               </div>
             )}
           </div>
@@ -276,7 +364,7 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Avery Weigh-Tronix"
+                  placeholder={meta.manufacturer_placeholder}
                   value={formData.manufacturer}
                   onChange={(e) => setFormData({ ...formData, manufacturer: e.target.value })}
                   className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none text-xs"
@@ -287,7 +375,7 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
                 <input
                   type="text"
                   required
-                  placeholder="e.g. ZK830 Digital"
+                  placeholder={meta.model_placeholder}
                   value={formData.model}
                   onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                   className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none text-xs"
@@ -296,7 +384,7 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
             </div>
 
             <div>
-              <label className="font-semibold text-slate-700 block mb-1 text-xs">Device Serial Number *</label>
+              <label className="font-semibold text-slate-700 block mb-1 text-xs">{meta.serial_label} *</label>
               <input
                 type="text"
                 required
@@ -305,9 +393,9 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
                 onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
                 className="w-full h-10 px-3 rounded-lg font-mono text-xs border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none bg-slate-50/50"
               />
-              <span className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[13px] text-amber-500">verified</span>
-                Must strictly match the permanent stamping on the official metal plate.
+              <span className="text-[11px] text-slate-500 mt-1 flex items-start gap-1">
+                <span className="material-symbols-outlined text-[13px] text-amber-500 shrink-0 mt-px">verified</span>
+                <span>{meta.serial_hint}</span>
               </span>
             </div>
           </div>
@@ -316,10 +404,10 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
               <span className="material-symbols-outlined text-sm text-primary">tune</span>
-              Technical Specifications & Capacity
+              {meta.spec_section}
             </h3>
 
-            {isNawi && (
+            {showCapacityFields && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1 text-xs">Max Capacity *</label>
@@ -371,6 +459,12 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
                 ))}
               </div>
             )}
+
+            {!showCapacityFields && (selectedCategory?.spec_schema || []).length === 0 && (
+              <p className="text-[11px] text-slate-500 italic">
+                This category needs no additional technical specifications beyond the identification details above.
+              </p>
+            )}
           </div>
 
           {/* Section 4: Location & Jurisdiction */}
@@ -381,11 +475,11 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
             </h3>
 
             <div>
-              <label className="font-semibold text-slate-700 block mb-1 text-xs">Operational Location / Establishment *</label>
+              <label className="font-semibold text-slate-700 block mb-1 text-xs">{meta.location_label} *</label>
               <input
                 type="text"
                 required
-                placeholder="e.g. Main Dispensing Unit, Bay #2, NH-44 Highway Petrol Pump"
+                placeholder={meta.location_placeholder}
                 value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none text-xs"

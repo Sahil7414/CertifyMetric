@@ -423,6 +423,10 @@ export default function App() {
               setSelectedApplicationId(newAppId);
               setActiveTab('application-timeline');
             }}
+            onPaymentCompleted={() => {
+              // Reload shared data so dashboard/lists stop showing the application as unpaid.
+              refreshAllData();
+            }}
             onOpenAddInstrument={() => {
               setShowAddModal(true);
             }}

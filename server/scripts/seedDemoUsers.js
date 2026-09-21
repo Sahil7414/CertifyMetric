@@ -329,11 +329,566 @@ export async function seedDemoData() {
         { key: 'nominal_capacity', label: 'Nominal Capacity', type: 'select', options: ['5 ml', '10 ml', '20 ml', '50 ml', '100 ml', '200 ml', '500 ml', '1 L', '2 L', '5 L', '10 L', '20 L'], required: true }
       ],
       active: 1
+    },
+    // ---------------------------------------------------------------------
+    // Second tranche: the remaining instrument families that appear in the
+    // Legal Metrology (Approval of Models) Rules, 2011 schedule and in state
+    // verification/stamping fee schedules but were missing from the original
+    // ten. Sub-types, denominations and size ranges below follow the relevant
+    // OIML/IS documents (OIML R111 weights, R60 load cells, R21 taximeters,
+    // R117 bulk flow meters, R71/R80 tanks, IS 3784 clinical thermometers,
+    // IS 3390 sphygmomanometers). Their mpe_rules/checklist_schema are the
+    // same simplified placeholders as the non-NAWI tranche above — structurally
+    // correct, NOT domain-validated against a primary statutory table.
+    // ---------------------------------------------------------------------
+    {
+      id: 'CAT_WEIGHTS_COMMERCIAL',
+      code: 'WEIGHTS_COMMERCIAL',
+      name: 'Commercial Weights',
+      description: 'Loose cast-iron / brass / stainless trade weights used on beam scales and counter machines. By sheer count this is the single largest item on any Legal Metrology office register.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'material', label: 'Material', type: 'select', options: ['Cast Iron', 'Brass', 'Stainless Steel', 'Gun Metal'], required: true },
+        { key: 'denomination', label: 'Denomination', type: 'select', options: ['1 g', '2 g', '5 g', '10 g', '20 g', '50 g', '100 g', '200 g', '500 g', '1 kg', '2 kg', '5 kg', '10 kg', '20 kg', '50 kg'], required: true },
+        { key: 'quantity_in_set', label: 'Number of Pieces Presented', type: 'number', required: true, help: 'Weights are presented and stamped in batches, not one at a time.' },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['M1', 'M2', 'M3'], required: false, help: 'OIML R111 class — M1/M2 typical for commercial trade weights.' }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_WEIGHTS_PRECISION',
+      code: 'WEIGHTS_PRECISION',
+      name: 'Precision / Carat (Bullion) Weights',
+      description: 'High-class weights used with jewellery, bullion and laboratory balances — carat weights for gemstones, milligram sets for pharmacy and assay work.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'weight_type', label: 'Weight Type', type: 'select', options: ['Carat Weight', 'Milligram / Fractional Set', 'Analytical Set'], required: true },
+        { key: 'denomination', label: 'Denomination', type: 'text', required: true, help: 'e.g. 1 ct, 10 ct, 1 mg, 500 mg.' },
+        { key: 'quantity_in_set', label: 'Number of Pieces Presented', type: 'number', required: true },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['E1', 'E2', 'F1', 'F2'], required: true, help: 'OIML R111 class — E/F classes for precision and bullion use.' }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_BEAM_SCALE',
+      code: 'BEAM_SCALE',
+      name: 'Beam Scale / Counter Machine',
+      description: 'Traditional two-pan beam balance or counter machine used with loose weights — still dominant in mandis, kirana shops and grain markets.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'scale_type', label: 'Type', type: 'select', options: ['Two-Pan Beam Scale', 'Counter Machine', 'Platform Beam Scale'], required: true },
+        { key: 'max_capacity_kg', label: 'Max Capacity', type: 'text', unit: 'kg', required: true },
+        { key: 'beam_length_mm', label: 'Beam Length', type: 'text', unit: 'mm', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_SPRING_BALANCE',
+      code: 'SPRING_BALANCE',
+      name: 'Spring Balance',
+      description: 'Hand-held or wall-mounted spring-actuated weighing device used for small-lot trade — vegetables, fish, gas cylinders.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'mounting', label: 'Mounting', type: 'select', options: ['Hand-Held / Hanging', 'Wall / Bracket Mounted', 'Dial Face'], required: true },
+        { key: 'max_capacity_kg', label: 'Max Capacity', type: 'text', unit: 'kg', required: true },
+        { key: 'scale_division_g', label: 'Scale Division', type: 'text', unit: 'g', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_CRANE_SCALE',
+      code: 'CRANE_SCALE',
+      name: 'Crane / Hanging Scale',
+      description: 'Load-suspended electronic weigher hung from a crane or hoist, used in scrap yards, cold stores, steel and timber trade.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'max_capacity_kg', label: 'Max Capacity', type: 'text', unit: 'kg', required: true },
+        { key: 'readout', label: 'Readout', type: 'select', options: ['Integral Display', 'Wireless Remote Display', 'Both'], required: false },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['III', 'IIII'], required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_LOAD_CELL',
+      code: 'LOAD_CELL',
+      name: 'Load Cell (Component)',
+      description: 'Weighing transducer submitted for model approval in its own right — approved separately from the instrument it is later fitted into.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'cell_type', label: 'Cell Type', type: 'select', options: ['Single Point', 'Shear Beam', 'Compression / Canister', 'S-Type / Tension', 'Double-Ended Shear Beam'], required: true },
+        { key: 'rated_capacity', label: 'Rated Capacity (Emax)', type: 'text', required: true, help: 'e.g. 500 kg, 30 t.' },
+        { key: 'accuracy_class', label: 'Accuracy Class', type: 'select', options: ['A', 'B', 'C', 'D'], required: true, help: 'OIML R60 class, usually quoted with the interval count e.g. C3.' },
+        { key: 'max_intervals', label: 'Maximum Number of Intervals (nmax)', type: 'number', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_WEIGHING_INDICATOR',
+      code: 'WEIGHING_INDICATOR',
+      name: 'Weighing Indicator / Digital Readout (Component)',
+      description: 'Electronic indicator or terminal paired with a load cell. Like load cells, indicators carry their own model approval and must be verified as a matched pair with the cell.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'display_type', label: 'Display Type', type: 'select', options: ['LED', 'LCD', 'Touchscreen / HMI'], required: true },
+        { key: 'max_intervals', label: 'Maximum Number of Intervals (nmax)', type: 'number', required: false },
+        { key: 'interfaces', label: 'Interfaces', type: 'select', options: ['None', 'RS-232 / RS-485', 'Ethernet / TCP-IP', 'Printer + Serial', 'Wireless'], required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_LPG_CYLINDER_FILLING',
+      code: 'LPG_CYLINDER_FILLING',
+      name: 'LPG Cylinder Filling Machine',
+      description: 'Carousel or single-head gravimetric filling machine at an LPG bottling plant — short-filled domestic cylinders are a recurring enforcement issue.',
+      measurement_type: 'MASS',
+      spec_schema: [
+        { key: 'machine_type', label: 'Machine Type', type: 'select', options: ['Electronic Carousel', 'Single-Head Electronic', 'Check Scale (post-fill)'], required: true },
+        { key: 'cylinder_sizes_kg', label: 'Cylinder Sizes Handled', type: 'select', options: ['5 kg', '14.2 kg', '19 kg', '47.5 kg', 'Multiple'], required: true },
+        { key: 'number_of_heads', label: 'Number of Filling Heads', type: 'number', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_TAXIMETER',
+      code: 'TAXIMETER',
+      name: 'Taximeter / Auto-Rickshaw Fare Meter',
+      description: 'Fare-computing meter on a taxi or auto-rickshaw. A distinct Legal Metrology category: verification checks the fare table and the distance/waiting-time calculation, not a mass or volume.',
+      measurement_type: 'FARE',
+      spec_schema: [
+        { key: 'vehicle_type', label: 'Vehicle Type', type: 'select', options: ['Taxi (4-Wheeler)', 'Auto-Rickshaw (3-Wheeler)', 'Maxi Cab'], required: true },
+        { key: 'meter_type', label: 'Meter Type', type: 'select', options: ['Electronic with Printer', 'Electronic without Printer', 'Mechanical (legacy)'], required: true },
+        { key: 'tariff_version', label: 'Notified Tariff Version', type: 'text', required: true, help: 'The State/RTO fare notification the meter is programmed to.' },
+        { key: 'vehicle_registration_no', label: 'Vehicle Registration Number', type: 'text', required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_BULK_FLOW_METER',
+      code: 'BULK_FLOW_METER',
+      name: 'Bulk Liquid Flow Meter',
+      description: 'Tanker loading/unloading meter at an oil terminal, dairy or chemical depot — measures bulk consignments where a single error is worth lakhs.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'meter_technology', label: 'Meter Technology', type: 'select', options: ['Positive Displacement', 'Turbine', 'Coriolis (Mass)', 'Electromagnetic', 'Ultrasonic'], required: true },
+        { key: 'product', label: 'Product Measured', type: 'select', options: ['Petroleum — Motor Spirit', 'Petroleum — Diesel / Furnace Oil', 'Edible Oil', 'Milk', 'Chemical / Solvent', 'Other'], required: true },
+        { key: 'nominal_diameter_mm', label: 'Nominal Diameter (DN)', type: 'select', options: ['25', '40', '50', '80', '100', '150', '200', '250'], unit: 'mm', required: true },
+        { key: 'max_flow_rate_lpm', label: 'Max Flow Rate', type: 'text', unit: 'L/min', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_ROAD_TANKER',
+      code: 'ROAD_TANKER',
+      name: 'Road Tanker / Tank Truck Capacity Measure',
+      description: 'Calibrated compartments of a petroleum or milk tanker. The tanker itself is the measure — each compartment is dip-calibrated and stamped.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'number_of_compartments', label: 'Number of Compartments', type: 'number', required: true },
+        { key: 'total_capacity_l', label: 'Total Capacity', type: 'text', unit: 'L', required: true },
+        { key: 'product', label: 'Product Carried', type: 'select', options: ['Petroleum — Motor Spirit', 'Petroleum — Diesel', 'Edible Oil', 'Milk', 'Chemical / Solvent', 'Other'], required: true },
+        { key: 'vehicle_registration_no', label: 'Vehicle Registration Number', type: 'text', required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_STORAGE_TANK',
+      code: 'STORAGE_TANK',
+      name: 'Static Storage Tank',
+      description: 'Fixed vertical or horizontal bulk storage tank whose calibration chart (capacity table) is verified — depots, terminals, dairies, distilleries.',
+      measurement_type: 'VOLUME',
+      spec_schema: [
+        { key: 'tank_orientation', label: 'Orientation', type: 'select', options: ['Vertical Cylindrical', 'Horizontal Cylindrical', 'Underground (UG)', 'Spherical / Bullet'], required: true },
+        { key: 'nominal_capacity_kl', label: 'Nominal Capacity', type: 'text', unit: 'kL', required: true },
+        { key: 'gauging_method', label: 'Gauging Method', type: 'select', options: ['Manual Dip (dip rod/tape)', 'Automatic Tank Gauge (ATG)', 'Both'], required: false },
+        { key: 'product', label: 'Product Stored', type: 'select', options: ['Petroleum — Motor Spirit', 'Petroleum — Diesel / Furnace Oil', 'Edible Oil', 'Milk', 'Chemical / Solvent', 'Other'], required: true }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_DIP_ROD',
+      code: 'DIP_ROD',
+      name: 'Dip Rod / Ullage Measuring Device',
+      description: 'Graduated rod or dip tape used to read the liquid level in a storage tank or tanker compartment. Verified as a length measure, but always against the tank calibration chart it serves.',
+      measurement_type: 'LENGTH',
+      spec_schema: [
+        { key: 'device_type', label: 'Device Type', type: 'select', options: ['Rigid Dip Rod', 'Dip Tape with Bob', 'Ullage Tape'], required: true },
+        { key: 'nominal_length_m', label: 'Nominal Length', type: 'select', options: ['1', '1.5', '2', '3', '5', '10', '15', '20', '30'], unit: 'm', required: true },
+        { key: 'graduation_mm', label: 'Graduation Interval', type: 'text', unit: 'mm', required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_TEXTILE_LENGTH_MACHINE',
+      code: 'TEXTILE_LENGTH_MACHINE',
+      name: 'Textile / Cloth Length Measuring Machine',
+      description: 'Powered roller machine that measures and records fabric length in a mill or wholesale cloth market — distinct from a hand-held tape.',
+      measurement_type: 'LENGTH',
+      spec_schema: [
+        { key: 'machine_type', label: 'Machine Type', type: 'select', options: ['Roller / Wheel Encoder', 'Folding Machine with Counter', 'Inspection Machine with Counter'], required: true },
+        { key: 'max_width_mm', label: 'Max Fabric Width', type: 'text', unit: 'mm', required: false },
+        { key: 'counter_resolution', label: 'Counter Resolution', type: 'select', options: ['1 m', '0.1 m', '0.01 m'], required: false }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_CLINICAL_THERMOMETER',
+      code: 'CLINICAL_THERMOMETER',
+      name: 'Clinical Thermometer',
+      description: 'Medical thermometer sold or used commercially — a regulated measuring device under Legal Metrology (IS 3784 for the mercury-in-glass type), verified in batches.',
+      measurement_type: 'TEMPERATURE',
+      spec_schema: [
+        { key: 'thermometer_type', label: 'Type', type: 'select', options: ['Mercury-in-Glass', 'Digital Contact', 'Infrared / Non-Contact'], required: true },
+        { key: 'range_c', label: 'Measuring Range', type: 'select', options: ['35-42 °C', '32-42 °C', '32-43 °C', 'Other'], required: true },
+        { key: 'quantity_in_batch', label: 'Number of Pieces Presented', type: 'number', required: true, help: 'Presented and stamped as a batch, like weights.' }
+      ],
+      active: 1
+    },
+    {
+      id: 'CAT_SPHYGMOMANOMETER',
+      code: 'SPHYGMOMANOMETER',
+      name: 'Sphygmomanometer (Blood Pressure Meter)',
+      description: 'Non-invasive blood pressure measuring instrument — a notified Legal Metrology category (IS 3390), so a clinic’s BP apparatus is legally a verifiable measuring instrument.',
+      measurement_type: 'PRESSURE',
+      spec_schema: [
+        { key: 'device_type', label: 'Device Type', type: 'select', options: ['Mercury Column', 'Aneroid (Dial)', 'Digital / Automated Oscillometric'], required: true },
+        { key: 'range_mmhg', label: 'Measuring Range', type: 'select', options: ['0-300 mmHg', '0-280 mmHg', 'Other'], required: true },
+        { key: 'cuff_sizes', label: 'Cuff Sizes Supplied', type: 'select', options: ['Adult', 'Adult + Paediatric', 'Adult + Large Adult', 'Full Set'], required: false }
+      ],
+      active: 1
     }
   ];
 
+  // Per-category presentation metadata for the registration form. Kept out of
+  // the category objects above so the statutory data stays readable, and kept in
+  // the database (not hardcoded in the React component) so a new category is a
+  // pure data change — consistent with the 'configurable rather than hard-coded'
+  // principle in SIH26036_MASTER_CONTEXT.md.
+  //   icon               Material Symbols glyph shown in the drawer header.
+  //   spec_section       Heading for the category-specific field group.
+  //   capacity_fields    Show Max/Min/Interval(e) — the three dedicated top-level
+  //                      Instrument columns the NAWI MPE engine reads. Only NAWI
+  //                      sets this; every other category carries its capacity
+  //                      inside `specs` via its own spec_schema.
+  //   serial_label/hint  A batch of weights has a set number, not a serial; a
+  //                      storage tank has a painted tank number. Saying 'Device
+  //                      Serial Number' for those is simply wrong.
+  //   notice             Amber strip for categories whose registration is unusual
+  //                      (stamped as a batch, approved as a component, vehicle-tied).
+  const FORM_META = {
+    CAT_NAWI_III: {
+      icon: 'scale',
+      spec_section: 'Weighing Range & Verification Interval',
+      capacity_fields: true,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Must strictly match the permanent stamping on the official metal plate.',
+      manufacturer_placeholder: 'e.g. Avery Weigh-Tronix',
+      model_placeholder: 'e.g. ZK830 Digital',
+      location_label: 'Operational Location / Establishment',
+      location_placeholder: 'e.g. Counter 3, Ration Shop, MG Road'
+    },
+    CAT_AUTO_WEIGH: {
+      icon: 'precision_manufacturing',
+      spec_section: 'Automatic Weigher Specifications',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Serial stamped on the weigher nameplate — not the conveyor or host machine serial.',
+      manufacturer_placeholder: 'e.g. Mettler-Toledo',
+      model_placeholder: 'e.g. C31 StandardLine',
+      location_label: 'Installation Location / Production Line',
+      location_placeholder: 'e.g. Packing Line 2, Unit-I, MIDC Estate'
+    },
+    CAT_WEIGHBRIDGE: {
+      icon: 'local_shipping',
+      spec_section: 'Weighbridge Platform & Capacity',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Serial on the weighbridge nameplate at the indicator cabin.',
+      manufacturer_placeholder: 'e.g. Essae-Teraoka',
+      model_placeholder: 'e.g. WB-60T Pitless',
+      location_label: 'Weighbridge Site Address',
+      location_placeholder: 'e.g. Gate No. 2, Cement Terminal, NH-48'
+    },
+    CAT_FUEL_DISPENSER: {
+      icon: 'local_gas_station',
+      spec_section: 'Dispenser Configuration',
+      capacity_fields: false,
+      serial_label: 'Dispensing Unit Serial Number',
+      serial_hint: 'Each dispensing unit is registered separately — use the unit serial, not the outlet code.',
+      manufacturer_placeholder: 'e.g. Gilbarco Veeder-Root',
+      model_placeholder: 'e.g. SK700-II',
+      location_label: 'Retail Outlet & Dispensing Bay',
+      location_placeholder: 'e.g. Bay 2, IOCL Retail Outlet, NH-44'
+    },
+    CAT_GAS_FUEL_DISPENSER: {
+      icon: 'propane_tank',
+      spec_section: 'Dispenser Configuration',
+      capacity_fields: false,
+      serial_label: 'Dispensing Unit Serial Number',
+      serial_hint: 'Each dispensing unit is registered separately — use the unit serial, not the station code.',
+      manufacturer_placeholder: 'e.g. Kirloskar / Aspro',
+      model_placeholder: 'e.g. CNG-2N Twin',
+      location_label: 'Station & Dispensing Bay',
+      location_placeholder: 'e.g. Bay 1, MGL CNG Station, Andheri East'
+    },
+    CAT_WATER_METER: {
+      icon: 'water_drop',
+      spec_section: 'Meter Specifications',
+      capacity_fields: false,
+      serial_label: 'Meter Serial Number',
+      serial_hint: 'Serial engraved on the meter body or under the dial cover.',
+      manufacturer_placeholder: 'e.g. Kranti Industries',
+      model_placeholder: 'e.g. KM-15 Multi Jet',
+      location_label: 'Service Connection / Premises',
+      location_placeholder: 'e.g. Consumer No. 4471, Flat B-302, Sector 21'
+    },
+    CAT_ENERGY_METER: {
+      icon: 'bolt',
+      spec_section: 'Meter Specifications',
+      capacity_fields: false,
+      serial_label: 'Meter Serial Number',
+      serial_hint: 'Serial printed on the meter faceplate, matching the utility consumer record.',
+      manufacturer_placeholder: 'e.g. Secure Meters',
+      model_placeholder: 'e.g. Sprint 350',
+      location_label: 'Service Connection / Premises',
+      location_placeholder: 'e.g. Consumer No. 88213, Meter Board, Shop 7'
+    },
+    CAT_GAS_METER: {
+      icon: 'gas_meter',
+      spec_section: 'Meter Specifications',
+      capacity_fields: false,
+      serial_label: 'Meter Serial Number',
+      serial_hint: 'Serial on the meter index plate.',
+      manufacturer_placeholder: 'e.g. Itron',
+      model_placeholder: 'e.g. Gallus G4',
+      location_label: 'Service Connection / Premises',
+      location_placeholder: 'e.g. PNG Consumer No. 2290, Kitchen Riser, Flat 14C'
+    },
+    CAT_LENGTH_MEASURE: {
+      icon: 'straighten',
+      spec_section: 'Measure Specifications',
+      capacity_fields: false,
+      serial_label: 'Set / Batch Number',
+      serial_hint: 'Tapes are stamped in batches — enter the batch number stamped on the end-hook or case.',
+      manufacturer_placeholder: 'e.g. Freemans',
+      model_placeholder: 'e.g. Steel Tape 30 m',
+      location_label: 'Premises Where Used',
+      location_placeholder: 'e.g. Cloth Counter, Ranganathan Street Store',
+      notice: 'Batch registration: one record covers the full set or lot presented for stamping.'
+    },
+    CAT_VOLUME_MEASURE: {
+      icon: 'science',
+      spec_section: 'Measure Specifications',
+      capacity_fields: false,
+      serial_label: 'Set / Batch Number',
+      serial_hint: 'Capacity measures are stamped in sets — enter the set or batch number punched on the rim.',
+      manufacturer_placeholder: 'e.g. Jain Metal Works',
+      model_placeholder: 'e.g. 1 L Conical Measure',
+      location_label: 'Premises Where Used',
+      location_placeholder: 'e.g. Milk Booth 12, Dairy Co-operative, Anand',
+      notice: 'Batch registration: one record covers the full set or lot presented for stamping.'
+    },
+    CAT_WEIGHTS_COMMERCIAL: {
+      icon: 'monitor_weight',
+      spec_section: 'Weight Set Details',
+      capacity_fields: false,
+      serial_label: 'Set / Batch Number',
+      serial_hint: 'Weights are presented and stamped as a batch — enter the set number, not a per-piece serial.',
+      manufacturer_placeholder: 'e.g. Shakti Weights',
+      model_placeholder: 'e.g. Cast Iron Trade Set',
+      location_label: 'Premises Where Used',
+      location_placeholder: 'e.g. Grain Counter, APMC Mandi Yard, Stall 14',
+      notice: 'Batch registration: one record covers the full set or lot presented for stamping.'
+    },
+    CAT_WEIGHTS_PRECISION: {
+      icon: 'diamond',
+      spec_section: 'Weight Set Details',
+      capacity_fields: false,
+      serial_label: 'Set / Batch Number',
+      serial_hint: 'Precision sets are stamped as a batch — enter the set number engraved on the case.',
+      manufacturer_placeholder: 'e.g. Adam Equipment',
+      model_placeholder: 'e.g. E2 Calibration Set',
+      location_label: 'Premises Where Used',
+      location_placeholder: 'e.g. Assay Counter, Jewellery Showroom, Zaveri Bazaar',
+      notice: 'Batch registration: one record covers the full set or lot presented for stamping.'
+    },
+    CAT_BEAM_SCALE: {
+      icon: 'balance',
+      spec_section: 'Beam Scale Specifications',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Number punched on the beam or the counter machine base.',
+      manufacturer_placeholder: 'e.g. Bharat Scales',
+      model_placeholder: 'e.g. Counter Machine 10 kg',
+      location_label: 'Premises Where Used',
+      location_placeholder: 'e.g. Grain Counter, APMC Mandi Yard, Stall 14'
+    },
+    CAT_SPRING_BALANCE: {
+      icon: 'scale',
+      spec_section: 'Balance Specifications',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Number stamped on the dial face or the spring housing.',
+      manufacturer_placeholder: 'e.g. Salter',
+      model_placeholder: 'e.g. 235-6S',
+      location_label: 'Premises Where Used',
+      location_placeholder: 'e.g. Fish Stall 8, Municipal Market, Alappuzha'
+    },
+    CAT_CRANE_SCALE: {
+      icon: 'warehouse',
+      spec_section: 'Crane Scale Specifications',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Serial on the load housing nameplate.',
+      manufacturer_placeholder: 'e.g. Ishida',
+      model_placeholder: 'e.g. CS-5T Wireless',
+      location_label: 'Installation Site',
+      location_placeholder: 'e.g. Scrap Bay, Hoist 2, Industrial Area Phase-II'
+    },
+    CAT_LOAD_CELL: {
+      icon: 'memory',
+      spec_section: 'Load Cell Ratings',
+      capacity_fields: false,
+      serial_label: 'Load Cell Serial Number',
+      serial_hint: 'Serial etched on the cell body, under the cable gland.',
+      manufacturer_placeholder: 'e.g. HBM',
+      model_placeholder: 'e.g. PW15AH',
+      location_label: 'Host Instrument / Installation Site',
+      location_placeholder: 'e.g. Fitted to Weighbridge WB-60T, Gate No. 2',
+      notice: 'Component approval: a load cell is approved in its own right and verified as a matched pair with its indicator.'
+    },
+    CAT_WEIGHING_INDICATOR: {
+      icon: 'display_settings',
+      spec_section: 'Indicator Ratings',
+      capacity_fields: false,
+      serial_label: 'Indicator Serial Number',
+      serial_hint: 'Serial on the rear panel label of the indicator.',
+      manufacturer_placeholder: 'e.g. Rice Lake',
+      model_placeholder: 'e.g. 880 Performance',
+      location_label: 'Host Instrument / Installation Site',
+      location_placeholder: 'e.g. Indicator cabin, Weighbridge WB-60T, Gate No. 2',
+      notice: 'Component approval: an indicator is approved in its own right and verified as a matched pair with its load cell.'
+    },
+    CAT_LPG_CYLINDER_FILLING: {
+      icon: 'propane_tank',
+      spec_section: 'Filling Machine Configuration',
+      capacity_fields: false,
+      serial_label: 'Machine Serial Number',
+      serial_hint: 'Serial on the carousel or filling head nameplate.',
+      manufacturer_placeholder: 'e.g. Kosan Crisplant',
+      model_placeholder: 'e.g. CC-24 Carousel',
+      location_label: 'Bottling Plant & Line',
+      location_placeholder: 'e.g. Carousel 1, HPCL Bottling Plant, Vashi'
+    },
+    CAT_TAXIMETER: {
+      icon: 'local_taxi',
+      spec_section: 'Fare Meter Configuration',
+      capacity_fields: false,
+      serial_label: 'Meter Serial Number',
+      serial_hint: 'Serial on the meter body. The vehicle registration number is captured separately below.',
+      manufacturer_placeholder: 'e.g. Pricol',
+      model_placeholder: 'e.g. ETM-500',
+      location_label: 'Operating Base / Permit Region',
+      location_placeholder: 'e.g. Andheri Taxi Stand, MMRTA Permit Zone',
+      notice: 'Vehicle-mounted: the registration is tied to the vehicle, so the RTO registration number is mandatory.'
+    },
+    CAT_BULK_FLOW_METER: {
+      icon: 'speed',
+      spec_section: 'Flow Meter Specifications',
+      capacity_fields: false,
+      serial_label: 'Meter Serial Number',
+      serial_hint: 'Serial on the transmitter nameplate, matching the gantry asset register.',
+      manufacturer_placeholder: 'e.g. Emerson Micro Motion',
+      model_placeholder: 'e.g. CMF300',
+      location_label: 'Terminal / Loading Gantry',
+      location_placeholder: 'e.g. Gantry 3, Arm 2, BPCL Terminal, Manmad'
+    },
+    CAT_ROAD_TANKER: {
+      icon: 'local_shipping',
+      spec_section: 'Tanker Compartment Details',
+      capacity_fields: false,
+      serial_label: 'Tank / Chassis Number',
+      serial_hint: 'Tank barrel or chassis number. The vehicle registration number is captured separately below.',
+      manufacturer_placeholder: 'e.g. BharatBenz (body: Jain Tanks)',
+      model_placeholder: 'e.g. 20 KL 4-Compartment',
+      location_label: 'Operating Base / Depot',
+      location_placeholder: 'e.g. IOCL Depot, Vijayawada',
+      notice: 'Vehicle-mounted: the registration is tied to the vehicle, so the RTO registration number is mandatory.'
+    },
+    CAT_STORAGE_TANK: {
+      icon: 'oil_barrel',
+      spec_section: 'Tank Calibration Details',
+      capacity_fields: false,
+      serial_label: 'Tank Number / Identification',
+      serial_hint: 'The depot tank number painted on the shell, e.g. TK-07.',
+      manufacturer_placeholder: 'e.g. Punj Lloyd',
+      model_placeholder: 'e.g. VCT-5000 KL',
+      location_label: 'Terminal / Depot & Tank Farm',
+      location_placeholder: 'e.g. Tank Farm A, TK-07, HPCL Terminal, Irugur'
+    },
+    CAT_DIP_ROD: {
+      icon: 'straighten',
+      spec_section: 'Dip Device Specifications',
+      capacity_fields: false,
+      serial_label: 'Rod / Tape Number',
+      serial_hint: 'Number stamped on the rod or tape reel. Verified against the tank calibration chart it serves.',
+      manufacturer_placeholder: 'e.g. Freemans',
+      model_placeholder: 'e.g. Dip Tape 15 m',
+      location_label: 'Tank / Depot Served',
+      location_placeholder: 'e.g. Serves TK-07, HPCL Terminal, Irugur'
+    },
+    CAT_TEXTILE_LENGTH_MACHINE: {
+      icon: 'checkroom',
+      spec_section: 'Measuring Machine Specifications',
+      capacity_fields: false,
+      serial_label: 'Machine Serial Number',
+      serial_hint: 'Serial on the machine frame plate, beside the counter head.',
+      manufacturer_placeholder: 'e.g. Bhagwati Textile Machinery',
+      model_placeholder: 'e.g. BTM-Fold 200',
+      location_label: 'Mill / Warehouse & Machine Position',
+      location_placeholder: 'e.g. Folding Section, Machine 4, Bhiwandi Unit'
+    },
+    CAT_CLINICAL_THERMOMETER: {
+      icon: 'thermostat',
+      spec_section: 'Thermometer Batch Details',
+      capacity_fields: false,
+      serial_label: 'Batch / Lot Number',
+      serial_hint: 'Thermometers are presented and stamped as a batch — enter the lot number, not a per-piece serial.',
+      manufacturer_placeholder: 'e.g. Hicks',
+      model_placeholder: 'e.g. MT-101',
+      location_label: 'Premises Where Stocked / Used',
+      location_placeholder: 'e.g. Dispensary Counter, Civil Hospital, Nashik',
+      notice: 'Batch registration: one record covers the full set or lot presented for stamping.'
+    },
+    CAT_SPHYGMOMANOMETER: {
+      icon: 'monitor_heart',
+      spec_section: 'BP Apparatus Specifications',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Serial on the manometer body, or the rear label of a digital unit.',
+      manufacturer_placeholder: 'e.g. Diamond / Omron',
+      model_placeholder: 'e.g. Deluxe BP Mercurial',
+      location_label: 'Clinic / Premises Where Used',
+      location_placeholder: 'e.g. OPD Room 3, Primary Health Centre, Wardha'
+    }
+  };
+
   for (const cat of categories) {
-    await InstrumentCategory.findOneAndUpdate({ id: cat.id }, { $set: cat }, { upsert: true });
+    const form_meta = FORM_META[cat.id] || {
+      icon: 'category',
+      spec_section: 'Technical Specifications',
+      capacity_fields: false,
+      serial_label: 'Device Serial Number',
+      serial_hint: 'Must match the permanent stamping on the official plate.',
+      manufacturer_placeholder: 'Manufacturer name',
+      model_placeholder: 'Model name or number',
+      location_label: 'Operational Location / Establishment',
+      location_placeholder: 'Premises where the instrument is used'
+    };
+    await InstrumentCategory.findOneAndUpdate(
+      { id: cat.id },
+      { $set: { ...cat, form_meta } },
+      { upsert: true }
+    );
   }
 
   // 2. Rule Sets
@@ -368,7 +923,23 @@ export async function seedDemoData() {
       ['RULE_ENERGY_METER', 'CAT_ENERGY_METER', 'Energy Meter — Placeholder Rules'],
       ['RULE_GAS_METER', 'CAT_GAS_METER', 'Gas Meter — Placeholder Rules'],
       ['RULE_LENGTH_MEASURE', 'CAT_LENGTH_MEASURE', 'Length Measure — Placeholder Rules'],
-      ['RULE_VOLUME_MEASURE', 'CAT_VOLUME_MEASURE', 'Volumetric/Capacity Measure — Placeholder Rules']
+      ['RULE_VOLUME_MEASURE', 'CAT_VOLUME_MEASURE', 'Volumetric/Capacity Measure — Placeholder Rules'],
+      ['RULE_WEIGHTS_COMMERCIAL', 'CAT_WEIGHTS_COMMERCIAL', 'Commercial Weights — Placeholder Rules'],
+      ['RULE_WEIGHTS_PRECISION', 'CAT_WEIGHTS_PRECISION', 'Precision / Carat Weights — Placeholder Rules'],
+      ['RULE_BEAM_SCALE', 'CAT_BEAM_SCALE', 'Beam Scale / Counter Machine — Placeholder Rules'],
+      ['RULE_SPRING_BALANCE', 'CAT_SPRING_BALANCE', 'Spring Balance — Placeholder Rules'],
+      ['RULE_CRANE_SCALE', 'CAT_CRANE_SCALE', 'Crane / Hanging Scale — Placeholder Rules'],
+      ['RULE_LOAD_CELL', 'CAT_LOAD_CELL', 'Load Cell — Placeholder Rules'],
+      ['RULE_WEIGHING_INDICATOR', 'CAT_WEIGHING_INDICATOR', 'Weighing Indicator — Placeholder Rules'],
+      ['RULE_LPG_CYLINDER_FILLING', 'CAT_LPG_CYLINDER_FILLING', 'LPG Cylinder Filling Machine — Placeholder Rules'],
+      ['RULE_TAXIMETER', 'CAT_TAXIMETER', 'Taximeter / Fare Meter — Placeholder Rules'],
+      ['RULE_BULK_FLOW_METER', 'CAT_BULK_FLOW_METER', 'Bulk Liquid Flow Meter — Placeholder Rules'],
+      ['RULE_ROAD_TANKER', 'CAT_ROAD_TANKER', 'Road Tanker Capacity Measure — Placeholder Rules'],
+      ['RULE_STORAGE_TANK', 'CAT_STORAGE_TANK', 'Static Storage Tank — Placeholder Rules'],
+      ['RULE_DIP_ROD', 'CAT_DIP_ROD', 'Dip Rod / Ullage Device — Placeholder Rules'],
+      ['RULE_TEXTILE_LENGTH_MACHINE', 'CAT_TEXTILE_LENGTH_MACHINE', 'Textile Length Measuring Machine — Placeholder Rules'],
+      ['RULE_CLINICAL_THERMOMETER', 'CAT_CLINICAL_THERMOMETER', 'Clinical Thermometer — Placeholder Rules'],
+      ['RULE_SPHYGMOMANOMETER', 'CAT_SPHYGMOMANOMETER', 'Sphygmomanometer — Placeholder Rules']
     ].map(([id, category_id, name]) => ({
       id,
       category_id,

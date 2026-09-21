@@ -7,6 +7,16 @@ const FLAT_DISTRICTS = INDIA_STATES_DISTRICTS.flatMap(s =>
   s.districts.map(d => ({ label: `${d}, ${s.state}`, district: d, state: s.state }))
 );
 
+// Mirrors server/verificationPolicy.js DESIGNATIONS — the rank decides which
+// instrument categories an LMO can be assigned (e.g. storage tanks need an Assistant Controller).
+const LMO_DESIGNATIONS = [
+  { code: 'INSPECTOR', label: 'Inspector of Legal Metrology' },
+  { code: 'ASSISTANT_CONTROLLER', label: 'Assistant Controller' },
+  { code: 'DEPUTY_CONTROLLER', label: 'Deputy Controller' },
+  { code: 'JOINT_CONTROLLER', label: 'Joint Controller' },
+  { code: 'CONTROLLER', label: 'Controller of Legal Metrology' }
+];
+
 const ROLE_OPTIONS = [
   {
     role: 'TRADER',
@@ -66,6 +76,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [phone, setPhone] = useState('');
   const [organizationName, setOrganizationName] = useState('');
+  const [designation, setDesignation] = useState('INSPECTOR');
   const [jurisdictions, setJurisdictions] = useState([]);
   const [districtSearch, setDistrictSearch] = useState('');
   const [districtDropdownOpen, setDistrictDropdownOpen] = useState(false);
@@ -117,6 +128,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
         phone: phone.trim(),
         role: selectedRole,
         organization_name: organizationName.trim(),
+        designation: selectedRole === 'VERIFIER' ? designation : undefined,
         jurisdictions
       });
       setApiUser(data.user, data.token);
@@ -262,6 +274,23 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
                 />
               </div>
             </div>
+
+            {selectedRole === 'VERIFIER' && (
+              <div>
+                <label htmlFor="lmo-designation" className="block text-xs font-bold text-slate-700 mb-1.5">Designation</label>
+                <select
+                  id="lmo-designation"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-slate-900"
+                >
+                  {LMO_DESIGNATIONS.map(d => <option key={d.code} value={d.code}>{d.label}</option>)}
+                </select>
+                <p className="text-[10.5px] text-slate-500 mt-1">
+                  Decides which instruments you can be assigned. Heavy and bulk instruments (weighbridges, storage tanks, tankers) need an Assistant Controller or above.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">{roleConfig.orgLabel}</label>
