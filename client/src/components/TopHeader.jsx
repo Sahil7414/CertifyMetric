@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function TopHeader({
   currentUser,
@@ -9,6 +11,7 @@ export default function TopHeader({
   onGoHome,
   onLogout
 }) {
+  const { t } = useTranslation();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
 
   // Format breadcrumb title
@@ -17,39 +20,39 @@ export default function TopHeader({
       case 'dashboard':
         return '';
       case 'apply-verification':
-        return ' / Statutory Filing / Apply for Verification';
+        return ` / ${t('nav.applyVerification', 'Apply for Verification')}`;
       case 'admin-dashboard':
-        return ' / Portal Administration & Governance';
+        return ` / ${t('nav.adminDashboard', 'Portal Admin Dashboard')}`;
       case 'gatc-dashboard':
-        return ' / Laboratory Metrology Console';
+        return ` / ${t('nav.gatcDashboard', 'GATC Lab Dashboard')}`;
       case 'vendor-apply-tank':
-        return ' / Verification / Vehicle Tank Calibration';
+        return ` / ${t('application.applyTitle', 'Application for Verification')}`;
       case 'instruments':
-        return ' / List of Weights & Measures';
+        return ` / ${t('nav.myInstruments', 'My Instruments')}`;
       case 'instrument-detail':
-        return ' / Instrument Particulars';
+        return ` / ${t('common.details', 'Details')}`;
       case 'applications':
-        return ' / Verification Applications Registry';
+        return ` / ${t('nav.myApplications', 'My Applications')}`;
       case 'applications-rejected':
-        return ' / Resubmit Rejected Weighing Instruments';
+        return ` / ${t('status.APPLICATION_REJECTED', 'Application Rejected')}`;
       case 'application-timeline':
-        return ' / Application Lifecycle & Verification Status';
+        return ` / ${t('application.timelineTitle', 'Verification Lifecycle Timeline')}`;
       case 'certificates':
-        return ' / Statutory Compliance Certificates';
+        return ` / ${t('nav.certificates', 'Certificates')}`;
       case 'official-certificate':
-        return ' / Official Certificate of Verification';
+        return ` / ${t('certificate.title', 'Certificate of Verification')}`;
       case 'authority-dashboard':
-        return ' / Authority Operations & Assignment Queue';
+        return ` / ${t('nav.operationsDashboard', 'Operations Dashboard')}`;
       case 'application-review':
-        return ' / Statutory Schedule Assessment';
+        return ` / ${t('nav.applicationsQueue', 'Applications Queue')}`;
       case 'assignment-decision':
-        return ' / Verifier Allocation Engine';
+        return ` / ${t('status.ASSIGNED', 'Assigned')}`;
       case 'verifier-dashboard':
-        return ' / Assigned Inspection Cases';
+        return ` / ${t('nav.verifierDashboard', 'Verifier Dashboard')}`;
       case 'verification-workspace':
-        return ' / Calibration & Testing Workspace';
+        return ` / ${t('nav.verificationWorkspace', 'Verification Workspace')}`;
       case 'audit-logs':
-        return ' / Governance Audit Trail & Immutable Ledger';
+        return ` / ${t('nav.auditLogs', 'Audit Logs')}`;
       default:
         return '';
     }
@@ -63,9 +66,9 @@ export default function TopHeader({
       <div className="bg-[#001733] text-slate-300 px-4 py-1 flex items-center justify-between text-[11px] border-b border-[#1b365d]/60">
         <div className="flex items-center gap-2">
           <span className="material-symbols-outlined text-[14px] text-amber-400">balance</span>
-          <span className="font-semibold text-white tracking-wide">Legal Metrology Verification Framework</span>
+          <span className="font-semibold text-white tracking-wide">{t('common.statutoryFramework', 'Legal Metrology Verification Framework')}</span>
           <span className="hidden md:inline text-slate-500">|</span>
-          <span className="hidden md:inline text-slate-400">Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
+          <span className="hidden md:inline text-slate-400">{t('common.statutoryStandards', 'Standards under Legal Metrology Act, 2009 & General Rules, 2011')}</span>
         </div>
         <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
           <span>SIH 26036 • CertifyMetric</span>
@@ -93,7 +96,7 @@ export default function TopHeader({
               className="text-[#002046] hover:text-blue-700 hover:underline flex items-center gap-1.5 font-bold transition-colors"
             >
               <span className="material-symbols-outlined text-base text-amber-500">home</span>
-              <span>Home</span>
+              <span>{t('common.home', 'Home')}</span>
             </button>
             {getBreadcrumbTitle() && (
               <span className="text-slate-500 font-normal truncate max-w-xs sm:max-w-md hidden sm:inline">
@@ -103,8 +106,11 @@ export default function TopHeader({
           </nav>
         </div>
 
-        {/* Right side: Welcome User Badge (Matching CertifyMetric Theme) */}
-        <div className="flex items-center gap-3 relative">
+        {/* Right side: Language Switcher & Welcome User Badge */}
+        <div className="flex items-center gap-2.5 relative">
+          {/* Multilingual Selector */}
+          <LanguageSwitcher currentUser={currentUser} />
+
           <div
             onClick={() => setShowUserDropdown(!showUserDropdown)}
             className="flex items-center gap-2.5 cursor-pointer group py-1.5 px-3 rounded-xl hover:bg-slate-50 border border-slate-200/80 transition-all shadow-2xs"
@@ -119,7 +125,7 @@ export default function TopHeader({
             <div className="text-left hidden sm:block">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-[#002046] tracking-tight">
-                  Welcome, {displayName}
+                  {t('nav.welcome', 'Welcome')}, {displayName}
                 </span>
                 <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
                   {currentRole || 'TRADER'}
@@ -160,7 +166,7 @@ export default function TopHeader({
                     className="w-full px-4 py-2 text-left hover:bg-slate-50 flex items-center gap-2"
                   >
                     <span className="material-symbols-outlined text-base text-amber-500">dashboard</span>
-                    <span>Portal Dashboard</span>
+                    <span>{t('nav.dashboard', 'Portal Dashboard')}</span>
                   </button>
                 </div>
 
@@ -173,7 +179,7 @@ export default function TopHeader({
                     className="w-full px-4 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2 text-xs font-medium"
                   >
                     <span className="material-symbols-outlined text-base text-rose-500">logout</span>
-                    <span>Sign Out</span>
+                    <span>{t('nav.signOut', 'Sign Out')}</span>
                   </button>
                 </div>
               </div>

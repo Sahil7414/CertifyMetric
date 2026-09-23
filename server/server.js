@@ -20,7 +20,8 @@ import {
   VerificationReading,
   VerificationEvidence,
   Certificate,
-  AuditLog
+  AuditLog,
+  GeoVisit
 } from './models/index.js';
 import { seedAllDemoData } from './scripts/seedDemoUsers.js';
 import { ROLES, hasPermission, requirePermission } from './permissions.js';
@@ -370,6 +371,23 @@ app.post('/api/auth/logout', async (req, res) => {
   res.json({ success: true });
 });
 
+app.put('/api/auth/language', async (req, res) => {
+  const actor = getActor(req);
+  if (!actor || actor.role === 'ANONYMOUS') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const { language } = req.body;
+  if (!language || typeof language !== 'string') {
+    return res.status(400).json({ error: 'Valid language code is required' });
+  }
+  const cleanLang = language.trim().toLowerCase().slice(0, 10);
+  await User.updateOne(
+    { id: actor.id },
+    { $set: { language_preference: cleanLang, updated_at: new Date().toISOString() } }
+  );
+  res.json({ success: true, language: cleanLang });
+});
+
 app.get('/api/auth/users', async (req, res) => {
   const users = await User.find().lean();
   const orgIds = [...new Set(users.map(u => u.organization_id).filter(Boolean))];
@@ -501,7 +519,9 @@ app.post('/api/instruments', async (req, res) => {
     verification_scale_interval_e,
     specs,
     location,
-    district
+    district,
+    latitude,
+    longitude
   } = req.body;
 
   const targetOwnerId = owner_id || actorId;
@@ -583,6 +603,8 @@ app.post('/api/instruments', async (req, res) => {
       specs: providedSpecs,
       location,
       district,
+      latitude: (latitude !== undefined && latitude !== null && !isNaN(Number(latitude))) ? Number(latitude) : undefined,
+      longitude: (longitude !== undefined && longitude !== null && !isNaN(Number(longitude))) ? Number(longitude) : undefined,
       status: 'REGISTERED',
       created_at: now
     });
@@ -826,6 +848,9 @@ app.post('/api/applications', async (req, res) => {
     contact_person,
     contact_phone,
     location_address,
+    registered_latitude,
+    registered_longitude,
+    geofence_radius,
     fee_breakdown,
     payment
   } = req.body;
@@ -865,6 +890,14 @@ app.post('/api/applications', async (req, res) => {
   const initialStatus = 'PAYMENT_PENDING';
   const initialFeeStatus = 'PENDING';
 
+  const finalLat = (registered_latitude !== undefined && registered_latitude !== null && !isNaN(Number(registered_latitude)))
+    ? Number(registered_latitude)
+    : (inst.latitude || undefined);
+  const finalLon = (registered_longitude !== undefined && registered_longitude !== null && !isNaN(Number(registered_longitude)))
+    ? Number(registered_longitude)
+    : (inst.longitude || undefined);
+  const finalRadius = Number(geofence_radius) || 200;
+
   await Application.create({
     id,
     application_no: appNo,
@@ -878,6 +911,9 @@ app.post('/api/applications', async (req, res) => {
     contact_person: contact_person || null,
     contact_phone: contact_phone || null,
     location_address: location_address || null,
+    registered_latitude: finalLat,
+    registered_longitude: finalLon,
+    geofence_radius: finalRadius,
     status: initialStatus,
     documents: Array.isArray(documents) ? documents : [],
     fee_status: initialFeeStatus,
@@ -886,6 +922,30 @@ app.post('/api/applications', async (req, res) => {
     created_at: now,
     updated_at: now
   });
+
+  // If exact coordinates are provided, pre-create the GeoVisit record right away
+  if (finalLat && finalLon) {
+    try {
+      await GeoVisit.create({
+        id: `GEO_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+        application_id: id,
+        verification_id: null,
+        officer_id: 'UNASSIGNED',
+        registered_address: location_address || inst.location || 'Registered Premises',
+        registered_latitude: finalLat,
+        registered_longitude: finalLon,
+        geofence_radius: finalRadius,
+        status: 'NOT_STARTED',
+        is_override: false,
+        exit_events: [],
+        sync_status: 'SYNCED',
+        created_at: now,
+        updated_at: now
+      });
+    } catch (gvErr) {
+      console.warn('GeoVisit initial record creation note:', gvErr.message);
+    }
+  }
 
   await Instrument.updateOne({ id: instrument_id }, { $set: { status: 'UNDER_VERIFICATION' } });
 
@@ -1575,25 +1635,30 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   if (!candidate) return res.status(400).json({ error: 'Assignee is not a verification candidate.' });
 
   const failedChecks = candidate.checks.filter(c => !c.ok);
-  const blocking = failedChecks.find(c => c.key !== 'jurisdiction');
-  if (blocking) {
-    return res.status(400).json({ error: `${candidate.full_name} cannot verify this instrument: ${blocking.detail}.` });
+  const isDeactivated = failedChecks.some(c => c.key === 'active');
+  if (isDeactivated) {
+    return res.status(400).json({ error: `${candidate.full_name} cannot be assigned: Account is deactivated.` });
   }
+
   const isJurisdictionMatch = !failedChecks.some(c => c.key === 'jurisdiction');
-  if (!isJurisdictionMatch && !(override_reason && override_reason.trim())) {
+  const hasOtherFailedChecks = failedChecks.some(c => c.key !== 'jurisdiction' && c.key !== 'active');
+  const hasStatutoryExceptions = !isJurisdictionMatch || hasOtherFailedChecks;
+
+  if (hasStatutoryExceptions && !(override_reason && override_reason.trim())) {
     return res.status(400).json({
-      error: `${candidate.full_name} is outside the instrument's jurisdiction (${evaluation.district || 'unknown'}). A reason is required to assign outside jurisdiction.`
+      error: `A statutory override reason is required to assign ${candidate.full_name} (${failedChecks.map(f => f.detail).join('; ')}).`
     });
   }
+
   // Choosing anyone other than the engine's recommendation must be justified for the audit trail.
   const deviatesFromRecommendation = !!evaluation.recommended_id && assigned_id !== evaluation.recommended_id;
   if (deviatesFromRecommendation && !(override_reason && override_reason.trim())) {
     return res.status(400).json({ error: 'A reason is required when assigning someone other than the recommended officer.' });
   }
 
-  // Cross-jurisdiction assignments are always recorded as an override, even if the
+  // Cross-jurisdiction or out-of-eligibility assignments are always recorded as an override, even if the
   // client didn't flag it, so the audit trail reflects the actual statutory exception.
-  const recordedOverride = (deviatesFromRecommendation || !isJurisdictionMatch) ? 1 : 0;
+  const recordedOverride = (deviatesFromRecommendation || hasStatutoryExceptions) ? 1 : 0;
 
   const assignmentId = `ASN_${Date.now()}`;
   const now = new Date().toISOString();
@@ -1671,8 +1736,84 @@ app.post('/api/applications/:id/assign', async (req, res) => {
 });
 
 // ==========================================
-// 5. SECOND VERTICAL SLICE: VERIFICATION WORKSPACE
+// 5. SECOND VERTICAL SLICE: VERIFICATION WORKSPACE & GEOVISIT
 // ==========================================
+
+// Haversine formula to compute great-circle distance between two GPS coordinates in metres
+function calculateHaversineDistanceMeters(lat1, lon1, lat2, lon2) {
+  if (lat1 === undefined || lon1 === undefined || lat2 === undefined || lon2 === undefined ||
+      lat1 === null || lon1 === null || lat2 === null || lon2 === null) {
+    return 0;
+  }
+  const R = 6371e3; // Earth radius in metres
+  const φ1 = (Number(lat1) * Math.PI) / 180;
+  const φ2 = (Number(lat2) * Math.PI) / 180;
+  const Δφ = ((Number(lat2) - Number(lat1)) * Math.PI) / 180;
+  const Δλ = ((Number(lon2) - Number(lon1)) * Math.PI) / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(R * c);
+}
+
+// Helper: Ensure or load GeoVisit record for an application
+async function getOrCreateGeoVisit(appId) {
+  let gv = await GeoVisit.findOne({ application_id: appId }).lean();
+  if (gv) return gv;
+
+  const appItem = await Application.findOne({ id: appId }).lean();
+  if (!appItem) return null;
+
+  const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
+  const asn = await Assignment.findOne({ application_id: appId }).lean();
+
+  let regLat = appItem.registered_latitude || (inst && inst.latitude);
+  let regLon = appItem.registered_longitude || (inst && inst.longitude);
+  let regAddr = appItem.location_address || (inst && inst.location) || 'Registered Premises';
+  let radius = appItem.geofence_radius || 200;
+
+  // Realistic defaults if coordinates not explicitly saved yet
+  if (!regLat || !regLon) {
+    const addrLower = (regAddr || '').toLowerCase();
+    if (addrLower.includes('vikhroli') || addrLower.includes('kanjurmarg') || addrLower.includes('ghatkopar') || addrLower.includes('powai')) {
+      regLat = 19.1110;
+      regLon = 72.9280; // Vikhroli Central Mumbai
+    } else if (addrLower.includes('thane')) {
+      regLat = 19.1982;
+      regLon = 72.9636;
+    } else if (addrLower.includes('mumbai')) {
+      regLat = 19.0760;
+      regLon = 72.8777;
+    } else {
+      regLat = 19.1110; // Default to Vikhroli/Mumbai region for local evaluation
+      regLon = 72.9280;
+    }
+  }
+
+  const now = new Date().toISOString();
+  const newGv = {
+    id: `GEO_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+    application_id: appId,
+    verification_id: null,
+    officer_id: (asn && asn.assigned_id) || 'UNASSIGNED',
+    registered_address: regAddr,
+    registered_latitude: regLat,
+    registered_longitude: regLon,
+    geofence_radius: radius,
+    status: 'NOT_STARTED',
+    is_override: false,
+    exit_events: [],
+    sync_status: 'SYNCED',
+    created_at: now,
+    updated_at: now
+  };
+
+  await GeoVisit.create(newGv);
+  return newGv;
+}
 
 // List Assigned Cases for Verifier & GATC Lab
 app.get('/api/verifications/cases', async (req, res) => {
@@ -1717,12 +1858,16 @@ app.get('/api/verifications/cases', async (req, res) => {
   const verifs = await Verification.find({ application_id: { $in: applications.map(a => a.id) } }).lean();
   const verifMap = new Map(verifs.map(v => [v.application_id, v]));
 
+  const geoVisits = await GeoVisit.find({ application_id: { $in: applications.map(a => a.id) } }).lean();
+  const geoMap = new Map(geoVisits.map(g => [g.application_id, g]));
+
   const cases = applications.map(a => {
     const asn = asnMap.get(a.id) || {};
     const inst = instMap.get(a.instrument_id) || {};
     const trader = traderMap.get(a.trader_id) || {};
     const apt = aptMap.get(asn.id) || {};
     const verif = verifMap.get(a.id) || {};
+    const gv = geoMap.get(a.id) || null;
 
     return {
       application_id: a.id,
@@ -1734,7 +1879,7 @@ app.get('/api/verifications/cases', async (req, res) => {
       model: inst.model || null,
       serial_number: inst.serial_number || null,
       max_capacity: inst.max_capacity || null,
-      location: inst.location || null,
+      location: a.location_address || inst.location || null,
       trader_name: trader.full_name || null,
       trader_phone: trader.phone || null,
       assigned_id: asn.assigned_id || null,
@@ -1744,7 +1889,21 @@ app.get('/api/verifications/cases', async (req, res) => {
       arrangement_type: apt.arrangement_type || null,
       verification_id: verif.id || null,
       verification_status: verif.status || null,
-      verification_result: verif.result || null
+      verification_result: verif.result || null,
+      geovisit: gv ? {
+        id: gv.id,
+        status: gv.status,
+        registered_latitude: gv.registered_latitude,
+        registered_longitude: gv.registered_longitude,
+        registered_address: gv.registered_address,
+        geofence_radius: gv.geofence_radius || 200,
+        check_in_distance: gv.check_in_distance,
+        check_in_accuracy: gv.check_in_accuracy,
+        check_in_timestamp: gv.check_in_timestamp,
+        check_out_timestamp: gv.check_out_timestamp,
+        is_override: gv.is_override,
+        override_reason: gv.override_reason
+      } : null
     };
   });
 
@@ -1774,6 +1933,7 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
 
   const verif = await Verification.findOne({ application_id: a.id }).lean();
   const cert = verif ? await Certificate.findOne({ verification_id: verif.id }).lean() : null;
+  const geoVisit = await getOrCreateGeoVisit(a.id);
 
   // Access validation: verifier/GATC must be the assigned officer (Authority can review any case)
   if ((role === ROLES.VERIFIER || role === ROLES.GATC) && asn && asn.assigned_id !== actorId) {
@@ -1798,7 +1958,9 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
     max_capacity: inst ? inst.max_capacity : null,
     min_capacity: inst ? inst.min_capacity : null,
     verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
-    location: inst ? inst.location : null,
+    location: a.location_address || (inst ? inst.location : null),
+    registered_latitude: a.registered_latitude || (inst ? inst.latitude : null) || (geoVisit ? geoVisit.registered_latitude : null),
+    registered_longitude: a.registered_longitude || (inst ? inst.longitude : null) || (geoVisit ? geoVisit.registered_longitude : null),
     category_name: cat ? cat.name : null,
     trader_name: trader ? trader.full_name : null,
     trader_phone: trader ? trader.phone : null,
@@ -1828,7 +1990,8 @@ app.get('/api/verifications/cases/:appId', async (req, res) => {
     public_token: cert ? cert.public_token : null,
     checklist_responses: checklistResponses,
     readings,
-    evidence
+    evidence,
+    geovisit: geoVisit
   });
 });
 
@@ -1853,6 +2016,23 @@ app.post('/api/verifications/cases/:appId/start', async (req, res) => {
   }
 
   const now = new Date().toISOString();
+
+  // GeoVisit Check-in Enforcement for On-Site Field Visits
+  const apt = asn ? await Appointment.findOne({ assignment_id: asn.id }).lean() : null;
+  const isFieldVisit = (apt && apt.arrangement_type === 'FIELD_VISIT') || appItem.verification_mode === 'IN_SITU';
+  if (isFieldVisit) {
+    const geoVisit = await getOrCreateGeoVisit(req.params.appId);
+    const verifiedStatuses = ['LOCATION_VERIFIED', 'OVERRIDE_USED', 'VERIFICATION_IN_PROGRESS', 'LOCATION_EXIT_DETECTED', 'VISIT_COMPLETED'];
+    if (!geoVisit || !verifiedStatuses.includes(geoVisit.status)) {
+      return res.status(400).json({
+        error: 'Field Verification Locked: GeoVisit location check-in must be completed at the registered inspection premises before starting verification.'
+      });
+    }
+    if (geoVisit.status === 'LOCATION_VERIFIED') {
+      await GeoVisit.updateOne({ application_id: req.params.appId }, { $set: { status: 'VERIFICATION_IN_PROGRESS', updated_at: now } });
+    }
+  }
+
   let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
 
@@ -2227,6 +2407,453 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
     status: nextAppStatus,
     result
   });
+});
+
+// ==========================================
+// 5A. GEOVISIT — LOCATION-VERIFIED FIELD INSPECTION
+// ==========================================
+
+// 1. Get GeoVisit Configuration
+app.get('/api/geovisit/config', (req, res) => {
+  const defaultRadius = parseInt(process.env.GEOVISIT_DEFAULT_GEOFENCE_RADIUS || '200', 10);
+  res.json({
+    default_geofence_radius: defaultRadius,
+    unit: 'METERS',
+    system_version: '1.0.0-geovisit',
+    supported_jurisdictions: ['Maharashtra', 'Delhi', 'Kerala', 'Jammu & Kashmir', 'ALL_STATES_UTS']
+  });
+});
+
+// 2. Get GeoVisit Record for an Application
+app.get('/api/geovisit/:appId', async (req, res) => {
+  try {
+    const gv = await getOrCreateGeoVisit(req.params.appId);
+    if (!gv) return res.status(404).json({ error: 'Application or GeoVisit record not found' });
+    res.json(gv);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3. Officer Check-In
+app.post('/api/geovisit/:appId/check-in', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  const gv = await getOrCreateGeoVisit(req.params.appId);
+  if (!gv) return res.status(404).json({ error: 'Case not found' });
+
+  // Role validation: only assigned Verifier / GATC or Authority can check in
+  const asn = await Assignment.findOne({ application_id: req.params.appId }).lean();
+  if ((role === ROLES.VERIFIER || role === ROLES.GATC) && asn && asn.assigned_id !== actorId) {
+    return res.status(403).json({ error: 'Forbidden: You are not the assigned verifier for this case.' });
+  }
+
+  const { latitude, longitude, accuracy, timestamp, device_info } = req.body;
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: 'Latitude and longitude coordinates are required for GeoVisit check-in.' });
+  }
+
+  const officerLat = Number(latitude);
+  const officerLon = Number(longitude);
+  const officerAcc = Number(accuracy) || 0;
+  const now = timestamp || new Date().toISOString();
+
+  const distance = calculateHaversineDistanceMeters(
+    officerLat,
+    officerLon,
+    gv.registered_latitude,
+    gv.registered_longitude
+  );
+
+  const geofenceRadius = gv.geofence_radius || 200;
+  const isInside = distance <= geofenceRadius;
+
+  if (isInside) {
+    const updated = await GeoVisit.findOneAndUpdate(
+      { application_id: req.params.appId },
+      {
+        $set: {
+          officer_id: actorId || gv.officer_id,
+          check_in_latitude: officerLat,
+          check_in_longitude: officerLon,
+          check_in_accuracy: officerAcc,
+          check_in_timestamp: now,
+          check_in_distance: distance,
+          status: 'LOCATION_VERIFIED',
+          device_info: device_info || {},
+          sync_status: 'SYNCED',
+          updated_at: now
+        }
+      },
+      { new: true }
+    ).lean();
+
+    logAudit('GeoVisit', updated.id, 'GEOVISIT_CHECKIN_SUCCESS', actorId, role, {
+      application_id: req.params.appId,
+      distance_meters: distance,
+      accuracy_meters: officerAcc,
+      geofence_radius: geofenceRadius,
+      coordinates: { latitude: officerLat, longitude: officerLon }
+    });
+
+    return res.json({
+      success: true,
+      allowed: true,
+      status: 'LOCATION_VERIFIED',
+      distance,
+      accuracy: officerAcc,
+      geofence_radius: geofenceRadius,
+      geovisit: updated
+    });
+  } else {
+    // Record failed attempt in audit log for statutory transparency
+    logAudit('GeoVisit', gv.id, 'GEOVISIT_CHECKIN_FAILED_OUTSIDE_GEOFENCE', actorId, role, {
+      application_id: req.params.appId,
+      distance_meters: distance,
+      accuracy_meters: officerAcc,
+      geofence_radius: geofenceRadius,
+      coordinates: { latitude: officerLat, longitude: officerLon }
+    });
+
+    return res.status(400).json({
+      success: false,
+      allowed: false,
+      status: 'OUTSIDE_GEOFENCE',
+      distance,
+      accuracy: officerAcc,
+      geofence_radius: geofenceRadius,
+      message: `You are approximately ${distance} m away from the registered verification location. Please move closer to the verification location (within ${geofenceRadius} m) before checking in.`
+    });
+  }
+});
+
+// 4. Authority / Administrator Override
+app.post('/api/geovisit/:appId/override', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  // Authority or Admin, or officer with reason if permitted
+  if (role !== ROLES.AUTHORITY && role !== ROLES.PLATFORM_ADMIN && role !== ROLES.VERIFIER) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot execute GeoVisit overrides.` });
+  }
+
+  const { reason, latitude, longitude, accuracy } = req.body;
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: 'A specific reason and justification is required to override GeoVisit location verification.' });
+  }
+
+  const gv = await getOrCreateGeoVisit(req.params.appId);
+  const now = new Date().toISOString();
+
+  let distance = gv.check_in_distance || 0;
+  if (latitude !== undefined && longitude !== undefined) {
+    distance = calculateHaversineDistanceMeters(latitude, longitude, gv.registered_latitude, gv.registered_longitude);
+  }
+
+  const updated = await GeoVisit.findOneAndUpdate(
+    { application_id: req.params.appId },
+    {
+      $set: {
+        is_override: true,
+        override_reason: reason.trim(),
+        override_by: actorId,
+        override_timestamp: now,
+        status: 'OVERRIDE_USED',
+        check_in_latitude: latitude !== undefined ? Number(latitude) : gv.check_in_latitude,
+        check_in_longitude: longitude !== undefined ? Number(longitude) : gv.check_in_longitude,
+        check_in_accuracy: accuracy !== undefined ? Number(accuracy) : gv.check_in_accuracy,
+        check_in_timestamp: gv.check_in_timestamp || now,
+        check_in_distance: distance,
+        updated_at: now
+      }
+    },
+    { new: true }
+  ).lean();
+
+  logAudit('GeoVisit', updated.id, 'GEOVISIT_OVERRIDE_APPLIED', actorId, role, {
+    application_id: req.params.appId,
+    reason: reason.trim(),
+    overridden_distance: distance
+  });
+
+  res.json({
+    success: true,
+    status: 'OVERRIDE_USED',
+    message: 'Authority override recorded in audit ledger. Field verification is unlocked.',
+    geovisit: updated
+  });
+});
+
+// 5. Officer Check-Out (Complete Visit)
+app.post('/api/geovisit/:appId/check-out', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  const gv = await getOrCreateGeoVisit(req.params.appId);
+  if (!gv) return res.status(404).json({ error: 'Visit record not found' });
+
+  const { latitude, longitude, accuracy, timestamp } = req.body;
+  const now = timestamp || new Date().toISOString();
+
+  let checkoutDistance = 0;
+  if (latitude !== undefined && longitude !== undefined) {
+    checkoutDistance = calculateHaversineDistanceMeters(
+      latitude,
+      longitude,
+      gv.registered_latitude,
+      gv.registered_longitude
+    );
+  }
+
+  const updated = await GeoVisit.findOneAndUpdate(
+    { application_id: req.params.appId },
+    {
+      $set: {
+        check_out_latitude: latitude !== undefined ? Number(latitude) : null,
+        check_out_longitude: longitude !== undefined ? Number(longitude) : null,
+        check_out_accuracy: accuracy !== undefined ? Number(accuracy) : null,
+        check_out_timestamp: now,
+        check_out_distance: checkoutDistance,
+        status: 'VISIT_COMPLETED',
+        updated_at: now
+      }
+    },
+    { new: true }
+  ).lean();
+
+  logAudit('GeoVisit', updated.id, 'GEOVISIT_CHECKOUT_COMPLETED', actorId, role, {
+    application_id: req.params.appId,
+    check_out_timestamp: now,
+    distance_meters: checkoutDistance,
+    accuracy_meters: accuracy
+  });
+
+  res.json({
+    success: true,
+    status: 'VISIT_COMPLETED',
+    message: 'Inspection field visit completed and closed.',
+    geovisit: updated
+  });
+});
+
+// 6. Record Location Exit Event During Active Inspection
+app.post('/api/geovisit/:appId/location-exit', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+  const { latitude, longitude, distance, timestamp, reason } = req.body;
+  const now = timestamp || new Date().toISOString();
+
+  const gv = await getOrCreateGeoVisit(req.params.appId);
+  const exitEvent = {
+    timestamp: now,
+    latitude: Number(latitude),
+    longitude: Number(longitude),
+    distance: Number(distance),
+    reason: reason || 'Movement outside geofence boundary'
+  };
+
+  const updated = await GeoVisit.findOneAndUpdate(
+    { application_id: req.params.appId },
+    {
+      $push: { exit_events: exitEvent },
+      $set: {
+        status: gv.status === 'VISIT_COMPLETED' ? 'VISIT_COMPLETED' : 'LOCATION_EXIT_DETECTED',
+        updated_at: now
+      }
+    },
+    { new: true }
+  ).lean();
+
+  logAudit('GeoVisit', updated.id, 'GEOVISIT_LOCATION_EXIT_DETECTED', actorId, role, {
+    application_id: req.params.appId,
+    distance_meters: distance,
+    reason: exitEvent.reason
+  });
+
+  res.json({
+    success: true,
+    status: updated.status,
+    message: 'Location exit event recorded.',
+    geovisit: updated
+  });
+});
+
+// 7. Offline Sync Batch Endpoint
+app.post('/api/geovisit/:appId/sync', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+  const { check_in, check_out, exit_events, status, is_override, override_reason } = req.body;
+  const now = new Date().toISOString();
+
+  const gv = await getOrCreateGeoVisit(req.params.appId);
+
+  const updateFields = {
+    sync_status: 'SYNCED',
+    updated_at: now
+  };
+
+  if (check_in) {
+    updateFields.check_in_latitude = check_in.latitude;
+    updateFields.check_in_longitude = check_in.longitude;
+    updateFields.check_in_accuracy = check_in.accuracy;
+    updateFields.check_in_timestamp = check_in.timestamp;
+    updateFields.check_in_distance = check_in.distance;
+  }
+
+  if (check_out) {
+    updateFields.check_out_latitude = check_out.latitude;
+    updateFields.check_out_longitude = check_out.longitude;
+    updateFields.check_out_accuracy = check_out.accuracy;
+    updateFields.check_out_timestamp = check_out.timestamp;
+    updateFields.check_out_distance = check_out.distance;
+  }
+
+  if (status) updateFields.status = status;
+  if (is_override !== undefined) {
+    updateFields.is_override = is_override;
+    if (override_reason) updateFields.override_reason = override_reason;
+  }
+
+  let query = { application_id: req.params.appId };
+  let updateOperation = { $set: updateFields };
+
+  if (Array.isArray(exit_events) && exit_events.length > 0) {
+    updateOperation.$push = { exit_events: { $each: exit_events } };
+  }
+
+  const updated = await GeoVisit.findOneAndUpdate(query, updateOperation, { new: true }).lean();
+
+  logAudit('GeoVisit', updated.id, 'GEOVISIT_OFFLINE_SYNC_PROCESSED', actorId, role, {
+    application_id: req.params.appId,
+    synced_items: { has_checkin: !!check_in, has_checkout: !!check_out, exit_events_count: exit_events?.length || 0 }
+  });
+
+  res.json({
+    success: true,
+    synced: true,
+    geovisit: updated
+  });
+});
+
+// 8. Update / Set Registered Verification Location & Geofence
+app.patch('/api/geovisit/:appId/location', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  const { latitude, longitude, address, geofence_radius } = req.body;
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: 'Latitude and longitude are required.' });
+  }
+
+  const now = new Date().toISOString();
+  const radius = Number(geofence_radius) || 200;
+
+  // Update Application
+  await Application.updateOne(
+    { id: req.params.appId },
+    {
+      $set: {
+        registered_latitude: Number(latitude),
+        registered_longitude: Number(longitude),
+        geofence_radius: radius,
+        location_address: address || undefined,
+        updated_at: now
+      }
+    }
+  );
+
+  // Update or create GeoVisit
+  const updated = await GeoVisit.findOneAndUpdate(
+    { application_id: req.params.appId },
+    {
+      $set: {
+        registered_latitude: Number(latitude),
+        registered_longitude: Number(longitude),
+        registered_address: address || undefined,
+        geofence_radius: radius,
+        updated_at: now
+      }
+    },
+    { upsert: true, new: true }
+  ).lean();
+
+  logAudit('GeoVisit', updated.id, 'GEOVISIT_LOCATION_UPDATED', actorId, role, {
+    application_id: req.params.appId,
+    coordinates: { latitude, longitude },
+    address,
+    geofence_radius: radius
+  });
+
+  res.json({
+    success: true,
+    message: 'Registered inspection coordinates updated successfully.',
+    geovisit: updated
+  });
+});
+
+// 9. Admin & Authority GeoVisit Operational Overview
+app.get('/api/geovisit/admin/overview', async (req, res) => {
+  const { role } = getActor(req);
+
+  if (role !== ROLES.PLATFORM_ADMIN && role !== ROLES.AUTHORITY) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access administrative GeoVisit monitoring.` });
+  }
+
+  // Load all applications in inspection pipeline
+  const applications = await Application.find({
+    status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED', 'CERTIFICATE_ISSUED'] }
+  }).sort({ updated_at: -1 }).lean();
+
+  const appIds = applications.map(a => a.id);
+  const geoVisits = await GeoVisit.find({ application_id: { $in: appIds } }).lean();
+  const geoMap = new Map(geoVisits.map(g => [g.application_id, g]));
+
+  const assignments = await Assignment.find({ application_id: { $in: appIds } }).lean();
+  const asns = new Map(assignments.map(a => [a.application_id, a]));
+
+  const officerIds = [...new Set(assignments.map(a => a.assigned_id).filter(Boolean))];
+  const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
+
+  const [officers, traders, appointments, verifications] = await Promise.all([
+    User.find({ id: { $in: officerIds } }).lean(),
+    User.find({ id: { $in: traderIds } }).lean(),
+    Appointment.find({ assignment_id: { $in: assignments.map(a => a.id) } }).lean(),
+    Verification.find({ application_id: { $in: appIds } }).lean()
+  ]);
+
+  const officerMap = new Map(officers.map(u => [u.id, u]));
+  const traderMap = new Map(traders.map(u => [u.id, u]));
+  const aptMap = new Map(appointments.map(a => [a.assignment_id, a]));
+  const verifMap = new Map(verifications.map(v => [v.application_id, v]));
+
+  const overview = applications.map(a => {
+    const gv = geoMap.get(a.id);
+    const asn = asns.get(a.id);
+    const apt = asn ? aptMap.get(asn.id) : null;
+    const officer = asn ? officerMap.get(asn.assigned_id) : null;
+    const trader = traderMap.get(a.trader_id);
+    const verif = verifMap.get(a.id);
+
+    return {
+      application_id: a.id,
+      application_no: a.application_no,
+      officer_id: officer ? officer.id : (asn ? asn.assigned_id : 'UNASSIGNED'),
+      officer_name: officer ? officer.full_name : 'Pending Assignment',
+      trader_name: trader ? trader.full_name : 'Commercial Trader',
+      location: a.location_address || (gv ? gv.registered_address : 'Registered Premises'),
+      registered_latitude: gv ? gv.registered_latitude : a.registered_latitude,
+      registered_longitude: gv ? gv.registered_longitude : a.registered_longitude,
+      scheduled_date: apt ? apt.scheduled_date : null,
+      time_slot: apt ? apt.time_slot : null,
+      check_in_time: gv ? gv.check_in_timestamp : null,
+      check_out_time: gv ? gv.check_out_timestamp : null,
+      distance_meters: gv ? gv.check_in_distance : null,
+      gps_accuracy: gv ? gv.check_in_accuracy : null,
+      geovisit_status: gv ? gv.status : 'NOT_STARTED',
+      verification_status: verif ? verif.status : a.status,
+      geofence_radius: gv ? gv.geofence_radius : (a.geofence_radius || 200),
+      is_override: gv ? gv.is_override : false,
+      override_reason: gv ? gv.override_reason : null,
+      exit_events_count: gv && gv.exit_events ? gv.exit_events.length : 0
+    };
+  });
+
+  res.json(overview);
 });
 
 // ==========================================

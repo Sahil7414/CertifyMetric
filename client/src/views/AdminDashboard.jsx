@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import StatusBadge from '../components/StatusBadge';
+import GeoVisitMap from '../components/GeoVisitMap';
 import { api } from '../api';
 
 export default function AdminDashboard({
@@ -11,6 +13,7 @@ export default function AdminDashboard({
   const [masterData, setMasterData] = useState({ categories: [] });
   const [systemHealth, setSystemHealth] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [geoVisits, setGeoVisits] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // New user modal/form state
@@ -27,21 +30,29 @@ export default function AdminDashboard({
   const [createError, setCreateError] = useState('');
   const [selectedAuditLog, setSelectedAuditLog] = useState(null);
 
+  // GeoVisit Administration state
+  const [selectedGeoVisitMap, setSelectedGeoVisitMap] = useState(null);
+  const [overrideModalCase, setOverrideModalCase] = useState(null);
+  const [adminOverrideReason, setAdminOverrideReason] = useState('');
+  const [submittingAdminOverride, setSubmittingAdminOverride] = useState(false);
+
   const loadAdminData = async () => {
     setLoading(true);
     try {
-      const [uList, oList, mData, health, logs] = await Promise.all([
+      const [uList, oList, mData, health, logs, gvList] = await Promise.all([
         api.getAdminUsers(),
         api.getAdminOrganizations(),
         api.getAdminMasterData(),
         api.getSystemHealth(),
-        api.getAuditLogs()
+        api.getAuditLogs(),
+        api.getGeoVisitAdminOverview().catch(() => [])
       ]);
       setUsers(Array.isArray(uList) ? uList : []);
       setOrganizations(Array.isArray(oList) ? oList : []);
       setMasterData(mData || { categories: [] });
       setSystemHealth(health);
       setAuditLogs(Array.isArray(logs) ? logs : []);
+      setGeoVisits(Array.isArray(gvList) ? gvList : []);
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
@@ -82,6 +93,24 @@ export default function AdminDashboard({
       setCreateError(err.message);
     } finally {
       setCreatingUser(false);
+    }
+  };
+
+  const handleAdminOverride = async (e) => {
+    e.preventDefault();
+    if (!overrideModalCase || !adminOverrideReason.trim()) return;
+    setSubmittingAdminOverride(true);
+    try {
+      await api.overrideGeoVisit(overrideModalCase.application_id, {
+        reason: adminOverrideReason.trim()
+      });
+      setOverrideModalCase(null);
+      setAdminOverrideReason('');
+      await loadAdminData();
+    } catch (err) {
+      alert('Override failed: ' + err.message);
+    } finally {
+      setSubmittingAdminOverride(false);
     }
   };
 
@@ -227,6 +256,15 @@ export default function AdminDashboard({
         >
           <span className="material-symbols-outlined text-[17px]">history_edu</span>
           Audit Ledger ({auditLogs.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('geovisit')}
+          className={`py-2 px-4 rounded-xl flex items-center gap-1.5 transition-all shrink-0 ${
+            activeTab === 'geovisit' ? 'bg-primary text-white shadow-xs font-bold' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[17px]">pin_drop</span>
+          GeoVisit Field Inspections ({geoVisits.length})
         </button>
       </div>
 
@@ -475,6 +513,318 @@ export default function AdminDashboard({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 6: GEOVISIT FIELD INSPECTIONS */}
+      {activeTab === 'geovisit' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <h3 className="font-bold text-slate-900 text-sm">GeoVisit Field Verification Telemetry & Evidence Ledger</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Statutory proof of physical arrival for LMO/GATC field visits before technical testing • Geofence threshold: 200m
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadAdminData}
+                className="px-3.5 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[16px]">sync</span>
+                Refresh Ledger
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs min-w-[950px]">
+              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Officer (Inspector)</th>
+                  <th className="py-3 px-4">Trader & Application</th>
+                  <th className="py-3 px-4">Registered Premises</th>
+                  <th className="py-3 px-4">Scheduled</th>
+                  <th className="py-3 px-4">Check-In</th>
+                  <th className="py-3 px-4">Check-Out</th>
+                  <th className="py-3 px-4">Distance & Accuracy</th>
+                  <th className="py-3 px-4">GeoVisit Status</th>
+                  <th className="py-3 px-4">Verification</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {geoVisits.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="py-12 text-center text-slate-400">
+                      No field inspection GeoVisit records found.
+                    </td>
+                  </tr>
+                ) : (
+                  geoVisits.map((gv) => {
+                    const isVerified = ['LOCATION_VERIFIED', 'VERIFICATION_IN_PROGRESS', 'LOCATION_EXIT_DETECTED', 'VISIT_COMPLETED', 'OVERRIDE_USED'].includes(gv.geovisit_status);
+                    return (
+                      <tr key={gv.application_id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{gv.officer_name || 'Unassigned'}</div>
+                          <span className="font-mono text-[10px] text-slate-400 block">{gv.officer_id || '—'}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-800">{gv.trader_name}</div>
+                          <span className="text-[10px] text-slate-500 block truncate max-w-[160px]">{gv.instrument_type}</span>
+                          <span className="font-mono text-[10px] text-primary">{gv.application_no}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-slate-700 truncate max-w-[180px]" title={gv.registered_address || gv.location}>
+                            {gv.registered_address || gv.location}
+                          </div>
+                          <span className="font-mono text-[10px] text-slate-400 block">
+                            {gv.registered_latitude ? `${Number(gv.registered_latitude).toFixed(4)}°N, ${Number(gv.registered_longitude).toFixed(4)}°E` : 'Coords missing'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="font-semibold text-slate-700 block">
+                            {gv.scheduled_date ? new Date(gv.scheduled_date).toLocaleDateString() : 'Pending'}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {gv.time_slot ? gv.time_slot.replace('_', ' ') : '11:00 AM'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {gv.check_in_time ? (
+                            <div>
+                              <span className="font-bold text-emerald-700 block">
+                                {new Date(gv.check_in_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {new Date(gv.check_in_time).toLocaleDateString()}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          {gv.check_out_time ? (
+                            <div>
+                              <span className="font-bold text-slate-900 block">
+                                {new Date(gv.check_out_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {new Date(gv.check_out_time).toLocaleDateString()}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          {gv.check_in_distance !== null && gv.check_in_distance !== undefined ? (
+                            <div>
+                              <span className="font-mono font-bold text-slate-900 block">
+                                {gv.check_in_distance} m
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                Acc: ±{gv.check_in_accuracy ?? 8} m
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-[11px]">Awaiting Check-in</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          {gv.geovisit_status === 'NOT_STARTED' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                              NOT STARTED
+                            </span>
+                          )}
+                          {gv.geovisit_status === 'CHECK_IN_PENDING' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                              CHECK-IN PENDING
+                            </span>
+                          )}
+                          {gv.geovisit_status === 'LOCATION_VERIFIED' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                              LOCATION VERIFIED
+                            </span>
+                          )}
+                          {gv.geovisit_status === 'VERIFICATION_IN_PROGRESS' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200 flex items-center gap-1 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-600 animate-pulse"></span>
+                              IN PROGRESS
+                            </span>
+                          )}
+                          {gv.geovisit_status === 'LOCATION_EXIT_DETECTED' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1 w-fit">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
+                              EXIT DETECTED
+                            </span>
+                          )}
+                          {gv.geovisit_status === 'VISIT_COMPLETED' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300">
+                              VISIT COMPLETED
+                            </span>
+                          )}
+                          {gv.geovisit_status === 'OVERRIDE_USED' && (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                              OVERRIDE USED
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <StatusBadge status={gv.verification_status} />
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setSelectedGeoVisitMap(gv)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition-colors flex items-center gap-1"
+                              title="Inspect Geofence Map"
+                            >
+                              <span className="material-symbols-outlined text-[15px] text-primary">map</span>
+                              Map
+                            </button>
+                            {!isVerified && (
+                              <button
+                                onClick={() => setOverrideModalCase(gv)}
+                                className="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-semibold text-[11px] transition-colors"
+                                title="Apply Statutory Authority Override"
+                              >
+                                Override
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* GeoVisit Map View Modal */}
+      {selectedGeoVisitMap && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-xl">map</span>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  GeoVisit Physical Arrival Inspection Map — {selectedGeoVisitMap.application_no}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedGeoVisitMap(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-600 flex justify-between items-center">
+              <div>
+                <strong>Officer:</strong> {selectedGeoVisitMap.officer_name || 'LMO Officer'} •{' '}
+                <strong>Trader:</strong> {selectedGeoVisitMap.trader_name}
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                Geofence: {selectedGeoVisitMap.geofence_radius || 200}m
+              </span>
+            </div>
+
+            <GeoVisitMap
+              registeredLat={selectedGeoVisitMap.registered_latitude || 19.1110}
+              registeredLng={selectedGeoVisitMap.registered_longitude || 72.9280}
+              registeredAddress={selectedGeoVisitMap.registered_address || selectedGeoVisitMap.location}
+              officerLat={selectedGeoVisitMap.check_in_latitude}
+              officerLng={selectedGeoVisitMap.check_in_longitude}
+              distance={selectedGeoVisitMap.check_in_distance}
+              accuracy={selectedGeoVisitMap.check_in_accuracy}
+              geofenceRadius={selectedGeoVisitMap.geofence_radius || 200}
+              status={selectedGeoVisitMap.geovisit_status}
+            />
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedGeoVisitMap(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition-colors"
+              >
+                Close Map
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Authority Override Modal */}
+      {overrideModalCase && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-slate-200 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-purple-950 font-bold text-base">
+                <span className="material-symbols-outlined text-purple-600">verified_user</span>
+                <span>Statutory Authority Override</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverrideModalCase(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 text-xs text-purple-900 space-y-1">
+              <div><strong>Application:</strong> {overrideModalCase.application_no}</div>
+              <div><strong>Trader:</strong> {overrideModalCase.trader_name}</div>
+              <div><strong>Officer:</strong> {overrideModalCase.officer_name}</div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Applying an override authorizes the officer to start technical verification even if physical GPS check-in was outside the geofence or obstructed. <strong>This override is permanently recorded in the immutable audit trail with your identity and justification.</strong>
+            </p>
+
+            <form onSubmit={handleAdminOverride} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Statutory Justification & Rationale <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={adminOverrideReason}
+                  onChange={(e) => setAdminOverrideReason(e.target.value)}
+                  placeholder="e.g. Inspector arrived at basement cold-storage site where GPS signal is attenuated. Verified via physical phone call and trader confirmation."
+                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setOverrideModalCase(null)}
+                  className="px-4 py-2 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingAdminOverride || !adminOverrideReason.trim()}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-md transition-all disabled:opacity-50"
+                >
+                  {submittingAdminOverride ? 'Submitting Override...' : 'Confirm Authority Override'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -1,4 +1,20 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+
+const NAV_ITEM_TRANSLATION_KEYS = {
+  'dashboard': 'nav.dashboard',
+  'instruments': 'nav.myInstruments',
+  'apply-verification': 'nav.applyVerification',
+  'applications': 'nav.myApplications',
+  'certificates': 'nav.certificates',
+  'public-qr-verify': 'nav.publicQrVerify',
+  'authority-dashboard': 'nav.operationsDashboard',
+  'audit-logs': 'nav.auditLogs',
+  'verifier-dashboard': 'nav.verifierDashboard',
+  'verification-workspace': 'nav.verificationWorkspace',
+  'gatc-dashboard': 'nav.gatcDashboard',
+  'admin-dashboard': 'nav.adminDashboard'
+};
 
 /**
  * Navigation item definition schema:
@@ -237,6 +253,7 @@ export default function AppSidebar({
   onCloseMobile,
   onLogout
 }) {
+  const { t } = useTranslation();
   const navItems = getNavigationConfig(currentRole, {
     onSelectTab,
     onOpenApplyModal,
@@ -311,7 +328,7 @@ export default function AppSidebar({
                   </span>
                 </div>
                 <p className="text-[10.5px] text-slate-400 truncate leading-tight mt-0.5 font-medium">
-                  Online Verification System
+                  {t('common.portalSubtitle', 'Online Verification System')}
                 </p>
               </div>
             )}
@@ -351,6 +368,7 @@ export default function AppSidebar({
           {navItems.map((item) => {
             const active = isItemActive(item);
             const showCollapsedTooltip = isCollapsed && !mobileOpen;
+            const itemLabel = t(NAV_ITEM_TRANSLATION_KEYS[item.id] || `nav.${item.id}`, item.label);
 
             return (
               <div key={item.id} className="relative group">
@@ -358,8 +376,8 @@ export default function AppSidebar({
                   type="button"
                   onClick={() => handleItemClick(item)}
                   aria-current={active ? 'page' : undefined}
-                  title={showCollapsedTooltip ? item.label : undefined}
-                  aria-label={item.label}
+                  title={showCollapsedTooltip ? itemLabel : undefined}
+                  aria-label={itemLabel}
                   className={`
                     w-full flex items-center rounded-lg text-xs font-semibold
                     transition-all duration-150 cursor-pointer select-none
@@ -383,7 +401,7 @@ export default function AppSidebar({
 
                   {(!isCollapsed || mobileOpen) && (
                     <span className="truncate text-left tracking-wide">
-                      {item.label}
+                      {itemLabel}
                     </span>
                   )}
                 </button>
@@ -400,7 +418,7 @@ export default function AppSidebar({
                     "
                   >
                     <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#001733]" />
-                    {item.label}
+                    {itemLabel}
                   </div>
                 )}
               </div>
@@ -440,11 +458,11 @@ export default function AppSidebar({
                     type="button"
                     onClick={onLogout}
                     className="px-2.5 py-1 text-rose-300 hover:text-white hover:bg-rose-500/20 rounded transition-colors flex items-center gap-1.5 font-semibold cursor-pointer focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-hidden"
-                    title="Sign Out of CertifyMetric"
-                    aria-label="Sign Out"
+                    title={t('nav.signOut', 'Sign Out')}
+                    aria-label={t('nav.signOut', 'Sign Out')}
                   >
                     <span className="material-symbols-outlined text-sm">logout</span>
-                    <span>Sign Out</span>
+                    <span>{t('nav.signOut', 'Sign Out')}</span>
                   </button>
                 )}
               </div>
@@ -481,8 +499,8 @@ export default function AppSidebar({
                     type="button"
                     onClick={onLogout}
                     className="w-9 h-9 rounded-lg text-rose-300 hover:text-white hover:bg-rose-500/20 flex items-center justify-center transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-hidden"
-                    title="Sign Out"
-                    aria-label="Sign Out"
+                    title={t('nav.signOut', 'Sign Out')}
+                    aria-label={t('nav.signOut', 'Sign Out')}
                   >
                     <span className="material-symbols-outlined text-lg">logout</span>
                   </button>
@@ -496,7 +514,7 @@ export default function AppSidebar({
                     "
                   >
                     <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#001733]" />
-                    Sign Out
+                    {t('nav.signOut', 'Sign Out')}
                   </div>
                 </div>
               )}

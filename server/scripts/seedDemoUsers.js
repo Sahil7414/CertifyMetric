@@ -31,7 +31,8 @@ import {
   VerificationChecklistResponse,
   VerificationReading,
   Certificate,
-  AuditLog
+  AuditLog,
+  GeoVisit
 } from '../models/index.js';
 
 export const DEMO_ACCOUNTS = [
@@ -971,7 +972,7 @@ export async function seedDemoData() {
       specs: { accuracy_class: 'III' },
       location: 'Counter 1, Main Grocery Section, Connaught Place, New Delhi',
       district: 'Central Delhi, Delhi',
-      status: 'UNDER_VERIFICATION',
+      status: 'REGISTERED',
       created_at: now
     },
     {
@@ -987,7 +988,7 @@ export async function seedDemoData() {
       specs: { accuracy_class: 'III' },
       location: 'Depot 4, Okhla Phase III, New Delhi',
       district: 'South East Delhi, Delhi',
-      status: 'VERIFIED',
+      status: 'REGISTERED',
       created_at: now
     },
     {
@@ -1003,7 +1004,7 @@ export async function seedDemoData() {
       specs: { accuracy_class: 'III' },
       location: 'Store 18, Terminal 3, IGI Airport, New Delhi',
       district: 'South West Delhi, Delhi',
-      status: 'VERIFIED',
+      status: 'REGISTERED',
       created_at: now
     },
     {
@@ -1019,7 +1020,7 @@ export async function seedDemoData() {
       specs: { accuracy_class: 'III' },
       location: 'Billing Counter 3, South Extension Part II, New Delhi',
       district: 'South Delhi, Delhi',
-      status: 'EXPIRING',
+      status: 'REGISTERED',
       created_at: now
     },
     {
@@ -1035,6 +1036,26 @@ export async function seedDemoData() {
       specs: { accuracy_class: 'III' },
       location: 'Fruit Market Stall 12, Azadpur Mandi, Delhi',
       district: 'North West Delhi, Delhi',
+      latitude: 28.7159,
+      longitude: 77.1788,
+      status: 'REGISTERED',
+      created_at: now
+    },
+    {
+      id: 'INST_GEO_THANE',
+      owner_id: 'USR_TRADER_01',
+      category_id: 'CAT_NAWI_III',
+      manufacturer: 'Precision Digital Weighers',
+      model: 'Electronic Weighing Machine EWM-30',
+      serial_number: 'SN-THANE-2026-00124',
+      max_capacity: '30 kg',
+      min_capacity: '100 g',
+      verification_scale_interval_e: '5 g',
+      specs: { accuracy_class: 'III' },
+      location: 'ABC Stores, Gokhale Road, Naupada, Thane, Maharashtra',
+      district: 'Thane, Maharashtra',
+      latitude: 19.1982,
+      longitude: 72.9636,
       status: 'REGISTERED',
       created_at: now
     }
@@ -1044,10 +1065,11 @@ export async function seedDemoData() {
     await Instrument.findOneAndUpdate({ id: inst.id }, { $set: inst }, { upsert: true });
   }
 
-  // 4. Applications
-  const applications = [
-    {
-      id: 'APP_DEMO_01',
+  // 4. Applications (Optional demo data — disabled by default to allow testing from scratch)
+  if (process.env.SEED_DEMO_APPLICATIONS === 'true') {
+    const applications = [
+      {
+        id: 'APP_DEMO_01',
       application_no: 'APP-2026-2641',
       instrument_id: 'INST_001',
       trader_id: 'USR_TRADER_01',
@@ -1146,6 +1168,28 @@ export async function seedDemoData() {
       payment: { payment_mode: 'ONLINE', payment_status: 'PENDING', amount: 300 },
       created_at: now,
       updated_at: now
+    },
+    {
+      id: 'APP_GEO_01',
+      application_no: 'LM-2026-00124',
+      instrument_id: 'INST_GEO_THANE',
+      trader_id: 'USR_TRADER_01',
+      request_type: 'INITIAL_VERIFICATION',
+      verification_type: 'ORIGINAL',
+      verification_mode: 'IN_SITU',
+      status: 'ASSIGNED',
+      contact_person: 'Ramesh Sharma',
+      contact_phone: '+91 98110 23456',
+      location_address: 'ABC Stores, Gokhale Road, Naupada, Thane, Maharashtra',
+      registered_latitude: 19.1982,
+      registered_longitude: 72.9636,
+      geofence_radius: 200,
+      documents: [],
+      fee_status: 'PAID',
+      fee_breakdown: { statutory_fee: 250, in_situ_fee: 200, user_fee: 50, total_fee: 500 },
+      payment: { payment_mode: 'ONLINE', payment_status: 'PAID', transaction_id: 'TXN_2026_THANE_01', amount: 500, paid_at: now },
+      created_at: now,
+      updated_at: now
     }
   ];
 
@@ -1194,6 +1238,16 @@ export async function seedDemoData() {
       is_override: 0,
       assigned_by: 'USR_AUTHORITY_01',
       created_at: now
+    },
+    {
+      id: 'ASN_GEO_01',
+      application_id: 'APP_GEO_01',
+      assigned_type: 'VERIFIER',
+      assigned_id: 'USR_VERIFIER_01',
+      recommended_id: 'USR_VERIFIER_01',
+      is_override: 0,
+      assigned_by: 'USR_AUTHORITY_01',
+      created_at: now
     }
   ];
 
@@ -1234,6 +1288,15 @@ export async function seedDemoData() {
       assignment_id: 'ASN_DEMO_05',
       scheduled_date: '2026-09-10',
       time_slot: '09:00 AM - 12:00 PM',
+      arrangement_type: 'FIELD_VISIT',
+      status: 'SCHEDULED',
+      created_at: now
+    },
+    {
+      id: 'APT_GEO_01',
+      assignment_id: 'ASN_GEO_01',
+      scheduled_date: '2026-09-23',
+      time_slot: '11:00 AM',
       arrangement_type: 'FIELD_VISIT',
       status: 'SCHEDULED',
       created_at: now
@@ -1415,7 +1478,53 @@ export async function seedDemoData() {
     await AuditLog.findOneAndUpdate({ id: log.id }, { $set: log }, { upsert: true });
   }
 
-  console.log('✔ Successfully seeded demo business data (instruments, applications, verifications, certificates) in MongoDB.');
+  // 11. GeoVisit Records (Location-Verified Field Inspection)
+  const geoVisits = [
+    {
+      id: 'GEO_DEMO_THANE',
+      application_id: 'APP_GEO_01',
+      officer_id: 'USR_VERIFIER_01',
+      registered_address: 'ABC Stores, Gokhale Road, Naupada, Thane, Maharashtra',
+      registered_latitude: 19.1982,
+      registered_longitude: 72.9636,
+      geofence_radius: 200,
+      check_in_latitude: 19.1985,
+      check_in_longitude: 72.9638,
+      check_in_accuracy: 8,
+      check_in_timestamp: new Date().toISOString(),
+      check_in_distance: 42,
+      status: 'LOCATION_VERIFIED',
+      is_override: false,
+      exit_events: [],
+      sync_status: 'SYNCED',
+      created_at: now,
+      updated_at: now
+    },
+    {
+      id: 'GEO_DEMO_05',
+      application_id: 'APP_DEMO_05',
+      officer_id: 'USR_VERIFIER_01',
+      registered_address: 'Fruit Market Stall 12, Azadpur Mandi, Delhi',
+      registered_latitude: 28.7159,
+      registered_longitude: 77.1788,
+      geofence_radius: 200,
+      status: 'NOT_STARTED',
+      is_override: false,
+      exit_events: [],
+      sync_status: 'SYNCED',
+      created_at: now,
+      updated_at: now
+    }
+  ];
+
+  for (const gv of geoVisits) {
+    await GeoVisit.findOneAndUpdate({ id: gv.id }, { $set: gv }, { upsert: true });
+  }
+
+    console.log('✔ Successfully seeded demo business data (instruments, applications, verifications, certificates) in MongoDB.');
+  } else {
+    console.log('ℹ Demo applications seeding skipped (SEED_DEMO_APPLICATIONS != true) to allow clean testing from scratch.');
+  }
 }
 
 export async function seedAllDemoData() {

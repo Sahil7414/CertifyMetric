@@ -27,6 +27,14 @@ export default function ApplicationReview({
   const [approving, setApproving] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
 
+  // GeoVisit Coordinates State
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [locLat, setLocLat] = useState('');
+  const [locLng, setLocLng] = useState('');
+  const [locAddress, setLocAddress] = useState('');
+  const [locRadius, setLocRadius] = useState(200);
+  const [updatingLocation, setUpdatingLocation] = useState(false);
+
   const loadCase = () => {
     if (applicationId) {
       setLoading(true);
@@ -37,6 +45,12 @@ export default function ApplicationReview({
         .then(([appData, wsData]) => {
           setApp(appData);
           setWorkspaceData(wsData);
+          if (appData) {
+            setLocLat(appData.registered_latitude || '');
+            setLocLng(appData.registered_longitude || '');
+            setLocAddress(appData.location || '');
+            setLocRadius(appData.geofence_radius || 200);
+          }
         })
         .catch(console.error)
         .finally(() => setLoading(false));
@@ -46,6 +60,26 @@ export default function ApplicationReview({
   useEffect(() => {
     loadCase();
   }, [applicationId]);
+
+  const handleSaveLocation = async (e) => {
+    e.preventDefault();
+    setUpdatingLocation(true);
+    try {
+      await api.updateGeoVisitLocation(applicationId, {
+        latitude: parseFloat(locLat),
+        longitude: parseFloat(locLng),
+        address: locAddress.trim(),
+        geofence_radius: parseInt(locRadius, 10) || 200
+      });
+      setShowLocationModal(false);
+      setActionSuccess('Registered inspection premises coordinates and geofence updated successfully.');
+      loadCase();
+    } catch (err) {
+      alert('Failed to update coordinates: ' + err.message);
+    } finally {
+      setUpdatingLocation(false);
+    }
+  };
 
   const handleProceed = async () => {
     setReviewing(true);
@@ -525,6 +559,52 @@ export default function ApplicationReview({
                 <span className="text-slate-500">Statutory Fee Status:</span>
                 <span className="font-bold text-emerald-600 uppercase">Paid (Treasury Verified)</span>
               </div>
+
+              {/* GeoVisit Registered Coordinates Particulars */}
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500 font-bold flex items-center gap-1">
+                    <span className="material-symbols-outlined text-primary text-sm">pin_drop</span>
+                    GeoVisit Inspection Coordinates:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocLat(app.registered_latitude || '');
+                      setLocLng(app.registered_longitude || '');
+                      setLocAddress(app.location || '');
+                      setLocRadius(app.geofence_radius || 200);
+                      setShowLocationModal(true);
+                    }}
+                    className="text-primary hover:underline text-[11px] font-bold"
+                  >
+                    {app.registered_latitude ? 'Calibrate / Edit' : 'Set Coordinates'}
+                  </button>
+                </div>
+                {app.registered_latitude ? (
+                  <div className="text-[11px] text-slate-700 bg-white p-2 rounded-lg border border-slate-200 font-mono flex justify-between">
+                    <span>{Number(app.registered_latitude).toFixed(4)}°N, {Number(app.registered_longitude).toFixed(4)}°E</span>
+                    <span className="text-slate-500 font-sans font-semibold">Geofence: {app.geofence_radius || 200}m</span>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 flex items-center justify-between">
+                    <span>Coordinates not yet calibrated for this premises.</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLocLat(app.registered_latitude || 19.1110);
+                        setLocLng(app.registered_longitude || 72.9280);
+                        setLocAddress(app.location || '');
+                        setLocRadius(200);
+                        setShowLocationModal(true);
+                      }}
+                      className="text-xs font-bold text-amber-900 underline ml-2"
+                    >
+                      Calibrate Now
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -764,6 +844,126 @@ export default function ApplicationReview({
                 {approving ? 'Authorizing...' : 'Approve & Issue Certificate'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Configure GeoVisit Registered Coordinates Modal */}
+      {showLocationModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-primary font-bold text-base">
+                <span className="material-symbols-outlined text-primary">add_location_alt</span>
+                <span>Configure Verification Coordinates</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLocationModal(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Define the physical GPS benchmark for this registered commercial premises. Assigned field officers must check in within the configured geofence threshold.
+            </p>
+
+            <form onSubmit={handleSaveLocation} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Premises Address</label>
+                <input
+                  type="text"
+                  required
+                  value={locAddress}
+                  onChange={(e) => setLocAddress(e.target.value)}
+                  placeholder="Premises address"
+                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Latitude (°N) *</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    required
+                    value={locLat}
+                    onChange={(e) => setLocLat(e.target.value)}
+                    placeholder="e.g. 19.1982"
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Longitude (°E) *</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    required
+                    value={locLng}
+                    onChange={(e) => setLocLng(e.target.value)}
+                    placeholder="e.g. 72.9636"
+                    className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Geofence Radius (metres) — Default: 200m
+                </label>
+                <input
+                  type="number"
+                  min="50"
+                  max="1000"
+                  required
+                  value={locRadius}
+                  onChange={(e) => setLocRadius(e.target.value)}
+                  placeholder="200"
+                  className="w-full p-2.5 border border-slate-300 rounded-xl text-xs font-mono outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+
+              <div className="pt-1 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        (p) => {
+                          setLocLat(p.coords.latitude.toFixed(6));
+                          setLocLng(p.coords.longitude.toFixed(6));
+                        },
+                        (err) => alert('Could not get device location: ' + err.message)
+                      );
+                    }
+                  }}
+                  className="text-primary hover:underline font-bold text-xs flex items-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[15px]">my_location</span>
+                  Use Current Device GPS
+                </button>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingLocation}
+                  className="px-5 py-2 bg-primary hover:bg-primary-container text-white font-bold rounded-xl text-xs shadow-md transition-all disabled:opacity-50"
+                >
+                  {updatingLocation ? 'Saving Coordinates...' : 'Save Registered Location'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -18,6 +18,7 @@ const userSchema = new Schema({
   // categories the officer may be assigned — see server/verificationPolicy.js.
   designation: { type: String },
   avatar: { type: String },
+  language_preference: { type: String, default: 'en' },
   is_demo: { type: Number, default: 0 },
   active: { type: Boolean, default: true },
   created_at: { type: String, default: () => new Date().toISOString() },
@@ -105,6 +106,8 @@ const instrumentSchema = new Schema({
   // used to hard-filter eligible LMOs/GATCs — kept separate from the free-text
   // `location` (which is a human-readable address, not something to match on).
   district: { type: String, required: true, index: true },
+  latitude: { type: Number },
+  longitude: { type: Number },
   status: { type: String, default: 'REGISTERED', index: true },
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
@@ -123,6 +126,9 @@ const applicationSchema = new Schema({
   contact_person: { type: String },
   contact_phone: { type: String },
   location_address: { type: String },
+  registered_latitude: { type: Number },
+  registered_longitude: { type: Number },
+  geofence_radius: { type: Number, default: 200 },
   status: { type: String, default: 'SUBMITTED', index: true },
   documents: { type: Schema.Types.Mixed, default: [] },
   fee_status: { type: String, default: 'PAID' }, // 'PAID' | 'PENDING' | 'EXEMPTED'
@@ -239,6 +245,51 @@ const auditLogSchema = new Schema({
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
 
+// 16. GeoVisit — Location-Verified Field Inspection Record
+const geoVisitSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  application_id: { type: String, required: true, index: true },
+  verification_id: { type: String, index: true },
+  officer_id: { type: String, required: true, index: true },
+  registered_address: { type: String },
+  registered_latitude: { type: Number, required: true },
+  registered_longitude: { type: Number, required: true },
+  geofence_radius: { type: Number, default: 200 },
+  check_in_latitude: { type: Number },
+  check_in_longitude: { type: Number },
+  check_in_accuracy: { type: Number },
+  check_in_timestamp: { type: String },
+  check_in_distance: { type: Number },
+  check_out_latitude: { type: Number },
+  check_out_longitude: { type: Number },
+  check_out_accuracy: { type: Number },
+  check_out_timestamp: { type: String },
+  check_out_distance: { type: Number },
+  status: {
+    type: String,
+    enum: [
+      'NOT_STARTED',
+      'CHECK_IN_PENDING',
+      'LOCATION_VERIFIED',
+      'VERIFICATION_IN_PROGRESS',
+      'LOCATION_EXIT_DETECTED',
+      'VISIT_COMPLETED',
+      'OVERRIDE_USED'
+    ],
+    default: 'NOT_STARTED',
+    index: true
+  },
+  is_override: { type: Boolean, default: false },
+  override_reason: { type: String },
+  override_by: { type: String },
+  override_timestamp: { type: String },
+  exit_events: { type: [Schema.Types.Mixed], default: [] },
+  device_info: { type: Schema.Types.Mixed, default: {} },
+  sync_status: { type: String, default: 'SYNCED' }, // 'SYNCED' | 'PENDING_SYNC' | 'SYNC_FAILED'
+  created_at: { type: String, default: () => new Date().toISOString() },
+  updated_at: { type: String, default: () => new Date().toISOString() }
+}, { versionKey: false, timestamps: false });
+
 export const User = mongoose.models.User || mongoose.model('User', userSchema, 'users');
 export const UserSession = mongoose.models.UserSession || mongoose.model('UserSession', userSessionSchema, 'user_sessions');
 export const Organization = mongoose.models.Organization || mongoose.model('Organization', organizationSchema, 'organizations');
@@ -254,3 +305,5 @@ export const VerificationReading = mongoose.models.VerificationReading || mongoo
 export const VerificationEvidence = mongoose.models.VerificationEvidence || mongoose.model('VerificationEvidence', verificationEvidenceSchema, 'verification_evidence');
 export const Certificate = mongoose.models.Certificate || mongoose.model('Certificate', certificateSchema, 'certificates');
 export const AuditLog = mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema, 'audit_logs');
+export const GeoVisit = mongoose.models.GeoVisit || mongoose.model('GeoVisit', geoVisitSchema, 'geo_visits');
+

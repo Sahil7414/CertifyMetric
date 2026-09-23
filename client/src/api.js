@@ -104,6 +104,11 @@ export const api = {
     const data = await r.json();
     return r.ok ? data : null;
   }).catch(() => null),
+  updateLanguagePreference: (language) => fetch(`${API_BASE}/auth/language`, {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify({ language })
+  }).then(r => r.json()).catch(() => ({ success: false })),
 
   // Instruments (Trader)
   getInstrumentCategories: () => fetch(`${API_BASE}/instrument-categories`, {
@@ -413,5 +418,91 @@ export const api = {
   }).then(async r => {
     const data = await r.json();
     return r.ok ? data : null;
-  }).catch(() => null)
+  }).catch(() => null),
+
+  // GeoVisit API Methods
+  getGeoVisitConfig: () => fetch(`${API_BASE}/geovisit/config`, {
+    headers: getHeaders()
+  }).then(r => r.json()).catch(() => ({ default_geofence_radius: 200 })),
+
+  getGeoVisit: (appId) => fetch(`${API_BASE}/geovisit/${appId}`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to load GeoVisit');
+    return json;
+  }),
+
+  checkInGeoVisit: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/check-in`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) {
+      const err = new Error(json.message || json.error || 'Check-in failed');
+      err.distance = json.distance;
+      err.geofence_radius = json.geofence_radius;
+      err.status = json.status;
+      throw err;
+    }
+    return json;
+  }),
+
+  checkOutGeoVisit: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/check-out`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Check-out failed');
+    return json;
+  }),
+
+  overrideGeoVisit: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/override`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Override failed');
+    return json;
+  }),
+
+  recordGeoVisitExit: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/location-exit`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to record location exit');
+    return json;
+  }),
+
+  syncOfflineGeoVisit: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/sync`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Sync failed');
+    return json;
+  }),
+
+  updateVerificationLocation: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/location`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to update location');
+    return json;
+  }),
+
+  getGeoVisitAdminOverview: () => fetch(`${API_BASE}/geovisit/admin/overview`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return Array.isArray(data) ? data : [];
+  }).catch(() => [])
 };

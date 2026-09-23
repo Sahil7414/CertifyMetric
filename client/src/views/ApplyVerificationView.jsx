@@ -111,6 +111,76 @@ export default function ApplyVerificationView({
     return pendingPaymentApplication?.remarks || resubmitApplicationData?.remarks || '';
   });
 
+  // 4b. Precise Geotagging & Coordinates
+  const [geoCoords, setGeoCoords] = useState(() => ({
+    latitude: pendingPaymentApplication?.registered_latitude || resubmitApplicationData?.registered_latitude || '',
+    longitude: pendingPaymentApplication?.registered_longitude || resubmitApplicationData?.registered_longitude || '',
+    accuracy: null
+  }));
+  const [acquiringGps, setAcquiringGps] = useState(false);
+  const [gpsError, setGpsError] = useState('');
+  const [gpsSuccessMsg, setGpsSuccessMsg] = useState('');
+
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      setGpsError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setAcquiringGps(true);
+    setGpsError('');
+    setGpsSuccessMsg('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lon = Number(pos.coords.longitude.toFixed(6));
+        const acc = Math.round(pos.coords.accuracy);
+
+        setGeoCoords({
+          latitude: lat,
+          longitude: lon,
+          accuracy: acc
+        });
+        setAcquiringGps(false);
+        setGpsSuccessMsg(`GPS Acquired: ${lat}° N, ${lon}° E (Accuracy: ±${acc}m)`);
+
+        // Reverse geocode via OpenStreetMap Nominatim for accurate address autofill
+        try {
+          const resp = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data && data.display_name) {
+              const locality = data.address?.suburb || data.address?.neighbourhood || data.address?.city || data.address?.town || data.address?.county || '';
+              const state = data.address?.state || '';
+              if (!premisesAddress || premisesAddress.includes('Registered Premises')) {
+                setPremisesAddress(data.display_name);
+              }
+              setGpsSuccessMsg(`GPS Acquired: ${locality ? `${locality}, ` : ''}${state || 'Precise Coordinates'} (Accuracy: ±${acc}m)`);
+            }
+          }
+        } catch (e) {
+          // Address reverse-geocoding is optional; coordinates are already set
+        }
+      },
+      (err) => {
+        setAcquiringGps(false);
+        let msg = 'Failed to acquire device GPS.';
+        if (err.code === 1) msg = 'Location access denied. Please click the lock icon in your browser URL bar and allow Location access.';
+        else if (err.code === 2) msg = 'Position unavailable. Check your network or device GPS.';
+        else if (err.code === 3) msg = 'Location request timed out. Please try again.';
+        setGpsError(msg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0
+      }
+    );
+  };
+
   // 5. Documents / Evidence
   const [documents, setDocuments] = useState(() => {
     if (Array.isArray(pendingPaymentApplication?.documents) && pendingPaymentApplication.documents.length > 0) {
@@ -205,6 +275,14 @@ export default function ApplyVerificationView({
     if (!selectedInst || lastPrefilledInstId.current === selectedInst.id) return;
     lastPrefilledInstId.current = selectedInst.id;
     setPremisesAddress([selectedInst.location, selectedInst.district].filter(Boolean).join(', '));
+    if (selectedInst.latitude && selectedInst.longitude && !geoCoords.latitude) {
+      setGeoCoords({
+        latitude: selectedInst.latitude,
+        longitude: selectedInst.longitude,
+        accuracy: null
+      });
+      setGpsSuccessMsg(`Inherited registered coordinates from ${selectedInst.model || 'instrument'}.`);
+    }
   }, [selectedInst]);
 
   // If preselected instrument passed, use it
@@ -346,6 +424,9 @@ export default function ApplyVerificationView({
           contact_person: contactPerson,
           contact_phone: contactPhone,
           location_address: premisesAddress,
+          registered_latitude: geoCoords.latitude ? Number(geoCoords.latitude) : undefined,
+          registered_longitude: geoCoords.longitude ? Number(geoCoords.longitude) : undefined,
+          geofence_radius: 200,
           preferred_date: preferredDate
         });
         setCreatedApp(result.application);
@@ -365,6 +446,9 @@ export default function ApplyVerificationView({
           contact_person: contactPerson,
           contact_phone: contactPhone,
           location_address: premisesAddress,
+          registered_latitude: geoCoords.latitude ? Number(geoCoords.latitude) : undefined,
+          registered_longitude: geoCoords.longitude ? Number(geoCoords.longitude) : undefined,
+          geofence_radius: 200,
           remarks: remarks.trim(),
           documents: documents,
           fee_breakdown: feeBreakdown,
@@ -1016,6 +1100,98 @@ export default function ApplyVerificationView({
                   </span>
                 </div>
 
+                {/* Statutory Precise Geotagging & Geofence Coordinates */}
+                <div className="sm:col-span-2 p-4 bg-gradient-to-br from-slate-50 to-blue-50/40 border border-blue-200/80 rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                        <span className="material-symbols-outlined text-base text-primary">my_location</span>
+                        <span>Precise Premises GPS Geotagging (Statutory Geofence)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Detects your live location (e.g. Vikhroli) so the verification officer is routed accurately to your exact premises.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleDetectLocation}
+                      disabled={acquiringGps}
+                      className="px-3.5 py-2 bg-primary hover:bg-primary-container text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-60"
+                      title="Acquires live device GPS coordinates to geotag this verification application"
+                    >
+                      <span className={`material-symbols-outlined text-base ${acquiringGps ? 'animate-spin' : ''}`}>
+                        {acquiringGps ? 'progress_activity' : 'my_location'}
+                      </span>
+                      <span>{acquiringGps ? 'Detecting Device GPS...' : 'Detect Exact GPS Location'}</span>
+                    </button>
+                  </div>
+
+                  {gpsSuccessMsg && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-emerald-600 text-base">verified</span>
+                        <span className="font-semibold">{gpsSuccessMsg}</span>
+                      </div>
+                      {geoCoords.latitude && geoCoords.longitude && (
+                        <a
+                          href={`https://www.openstreetmap.org/?mlat=${geoCoords.latitude}&mlon=${geoCoords.longitude}#map=18/${geoCoords.latitude}/${geoCoords.longitude}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-emerald-700 font-bold hover:underline inline-flex items-center gap-0.5 shrink-0 text-[10.5px]"
+                        >
+                          View Map <span className="material-symbols-outlined text-xs">open_in_new</span>
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {gpsError && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-amber-600 text-base">warning</span>
+                      <span>{gpsError}</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div>
+                      <label className="block text-[11px] text-slate-600 font-semibold mb-1">
+                        Latitude (°N)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={geoCoords.latitude || ''}
+                        onChange={(e) => setGeoCoords(prev => ({ ...prev, latitude: e.target.value }))}
+                        placeholder="e.g. 19.113600"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 font-semibold mb-1">
+                        Longitude (°E)
+                      </label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={geoCoords.longitude || ''}
+                        onChange={(e) => setGeoCoords(prev => ({ ...prev, longitude: e.target.value }))}
+                        placeholder="e.g. 72.928500"
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-600 font-semibold mb-1">
+                        Statutory Geofence
+                      </label>
+                      <div className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700 flex items-center justify-between">
+                        <span className="font-bold text-emerald-700">200 meters</span>
+                        <span className="text-[10px] text-slate-400 font-sans">Verification Radius</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="sm:col-span-2">
                   <label className="block text-slate-700 font-bold mb-1">Special Instructions / Remarks</label>
                   <input
@@ -1203,6 +1379,14 @@ export default function ApplyVerificationView({
                 <div className="p-3.5 bg-slate-50 flex justify-between">
                   <span className="text-slate-500">Premises / Inspection Site:</span>
                   <strong className="text-slate-900 max-w-xs text-right">{premisesAddress || '—'}</strong>
+                </div>
+                <div className="p-3.5 flex justify-between">
+                  <span className="text-slate-500">GPS Geotag Coordinates:</span>
+                  <strong className="text-slate-900 font-mono text-[11px]">
+                    {geoCoords.latitude && geoCoords.longitude
+                      ? `${geoCoords.latitude}° N, ${geoCoords.longitude}° E (200m Geofence)`
+                      : 'Inherited / General district coordinates'}
+                  </strong>
                 </div>
                 <div className="p-3.5 flex justify-between">
                   <span className="text-slate-500">Preferred Date & Contact:</span>

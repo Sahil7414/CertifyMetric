@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 export default function PublicCertificateVerification({
   token,
   onExit
 }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -42,22 +45,25 @@ export default function PublicCertificateVerification({
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans antialiased text-slate-800">
       {/* 1. Official Government Header Stripe */}
       <header className="bg-[#002046] text-white py-3 px-4 shadow-sm">
-        <div className="max-w-xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-amber-400 text-2xl">balance</span>
-            <div>
-              <div className="text-xs font-bold tracking-wide uppercase">Government of India</div>
-              <div className="text-[10px] text-slate-300">Department of Consumer Affairs • Legal Metrology Division</div>
+        <div className="max-w-xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="material-symbols-outlined text-amber-400 text-2xl shrink-0">balance</span>
+            <div className="min-w-0">
+              <div className="text-xs font-bold tracking-wide uppercase truncate">{t('nav.govIndia')}</div>
+              <div className="text-[10px] text-slate-300 truncate">{t('nav.deptTitle')}</div>
             </div>
           </div>
-          {onExit && (
-            <button
-              onClick={onExit}
-              className="text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded transition-colors"
-            >
-              Close
-            </button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            <LanguageSwitcher />
+            {onExit && (
+              <button
+                onClick={onExit}
+                className="text-xs bg-white/10 hover:bg-white/20 text-white px-2.5 py-1 rounded transition-colors"
+              >
+                {t('common.close')}
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -68,9 +74,9 @@ export default function PublicCertificateVerification({
             <div className="w-16 h-16 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto animate-spin">
               <span className="material-symbols-outlined text-3xl">progress_activity</span>
             </div>
-            <h2 className="text-base font-bold text-slate-900">Authenticating Certificate</h2>
+            <h2 className="text-base font-bold text-slate-900">{t('certificate.authenticating')}</h2>
             <p className="text-xs text-slate-500 max-w-xs mx-auto">
-              Querying official National Legal Metrology digital ledger for reference token...
+              {t('certificate.queryingLedger')}
             </p>
           </div>
         )}
@@ -86,11 +92,11 @@ export default function PublicCertificateVerification({
                   <span className="material-symbols-outlined text-3xl font-bold">verified</span>
                 </div>
                 <div className="text-xs uppercase tracking-widest font-extrabold text-emerald-100">
-                  Authentication Succeeded
+                  {t('certificate.authSucceeded')}
                 </div>
-                <h1 className="text-2xl font-black tracking-tight">CERTIFICATE VALID</h1>
+                <h1 className="text-2xl font-black tracking-tight">{t('certificate.validTitle')}</h1>
                 <p className="text-xs text-emerald-50 max-w-sm mx-auto leading-relaxed pt-1">
-                  This weighing/measuring instrument is actively certified for commercial use under the Legal Metrology Act, 2009.
+                  {t('certificate.validDesc')}
                 </p>
               </div>
             )}
@@ -101,11 +107,11 @@ export default function PublicCertificateVerification({
                   <span className="material-symbols-outlined text-3xl font-bold">history_toggle_off</span>
                 </div>
                 <div className="text-xs uppercase tracking-widest font-extrabold text-amber-100">
-                  Statutory Term Concluded
+                  {t('certificate.statutoryConcluded')}
                 </div>
-                <h1 className="text-2xl font-black tracking-tight">CERTIFICATE EXPIRED</h1>
+                <h1 className="text-2xl font-black tracking-tight">{t('certificate.expiredTitle')}</h1>
                 <p className="text-xs text-amber-50 max-w-sm mx-auto leading-relaxed pt-1">
-                  This certificate was genuine, but its statutory validity period has passed. Re-verification is required before commercial use.
+                  {t('certificate.expiredDesc')}
                 </p>
               </div>
             )}
@@ -116,11 +122,11 @@ export default function PublicCertificateVerification({
                   <span className="material-symbols-outlined text-3xl font-bold">gpp_bad</span>
                 </div>
                 <div className="text-xs uppercase tracking-widest font-extrabold text-rose-100">
-                  Authentication Failed
+                  {t('certificate.authFailed')}
                 </div>
-                <h1 className="text-2xl font-black tracking-tight">CERTIFICATE NOT FOUND</h1>
+                <h1 className="text-2xl font-black tracking-tight">{t('certificate.notFoundTitle')}</h1>
                 <p className="text-xs text-rose-100 max-w-sm mx-auto leading-relaxed pt-1">
-                  The scanned QR token does not correspond to any registered certificate in the official digital repository.
+                  {t('certificate.notFoundDesc')}
                 </p>
               </div>
             )}
@@ -133,59 +139,59 @@ export default function PublicCertificateVerification({
                 {/* Certificate Number Header */}
                 <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Certificate Number</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">{t('certificate.number')}</span>
                     <span className="font-mono text-base font-extrabold text-primary">{data.certificate_no}</span>
                   </div>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-extrabold uppercase ${
                     isValid ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                   }`}>
-                    {data.status}
+                    {t('status.' + data.status, { defaultValue: data.status })}
                   </span>
                 </div>
 
                 {/* Instrument Particulars */}
                 <div className="space-y-2.5 text-xs">
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Verified Equipment:</span>
+                    <span className="text-slate-500">{t('certificate.verifiedEquipment')}:</span>
                     <strong className="text-slate-900 text-right">{data.instrument?.manufacturer} {data.instrument?.model}</strong>
                   </div>
 
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Serial Number:</span>
+                    <span className="text-slate-500">{t('certificate.serialNumber')}:</span>
                     <span className="font-mono font-bold text-primary">{data.instrument?.serial_number}</span>
                   </div>
 
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Category / Class:</span>
+                    <span className="text-slate-500">{t('certificate.categoryClass')}:</span>
                     <span className="text-slate-800 font-medium text-right">{data.instrument?.category}</span>
                   </div>
 
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Capacity & Interval:</span>
+                    <span className="text-slate-500">{t('certificate.capacityInterval')}:</span>
                     <span className="font-medium text-slate-900">
                       {data.instrument?.max_capacity} (e = {data.instrument?.verification_scale_interval_e})
                     </span>
                   </div>
 
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Verification Date:</span>
+                    <span className="text-slate-500">{t('certificate.verificationDate')}:</span>
                     <span className="font-semibold text-slate-800">{new Date(data.issue_date).toLocaleDateString()}</span>
                   </div>
 
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Statutory Valid Until:</span>
+                    <span className="text-slate-500">{t('certificate.statutoryValidUntil')}:</span>
                     <strong className={isValid ? 'text-emerald-700 font-extrabold' : 'text-rose-600 font-extrabold'}>
                       {new Date(data.valid_until).toLocaleDateString()}
                     </strong>
                   </div>
 
                   <div className="flex justify-between py-1 border-b border-slate-100">
-                    <span className="text-slate-500">Commercial Establishment:</span>
+                    <span className="text-slate-500">{t('certificate.commercialEstablishment')}:</span>
                     <span className="text-slate-800 font-semibold text-right">{data.business?.enterprise_name}</span>
                   </div>
 
                   <div className="flex justify-between py-1">
-                    <span className="text-slate-500">Issuing Authority:</span>
+                    <span className="text-slate-500">{t('certificate.issuingAuthority')}:</span>
                     <span className="text-slate-700 text-right">{data.verification_authority?.authority || 'Legal Metrology Division'}</span>
                   </div>
                 </div>
@@ -203,19 +209,19 @@ export default function PublicCertificateVerification({
             {/* Error / Not Found Guidance Card */}
             {isNotFound && (
               <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3 text-xs text-slate-600">
-                <h4 className="font-bold text-slate-900 text-sm">Consumer Protection Advisory</h4>
+                <h4 className="font-bold text-slate-900 text-sm">{t('certificate.consumerAdvisory')}</h4>
                 <p className="leading-relaxed">
-                  If this instrument is being used for commercial trade transactions, please request the establishment to present their physical Certificate of Verification (Form 6) or report non-compliance to the State Legal Metrology Department.
+                  {t('certificate.consumerAdvisoryText')}
                 </p>
                 <div className="p-3 bg-slate-50 rounded-lg font-mono text-[11px] text-slate-500 break-all">
-                  Reference Token: {token}
+                  {t('certificate.referenceToken')}: {token}
                 </div>
               </div>
             )}
 
             {/* Verification Timestamp */}
             <div className="text-center text-[10px] text-slate-400 py-2">
-              National Metrology Registry • Verification generated at {new Date().toLocaleTimeString()}
+              {t('certificate.registryTimestamp')} {new Date().toLocaleTimeString()}
             </div>
           </div>
         )}

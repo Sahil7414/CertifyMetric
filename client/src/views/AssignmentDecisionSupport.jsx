@@ -119,6 +119,11 @@ export default function AssignmentDecisionSupport({
         const preferred = res.application?.preferred_date;
         const today = new Date().toISOString().split('T')[0];
         if (preferred && preferred >= today) setScheduleDate(preferred);
+        // If no officer is strictly eligible, automatically open the list for Authority override
+        const hasEligible = (res.candidates || []).some(c => c.is_eligible);
+        if (!hasEligible) {
+          setShowIneligible(true);
+        }
       })
       .catch((err) => setLoadError(err.message || 'Could not load candidates.'))
       .finally(() => setLoading(false));
@@ -126,7 +131,8 @@ export default function AssignmentDecisionSupport({
 
   const eligible = useMemo(() => (data?.candidates || []).filter(c => c.is_eligible), [data]);
   const ineligible = useMemo(() => (data?.candidates || []).filter(c => !c.is_eligible), [data]);
-  const selected = eligible.find(c => c.id === selectedId) || null;
+  // Allow selecting any candidate (eligible or authority override from ineligible)
+  const selected = useMemo(() => (data?.candidates || []).find(c => c.id === selectedId) || null, [data, selectedId]);
 
   if (loading) {
     return (
@@ -148,7 +154,8 @@ export default function AssignmentDecisionSupport({
 
   const { application, instrument, requirement } = data;
   const isReassign = Boolean(data.current_assignee_id);
-  const deviates = Boolean(data.recommended_id) && selectedId !== data.recommended_id;
+  const isOverrideAssignment = Boolean(selected && !selected.is_eligible);
+  const deviates = Boolean(selected && ((data.recommended_id && selectedId !== data.recommended_id) || isOverrideAssignment));
   const needsReason = deviates && !reason.trim();
   const isInSitu = application.verification_mode === 'IN_SITU';
   const canSubmit = Boolean(selected) && !needsReason && Boolean(scheduleDate) && !submitting;
@@ -196,7 +203,7 @@ export default function AssignmentDecisionSupport({
           </span>
         </div>
         <p className="text-sm text-slate-500 mt-1">
-          Only officers who are legally allowed to verify this instrument are listed, ranked by workload, location and availability.
+          Officers are ranked by jurisdiction, workload, location and availability. When no officer is deployed in a jurisdiction, the Authority can assign out-of-area officers under an administrative override.
         </p>
       </div>
 
@@ -247,7 +254,7 @@ export default function AssignmentDecisionSupport({
             </div>
           </div>
           <p className="text-[11px] text-slate-500 mt-2">
-            Every officer must also be active and have the instrument's district in their notified jurisdiction.
+            Standard eligibility requires active status and jurisdiction over {data.instrument_district || 'the instrument district'}. When no local officer exists, the Authority may assign additional charge.
           </p>
         </div>
       </div>
@@ -264,12 +271,14 @@ export default function AssignmentDecisionSupport({
         </div>
 
         {eligible.length === 0 ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-            <span className="material-symbols-outlined text-3xl text-amber-600">person_off</span>
-            <p className="font-bold text-amber-900 text-sm mt-1">No officer can take this case right now</p>
-            <p className="text-xs text-amber-800 mt-1 max-w-lg mx-auto">
-              Nobody meets all the requirements above. Check the reasons below. Usually you'll need to add an officer
-              of the right designation in {data.instrument_district || 'this district'}, or give an officer additional charge of it.
+          <div className="bg-amber-50/80 border border-amber-300 rounded-2xl p-6 text-center space-y-2">
+            <div className="w-12 h-12 mx-auto rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+              <span className="material-symbols-outlined text-2xl">gavel</span>
+            </div>
+            <p className="font-bold text-amber-950 text-base">No strictly eligible officer in {data.instrument_district || 'this area'}</p>
+            <p className="text-xs text-amber-900 max-w-xl mx-auto leading-relaxed">
+              No officer is officially notified for {data.instrument_district || 'this jurisdiction'}. However, as an <strong>Authority Officer</strong>,
+              you may exercise statutory discretion to assign an out-of-jurisdiction or adjacent-district officer below under an <strong>Administrative Override / Additional Charge</strong>.
             </p>
           </div>
         ) : (
@@ -287,63 +296,153 @@ export default function AssignmentDecisionSupport({
         )}
       </section>
 
-      {/* Reason when not following the recommendation */}
-      {deviates && selected && (
-        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 space-y-2 animate-in fade-in duration-200">
-          <label htmlFor="override-reason" className="flex items-center gap-2 text-sm font-bold text-amber-900">
-            <span className="material-symbols-outlined text-[18px] text-amber-700">edit_note</span>
-            Why {selected.full_name} instead of the recommended officer?
-          </label>
-          <input
-            id="override-reason"
-            type="text"
-            placeholder="e.g. Recommended officer is on leave that week"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg border border-amber-300 bg-white focus:ring-2 focus:ring-amber-500 outline-none text-sm text-slate-800"
-          />
-          <p className="text-[11px] text-amber-800">Required. This is recorded in the audit log.</p>
-        </div>
-      )}
-
-      {/* Ineligible candidates (collapsed) */}
+      {/* Ineligible candidates (collapsible with selection for Authority override) */}
       {ineligible.length > 0 && (
-        <section className="bg-white rounded-2xl border border-slate-200">
+        <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
           <button
             type="button"
             onClick={() => setShowIneligible(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-3.5 text-left cursor-pointer"
+            className="w-full flex items-center justify-between px-5 py-3.5 text-left cursor-pointer hover:bg-slate-50 transition-colors"
             aria-expanded={showIneligible}
           >
-            <span className="text-sm font-bold text-slate-700">
-              Not eligible <span className="text-slate-400">({ineligible.length})</span>
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-bold text-slate-700">
+                Not eligible <span className="text-slate-400">({ineligible.length})</span>
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 uppercase tracking-wide">
+                Authority Override Enabled
+              </span>
+            </div>
             <span className="flex items-center gap-1 text-xs text-slate-500">
-              {showIneligible ? 'Hide' : 'Show reasons'}
+              {showIneligible ? 'Hide' : 'Show candidates & override'}
               <span className="material-symbols-outlined text-[18px]">{showIneligible ? 'expand_less' : 'expand_more'}</span>
             </span>
           </button>
           {showIneligible && (
-            <ul className="border-t border-slate-100 divide-y divide-slate-100">
-              {ineligible.map(c => (
-                <li key={c.id} className="px-5 py-3 flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{c.full_name}</p>
-                    <p className="text-[11px] text-slate-500">{c.designation_label}{c.organization_name ? ` · ${c.organization_name}` : ''}</p>
+            <div className="border-t border-slate-100 divide-y divide-slate-100">
+              {ineligible.map(c => {
+                const isSelected = c.id === selectedId;
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => setSelectedId(c.id)}
+                    className={`px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-amber-50/70 border-l-4 border-l-amber-600'
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      <input
+                        type="radio"
+                        name="candidate"
+                        checked={isSelected}
+                        onChange={() => setSelectedId(c.id)}
+                        className="mt-1 w-4 h-4 accent-amber-600 shrink-0 cursor-pointer"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-slate-900">{c.full_name}</p>
+                          {isSelected && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 uppercase tracking-wide">
+                              Selected for Override
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500">{c.designation_label}{c.organization_name ? ` · ${c.organization_name}` : ''}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 sm:self-center shrink-0">
+                      <p className="text-xs text-rose-700 flex items-center gap-1 max-w-md sm:text-right">
+                        <span className="material-symbols-outlined text-[16px] shrink-0">cancel</span>
+                        <span>{c.ineligible_reason}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(c.id);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-600 text-white shadow-2xs'
+                            : 'border border-amber-300 text-amber-800 hover:bg-amber-100'
+                        }`}
+                      >
+                        {isSelected ? 'Selected' : 'Assign (Override)'}
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-xs text-rose-700 text-right max-w-[55%] flex items-start gap-1">
-                    <span className="material-symbols-outlined text-[16px] shrink-0">cancel</span>
-                    <span>{c.ineligible_reason}</span>
-                  </p>
-                </li>
-              ))}
-            </ul>
+                );
+              })}
+            </div>
           )}
         </section>
       )}
 
+      {/* Reason when deviating from recommendation or assigning outside eligibility */}
+      {deviates && selected && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 space-y-3 animate-in fade-in duration-200">
+          <div className="flex items-start gap-2.5">
+            <span className="material-symbols-outlined text-[22px] text-amber-700 shrink-0 mt-0.5">
+              {isOverrideAssignment ? 'verified_user' : 'edit_note'}
+            </span>
+            <div className="flex-1">
+              <label htmlFor="override-reason" className="text-sm font-bold text-amber-950 block">
+                {isOverrideAssignment
+                  ? `Statutory Override Reason for ${selected.full_name}`
+                  : `Why ${selected.full_name} instead of the recommended officer?`}
+              </label>
+              <p className="text-xs text-amber-800 mt-0.5">
+                {isOverrideAssignment
+                  ? `Officer is outside standard eligibility (${selected.ineligible_reason}). Please provide the statutory or administrative reason for this assignment.`
+                  : 'Required for audit governance whenever deviating from the algorithmic allocation recommendation.'}
+              </p>
+            </div>
+          </div>
+
+          <input
+            id="override-reason"
+            type="text"
+            placeholder={
+              isOverrideAssignment
+                ? `e.g. No officer available in ${data.instrument_district || 'Vikhroli'}; assigned additional charge.`
+                : 'e.g. Recommended officer is on leave that week'
+            }
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full h-10 px-3 rounded-lg border border-amber-300 bg-white focus:ring-2 focus:ring-amber-500 outline-none text-sm text-slate-800 font-medium"
+          />
+
+          {isOverrideAssignment && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              <span className="text-[11px] font-semibold text-amber-900 self-center">Quick fill:</span>
+              {[
+                `No officer stationed in ${data.instrument_district || 'Vikhroli'} — assigned additional charge`,
+                `Assigned nearest available officer for urgent verification`,
+                `Special administrative allocation by Controller / Authority`
+              ].map((text, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setReason(text)}
+                  className="px-2.5 py-1 text-[11px] bg-white border border-amber-300 text-amber-900 rounded-md hover:bg-amber-100 transition-colors font-medium cursor-pointer shadow-2xs"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <p className="text-[11px] text-amber-800 font-medium">
+            * Recorded permanently in statutory audit log with Authority digital signature.
+          </p>
+        </div>
+      )}
+
       {/* Schedule */}
-      {eligible.length > 0 && (
+      {(eligible.length > 0 || selected) && (
         <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">Schedule the inspection</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -376,6 +475,11 @@ export default function AssignmentDecisionSupport({
               {selected.role === 'GATC' && !isInSitu
                 ? 'The trader will present the instrument at the test centre.'
                 : 'The officer will visit the premises and record geotagged evidence.'}
+              {isOverrideAssignment && (
+                <span className="font-semibold text-amber-700 ml-1">
+                  (Assigned under Authority Override)
+                </span>
+              )}
             </p>
           )}
         </section>
@@ -390,28 +494,37 @@ export default function AssignmentDecisionSupport({
                 <span className="text-rose-700 font-semibold">{submitError}</span>
               ) : selected ? (
                 <span className="text-slate-600">
-                  Assign <strong className="text-slate-900">{selected.full_name}</strong> on{' '}
-                  <strong className="text-slate-900">{formatDate(scheduleDate)}</strong>, {scheduleSlot}
+                  Assign <strong className="text-slate-900">{selected.full_name}</strong>
+                  {isOverrideAssignment && (
+                    <span className="mx-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                      Authority Override
+                    </span>
+                  )}{' '}
+                  on <strong className="text-slate-900">{formatDate(scheduleDate)}</strong>, {scheduleSlot}
                   {needsReason && <span className="text-amber-700 font-semibold"> · reason required</span>}
                 </span>
               ) : (
-                <span className="text-slate-500">Select an eligible officer to continue.</span>
+                <span className="text-slate-500">
+                  Select an officer to continue (Authority override available for out-of-area officers).
+                </span>
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={onBack}
-                className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 transition-colors"
+                className="px-4 py-2.5 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAssign}
                 disabled={!canSubmit}
-                className="px-5 py-2.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-container shadow-sm transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="px-5 py-2.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-container shadow-sm transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                {submitting ? 'Assigning...' : isReassign ? 'Confirm reassignment' : 'Confirm assignment'}
+                <span className="material-symbols-outlined text-[18px]">
+                  {isOverrideAssignment ? 'verified_user' : 'check_circle'}
+                </span>
+                {submitting ? 'Assigning...' : isOverrideAssignment ? 'Confirm override assignment' : (isReassign ? 'Confirm reassignment' : 'Confirm assignment')}
               </button>
             </div>
           </div>

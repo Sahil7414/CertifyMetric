@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function Navbar({
   currentUser,
@@ -10,6 +12,8 @@ export default function Navbar({
   onVerifyPublicToken,
   onLogout
 }) {
+  const { t } = useTranslation();
+
   return (
     <header className="w-full bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
       {/* 1. Legal Metrology Statutory Context Stripe */}
@@ -17,19 +21,19 @@ export default function Navbar({
         <div className="flex items-center gap-2">
           <span className="font-semibold tracking-wide flex items-center gap-1.5 text-slate-200">
             <span className="material-symbols-outlined text-[15px] text-amber-400">balance</span>
-            Legal Metrology Verification Framework
+            {t('common.statutoryFramework', 'Legal Metrology Verification Framework')}
           </span>
           <span className="hidden md:inline text-slate-400">|</span>
-          <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
+          <span className="hidden md:inline text-slate-300">{t('common.statutoryStandards', 'Statutory Standards under Legal Metrology Act, 2009 & General Rules, 2011')}</span>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-slate-300">
-          <span className="hidden sm:inline">Online Management System (SIH 26036)</span>
+          <span className="hidden sm:inline">{t('common.systemTitle', 'Online Management System (SIH 26036)')}</span>
           {onVerifyPublicToken && (
             <button
               onClick={() => onVerifyPublicToken('e1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b')}
               className="text-amber-300 hover:text-amber-200 font-semibold underline"
             >
-              Public QR Verify
+              {t('nav.publicQrVerify', 'Public QR Verify')}
             </button>
           )}
         </div>
@@ -166,14 +170,16 @@ export default function Navbar({
           </nav>
 
           {/* Quick Action Button & User Profile Controls */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <LanguageSwitcher currentUser={currentUser} />
+
             {currentRole === 'TRADER' && onOpenAddModal && (
               <button
                 onClick={onOpenAddModal}
                 className="hidden lg:flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold transition-all border border-slate-300"
               >
                 <span className="material-symbols-outlined text-[16px]">add_circle</span>
-                Register Instrument
+                {t('nav.myInstruments', 'Register Instrument')}
               </button>
             )}
 
@@ -183,7 +189,7 @@ export default function Navbar({
                 className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg text-xs font-bold transition-all shadow-xs"
               >
                 <span className="material-symbols-outlined text-[16px]">post_add</span>
-                Apply for Verification
+                {t('nav.applyVerification', 'Apply for Verification')}
               </button>
             )}
 
@@ -207,7 +213,7 @@ export default function Navbar({
                   title="Sign out of current account to switch demo role"
                 >
                   <span className="material-symbols-outlined text-[15px]">logout</span>
-                  <span className="hidden sm:inline">Sign Out</span>
+                  <span className="hidden sm:inline">{t('nav.signOut', 'Sign Out')}</span>
                 </button>
               )}
             </div>

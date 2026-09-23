@@ -94,6 +94,67 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [districtDropdownOpen, setDistrictDropdownOpen] = useState(false);
 
+  // Precise Location & GPS Geotagging
+  const [geoCoords, setGeoCoords] = useState({ latitude: '', longitude: '', accuracy: null });
+  const [acquiringGps, setAcquiringGps] = useState(false);
+  const [gpsMessage, setGpsMessage] = useState('');
+  const [gpsError, setGpsError] = useState('');
+
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+      setGpsError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setAcquiringGps(true);
+    setGpsError('');
+    setGpsMessage('');
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lon = Number(pos.coords.longitude.toFixed(6));
+        const acc = Math.round(pos.coords.accuracy);
+
+        setGeoCoords({ latitude: lat, longitude: lon, accuracy: acc });
+        setAcquiringGps(false);
+        setGpsMessage(`Acquired: ${lat}°, ${lon}° (±${acc}m)`);
+
+        try {
+          const resp = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+            { headers: { 'Accept-Language': 'en' } }
+          );
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data?.display_name) {
+              if (!formData.location) {
+                setFormData(prev => ({ ...prev, location: data.display_name }));
+              }
+              const distName = data.address?.state_district || data.address?.county || data.address?.city || '';
+              if (!selectedDistrict && distName) {
+                const found = FLAT_DISTRICTS.find(d => d.district.toLowerCase() === distName.toLowerCase() || d.label.toLowerCase().includes(distName.toLowerCase()));
+                if (found) setSelectedDistrict(found.label);
+              }
+              const locality = data.address?.suburb || data.address?.neighbourhood || data.address?.city || '';
+              setGpsMessage(`Acquired: ${locality ? `${locality}, ` : ''}${data.address?.state || 'GPS'} (±${acc}m)`);
+            }
+          }
+        } catch (e) {
+          // Reverse-geocoding optional
+        }
+      },
+      (err) => {
+        setAcquiringGps(false);
+        let msg = 'Failed to acquire device GPS.';
+        if (err.code === 1) msg = 'Location permission denied. Please allow location permissions in your browser.';
+        else if (err.code === 2) msg = 'Position unavailable. Check your network or device GPS.';
+        else if (err.code === 3) msg = 'Location request timed out. Please try again.';
+        setGpsError(msg);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -222,6 +283,8 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
         serial_number: formData.serial_number,
         location: formData.location,
         district: selectedDistrict,
+        latitude: geoCoords.latitude ? Number(geoCoords.latitude) : undefined,
+        longitude: geoCoords.longitude ? Number(geoCoords.longitude) : undefined,
         owner_id: currentUser?.id,
         category_id: selectedCategoryId,
         specs: specValues
@@ -474,8 +537,37 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
               Installation Location & Jurisdiction
             </h3>
 
+            <div className="flex items-center justify-between gap-2">
+              <label className="font-semibold text-slate-700 block text-xs">{meta.location_label} *</label>
+              <button
+                type="button"
+                onClick={handleDetectLocation}
+                disabled={acquiringGps}
+                className="text-[11px] font-bold text-primary hover:text-primary-container bg-primary/10 hover:bg-primary/20 px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                title="Detect exact device coordinates and auto-fill establishment address"
+              >
+                <span className={`material-symbols-outlined text-sm ${acquiringGps ? 'animate-spin' : ''}`}>
+                  {acquiringGps ? 'progress_activity' : 'my_location'}
+                </span>
+                <span>{acquiringGps ? 'Detecting GPS...' : 'Detect GPS Coordinates'}</span>
+              </button>
+            </div>
+
+            {gpsMessage && (
+              <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-emerald-600 text-sm">verified</span>
+                <span>{gpsMessage}</span>
+              </div>
+            )}
+
+            {gpsError && (
+              <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-amber-600 text-sm">warning</span>
+                <span>{gpsError}</span>
+              </div>
+            )}
+
             <div>
-              <label className="font-semibold text-slate-700 block mb-1 text-xs">{meta.location_label} *</label>
               <input
                 type="text"
                 required
@@ -484,6 +576,36 @@ export default function AddInstrumentModal({ currentUser, onClose, onCreated }) 
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary focus:border-primary outline-none text-xs"
               />
+            </div>
+
+            {/* Coordinate display / manual entry */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <div>
+                <label className="block text-[10.5px] font-semibold text-slate-600 mb-1">
+                  Latitude (°N)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={geoCoords.latitude}
+                  onChange={(e) => setGeoCoords(prev => ({ ...prev, latitude: e.target.value }))}
+                  placeholder="e.g. 19.1136"
+                  className="w-full h-8 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[10.5px] font-semibold text-slate-600 mb-1">
+                  Longitude (°E)
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={geoCoords.longitude}
+                  onChange={(e) => setGeoCoords(prev => ({ ...prev, longitude: e.target.value }))}
+                  placeholder="e.g. 72.9285"
+                  className="w-full h-8 px-2.5 bg-white border border-slate-300 rounded-md text-xs font-mono outline-none focus:border-primary"
+                />
+              </div>
             </div>
 
             <div className="relative">

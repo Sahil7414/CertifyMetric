@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
+import GeoVisitCard from '../components/GeoVisitCard';
 import { api, getFileUrl } from '../api';
 
 export default function VerificationWorkspace({
@@ -9,10 +11,12 @@ export default function VerificationWorkspace({
   onVerificationCompleted,
   onViewCertificate
 }) {
+  const { t } = useTranslation();
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeStep, setActiveStep] = useState('checklist'); // 'checklist' | 'readings' | 'observations' | 'evidence' | 'review'
+  const [geoVisitVerified, setGeoVisitVerified] = useState(false);
 
   // Workspace Form State
   const [checklistResponses, setChecklistResponses] = useState({});
@@ -67,6 +71,11 @@ export default function VerificationWorkspace({
 
       // Populate evidence
       setEvidenceList(data.evidence || []);
+
+      // Check GeoVisit status
+      const isField = data.arrangement_type === 'FIELD_VISIT' || data.verification_mode === 'IN_SITU';
+      const isGvVerified = !isField || ['LOCATION_VERIFIED', 'VERIFICATION_IN_PROGRESS', 'LOCATION_EXIT_DETECTED', 'VISIT_COMPLETED', 'OVERRIDE_USED'].includes(data.geovisit?.status);
+      setGeoVisitVerified(isGvVerified);
 
     } catch (err) {
       setError(err.message || 'Failed to load case workspace');
@@ -180,10 +189,10 @@ export default function VerificationWorkspace({
     const schema = caseData?.checklist_schema || [];
 
     // Required checklist items
-    const requiredItems = schema.filter(item => item.required);
+    const requiredItems = schema.filter(item => item.required || item.mandatory);
     for (const req of requiredItems) {
       if (!checklistResponses[req.id]?.status) {
-        errors.push(`Checklist "${req.title}" must be evaluated (Pass, Fail, or N/A).`);
+        errors.push(`Checklist "${req.title || req.text || req.id}" must be evaluated (Pass, Fail, or N/A).`);
       }
     }
 
@@ -280,7 +289,7 @@ export default function VerificationWorkspace({
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary transition-colors"
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
-          Back to Assigned Queue
+          {t('verification.backToQueue', { defaultValue: 'Back to Assigned Queue' })}
         </button>
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md">
@@ -345,7 +354,28 @@ export default function VerificationWorkspace({
         </div>
       </div>
 
-      {/* 2. State Actions: Start Verification or Completed Summary */}
+      {/* 2. GeoVisit Location-Verified Field Inspection Section */}
+      <GeoVisitCard
+        applicationId={applicationId}
+        traderName={caseData.trader_name}
+        locationAddress={caseData.location}
+        scheduledDate={caseData.scheduled_date}
+        timeSlot={caseData.time_slot ? caseData.time_slot.replace('_', ' ') : '11:00 AM'}
+        currentUser={currentUser}
+        verificationStatus={caseData.application_status}
+        onCheckInSuccess={() => {
+          setGeoVisitVerified(true);
+        }}
+        onVerificationUnlocked={() => {
+          setGeoVisitVerified(true);
+        }}
+        onCheckOutSuccess={() => {
+          loadCase();
+        }}
+        showMapDefault={false}
+      />
+
+      {/* 3. State Actions: Start Verification or Completed Summary */}
       {isAssigned && (
         <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 text-center space-y-3">
           <div className="w-12 h-12 rounded-full bg-amber-500 text-white flex items-center justify-center mx-auto shadow-xs">
@@ -357,13 +387,20 @@ export default function VerificationWorkspace({
               Click below to initiate the statutory verification. The application will transition to <strong>IN PROGRESS</strong>, unlocking the checklist, measurement readings matrix, and evidence capture.
             </p>
           </div>
-          <button
-            onClick={handleStartVerification}
-            className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-md transition-all inline-flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[18px]">play_circle</span>
-            Start Statutory Verification
-          </button>
+          {((caseData.arrangement_type === 'FIELD_VISIT' || caseData.verification_mode === 'IN_SITU') && !geoVisitVerified) ? (
+            <div className="p-3.5 bg-amber-100/80 border border-amber-300 text-amber-900 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 max-w-lg mx-auto">
+              <span className="material-symbols-outlined text-amber-700 text-lg">lock</span>
+              <span>Field Verification Locked: Physical arrival must be confirmed via GeoVisit Check-In above before unlocking the statutory inspection checklist.</span>
+            </div>
+          ) : (
+            <button
+              onClick={handleStartVerification}
+              className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-md transition-all inline-flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[18px]">play_circle</span>
+              Start Statutory Verification
+            </button>
+          )}
         </div>
       )}
 
@@ -416,7 +453,7 @@ export default function VerificationWorkspace({
                   const res = caseData.checklist_responses?.find(r => r.item_id === chk.id);
                   return (
                     <div key={chk.id} className="flex justify-between items-center py-1 border-b border-slate-100 last:border-0">
-                      <span className="text-slate-600 truncate max-w-[220px]">{chk.title}</span>
+                      <span className="text-slate-600 truncate max-w-[220px]">{chk.title || chk.text || `Check ${chk.id}`}</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                         res?.status === 'PASS' ? 'bg-emerald-100 text-emerald-800' : res?.status === 'FAIL' ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-600'
                       }`}>
@@ -544,7 +581,7 @@ export default function VerificationWorkspace({
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">checklist</span>
-              1. Checklist
+              {t('verification.tabChecklist', { defaultValue: '1. Checklist' })}
             </button>
             <button
               onClick={() => setActiveStep('readings')}
@@ -553,7 +590,7 @@ export default function VerificationWorkspace({
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">speed</span>
-              2. Readings
+              {t('verification.tabReadings', { defaultValue: '2. Readings' })}
             </button>
             <button
               onClick={() => setActiveStep('observations')}
@@ -562,7 +599,7 @@ export default function VerificationWorkspace({
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">note_alt</span>
-              3. Observations
+              {t('verification.tabObservations', { defaultValue: '3. Observations' })}
             </button>
             <button
               onClick={() => setActiveStep('evidence')}
@@ -571,7 +608,7 @@ export default function VerificationWorkspace({
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">photo_camera</span>
-              4. Evidence ({evidenceList.length})
+              {t('verification.tabEvidence', { defaultValue: '4. Evidence' })} ({evidenceList.length})
             </button>
             <button
               onClick={() => setActiveStep('review')}
@@ -580,7 +617,7 @@ export default function VerificationWorkspace({
               }`}
             >
               <span className="material-symbols-outlined text-[18px]">fact_check</span>
-              5. Review & Submit
+              {t('verification.tabReviewSubmit', { defaultValue: '5. Review & Submit' })}
             </button>
           </div>
 
@@ -614,16 +651,19 @@ export default function VerificationWorkspace({
               <div className="space-y-4">
                 {caseData.checklist_schema?.map((item) => {
                   const current = checklistResponses[item.id] || { status: '', note: '' };
+                  const isMandatory = item.required !== false && (item.required || item.mandatory);
+                  const title = item.title || item.text || `Statutory Check ${item.id}`;
+                  const description = item.description || (item.title && item.text !== item.title ? item.text : '');
 
                   return (
                     <div key={item.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                            {item.title}
-                            {item.required && <span className="text-rose-500 font-extrabold text-sm" title="Mandatory">*</span>}
+                            {title}
+                            {isMandatory && <span className="text-rose-500 font-extrabold text-sm" title="Mandatory">*</span>}
                           </h4>
-                          <p className="text-slate-500 mt-0.5">{item.description}</p>
+                          {description && <p className="text-slate-500 mt-0.5">{description}</p>}
                         </div>
 
                         {/* Pass / Fail / NA Button Toggle Group */}
@@ -1096,7 +1136,7 @@ export default function VerificationWorkspace({
                       const res = checklistResponses[item.id];
                       return (
                         <div key={item.id} className="flex justify-between items-center py-0.5">
-                          <span className="text-slate-600 truncate max-w-[200px]">{item.title}</span>
+                          <span className="text-slate-600 truncate max-w-[200px]">{item.title || item.text || `Check ${item.id}`}</span>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                             res?.status === 'PASS' ? 'bg-emerald-100 text-emerald-800' : res?.status === 'FAIL' ? 'bg-rose-100 text-rose-800' : res?.status === 'NA' ? 'bg-slate-200 text-slate-700' : 'bg-rose-200 text-rose-900 animate-pulse'
                           }`}>

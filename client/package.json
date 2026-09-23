@@ -10,9 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "i18next": "^26.4.2",
+    "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-i18next": "^17.0.15",
     "sih26036": "file:.."
   },
   "devDependencies": {
