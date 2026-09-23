@@ -4,12 +4,13 @@ import QRCode from 'qrcode';
 export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }) {
   const [isClosing, setIsClosing] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrHighResUrl, setQrHighResUrl] = useState('');
 
   const isInstrument = Boolean(certificate?.serial_number && !certificate?.certificate_no);
   const token = certificate?.public_token || certificate?.serial_number || certificate?.certificate_no || 'demo-token';
   const verifyUrl = isInstrument
-    ? `${window.location.origin}/public/instrument/${token}`
-    : `${window.location.origin}/verify/${token}`;
+    ? `${window.location.origin}/public/instrument/${encodeURIComponent(token)}`
+    : `${window.location.origin}/verify/${encodeURIComponent(token)}`;
 
   const handleClose = () => {
     if (isClosing) return;
@@ -39,16 +40,162 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
 
   useEffect(() => {
     if (token) {
+      // Standard resolution for display
       QRCode.toDataURL(verifyUrl, {
-        width: 260,
+        width: 300,
         margin: 2,
         color: {
           dark: '#002046',
           light: '#ffffff'
         }
       }).then(setQrDataUrl).catch(console.error);
+
+      // High resolution (700px) for crisp physical printing & camera scanning
+      QRCode.toDataURL(verifyUrl, {
+        width: 700,
+        margin: 2,
+        color: {
+          dark: '#002046',
+          light: '#ffffff'
+        }
+      }).then(setQrHighResUrl).catch(console.error);
     }
   }, [token, verifyUrl]);
+
+  const handlePrintQR = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    const isInst = isInstrument;
+    const titleText = isInst ? 'Legal Metrology Instrument QR Seal' : 'Statutory Verification Certificate QR';
+    const idLabel = isInst ? 'Serial / Token:' : 'Certificate No:';
+    const idValue = isInst ? (certificate.serial_number || certificate.public_token) : (certificate.certificate_no || certificate.public_token);
+    const modelText = certificate.model || certificate.category || 'Statutory Equipment';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Print QR Code - ${idValue}</title>
+          <style>
+            @page { size: auto; margin: 10mm; }
+            body {
+              font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+              padding: 20px;
+              background-color: #ffffff;
+              color: #0f172a;
+            }
+            .print-card {
+              border: 3px solid #002046;
+              border-radius: 20px;
+              padding: 28px;
+              max-width: 360px;
+              width: 100%;
+              text-align: center;
+              box-sizing: border-box;
+            }
+            .govt-title {
+              font-size: 11px;
+              font-weight: 800;
+              color: #64748b;
+              text-transform: uppercase;
+              letter-spacing: 1.5px;
+              margin-bottom: 4px;
+            }
+            .main-title {
+              font-size: 15px;
+              font-weight: 800;
+              color: #002046;
+              margin-bottom: 16px;
+            }
+            .qr-container {
+              background: #ffffff;
+              padding: 12px;
+              border-radius: 16px;
+              border: 1px solid #e2e8f0;
+              display: inline-block;
+              margin-bottom: 16px;
+            }
+            .qr-image {
+              width: 240px;
+              height: 240px;
+              display: block;
+            }
+            .details-box {
+              background: #f8fafc;
+              border-radius: 12px;
+              padding: 12px 16px;
+              text-align: left;
+              font-size: 12px;
+              border: 1px solid #e2e8f0;
+            }
+            .row {
+              display: flex;
+              justify-content: space-between;
+              padding: 4px 0;
+              border-bottom: 1px solid #f1f5f9;
+            }
+            .row:last-child { border-bottom: none; }
+            .lbl { color: #64748b; font-weight: 600; }
+            .val { color: #002046; font-weight: 800; font-family: monospace; }
+            .url-text {
+              margin-top: 14px;
+              font-size: 10px;
+              color: #475569;
+              word-break: break-all;
+              font-family: monospace;
+            }
+            .footer-note {
+              margin-top: 10px;
+              font-size: 9px;
+              color: #94a3b8;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-card">
+            <div class="govt-title">Legal Metrology Division</div>
+            <div class="main-title">${titleText}</div>
+            <div class="qr-container">
+              <img src="${qrHighResUrl || qrDataUrl}" class="qr-image" alt="QR Code" />
+            </div>
+            <div class="details-box">
+              <div class="row">
+                <span class="lbl">${idLabel}</span>
+                <span class="val">${idValue}</span>
+              </div>
+              <div class="row">
+                <span class="lbl">Category/Model:</span>
+                <span class="val" style="font-family:sans-serif;">${modelText}</span>
+              </div>
+              ${certificate.valid_until ? `
+                <div class="row">
+                  <span class="lbl">Valid Until:</span>
+                  <span class="val">${certificate.valid_until}</span>
+                </div>
+              ` : ''}
+            </div>
+            <div class="url-text">${verifyUrl}</div>
+            <div class="footer-note">Scan with device camera or Google Lens to verify statutory compliance</div>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
 
   if (!certificate) return null;
 
@@ -111,11 +258,11 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
           <div className="w-full max-w-sm flex flex-col items-center">
             <p className="text-xs text-slate-600 mb-4 leading-relaxed">
               {isInstrument
-                ? 'Scan with any mobile camera or QR scanner to inspect this instrument\'s current statutory verification status and validity date.'
-                : 'Scan with any mobile camera, QR scanner, or consumer app to verify certificate authenticity directly on the legal metrology portal.'}
+                ? 'Scan with any mobile camera, Google Lens, or QR scanner app to inspect this instrument\'s current statutory verification status and validity date.'
+                : 'Scan with any mobile camera, Google Lens, or QR scanner app to verify certificate authenticity directly on the legal metrology portal.'}
             </p>
 
-            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-md mb-5">
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-md mb-4">
               {qrDataUrl ? (
                 <img src={qrDataUrl} alt="Statutory QR Code" className="w-56 h-56 object-contain" />
               ) : (
@@ -123,6 +270,12 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
                   Loading QR Code...
                 </div>
               )}
+            </div>
+
+            {/* Direct URL Box */}
+            <div className="w-full bg-slate-50 rounded-xl p-3 text-center border border-slate-200 mb-4">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Direct Verification URL</span>
+              <span className="font-mono text-[11px] text-slate-700 break-all select-all font-semibold">{verifyUrl}</span>
             </div>
 
             <div className="w-full bg-slate-50 rounded-xl p-4 text-left border border-slate-200/80 text-xs space-y-2">
@@ -169,7 +322,7 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
         </div>
 
         {/* Drawer Footer */}
-        <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 md:px-8 bg-slate-50/95 backdrop-blur border-t border-slate-200 flex items-center justify-between gap-3 shrink-0 flex-wrap">
           <button
             type="button"
             onClick={handleClose}
@@ -177,23 +330,33 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
           >
             Close
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              handleClose();
-              if (onNavigateToVerify) {
-                if (isInstrument) {
-                  onNavigateToVerify(certificate.public_token || certificate.serial_number, 'INSTRUMENT');
-                } else {
-                  onNavigateToVerify(certificate.public_token || certificate.certificate_no, 'CERTIFICATE');
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handlePrintQR}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-sm">print</span>
+              <span>Print QR Code</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleClose();
+                if (onNavigateToVerify) {
+                  if (isInstrument) {
+                    onNavigateToVerify(certificate.public_token || certificate.serial_number, 'INSTRUMENT');
+                  } else {
+                    onNavigateToVerify(certificate.public_token || certificate.certificate_no, 'CERTIFICATE');
+                  }
                 }
-              }
-            }}
-            className="px-5 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary-container transition-all flex items-center gap-2 shadow-sm cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-sm">open_in_new</span>
-            Open Verification Page
-          </button>
+              }}
+              className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary-container transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-sm">open_in_new</span>
+              <span>Open Verification Page</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

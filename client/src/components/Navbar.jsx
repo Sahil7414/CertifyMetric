@@ -24,14 +24,6 @@ export default function Navbar({
         </div>
         <div className="flex items-center gap-3 text-[11px] text-slate-300">
           <span className="hidden sm:inline">Online Legal Metrology Verification System</span>
-          {onVerifyPublicToken && (
-            <button
-              onClick={() => onVerifyPublicToken('e1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b')}
-              className="text-amber-300 hover:text-amber-200 font-semibold underline"
-            >
-              Public QR Verify
-            </button>
-          )}
         </div>
       </div>
 

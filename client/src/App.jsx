@@ -30,10 +30,10 @@ import AdminSystemHealthView from './views/AdminSystemHealthView';
 import { api, setApiUser, getStoredAuth } from './api';
 
 const ROLE_ALLOWED_TABS = {
-  TRADER: ['dashboard', 'instruments', 'instrument-detail', 'apply-verification', 'applications', 'application-timeline', 'applications-rejected', 'vendor-apply-tank', 'certificates', 'official-certificate', 'public-qr-verify'],
-  AUTHORITY: ['authority-dashboard', 'applications', 'application-timeline', 'application-review', 'assignment-decision', 'certificates', 'official-certificate', 'audit-logs', 'public-qr-verify'],
-  VERIFIER: ['verifier-dashboard', 'verification-workspace', 'public-qr-verify'],
-  GATC: ['gatc-dashboard', 'verification-workspace', 'public-qr-verify'],
+  TRADER: ['dashboard', 'instruments', 'instrument-detail', 'apply-verification', 'applications', 'application-timeline', 'applications-rejected', 'vendor-apply-tank', 'certificates', 'official-certificate'],
+  AUTHORITY: ['authority-dashboard', 'applications', 'application-timeline', 'application-review', 'assignment-decision', 'certificates', 'official-certificate', 'audit-logs'],
+  VERIFIER: ['verifier-dashboard', 'verification-workspace'],
+  GATC: ['gatc-dashboard', 'verification-workspace'],
   PLATFORM_ADMIN: [
     'admin-dashboard',
     'admin-users',
@@ -43,8 +43,7 @@ const ROLE_ALLOWED_TABS = {
     'system-health',
     'applications',
     'certificates',
-    'instruments',
-    'public-qr-verify'
+    'instruments'
   ]
 };
 
