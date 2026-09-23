@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import StatutoryGuidanceTips from '../components/StatutoryGuidanceTips';
 import { api } from '../api';
 
 const TIME_SLOTS = ['10:00 AM - 01:00 PM', '02:00 PM - 05:00 PM'];
@@ -106,8 +107,16 @@ export default function AssignmentDecisionSupport({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('ALL');
+  const [overrideMode, setOverrideMode] = useState(false);
+  const [isOverrideSelection, setIsOverrideSelection] = useState(false);
+
   useEffect(() => {
-    if (!applicationId) return;
+    if (!applicationId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setLoadError('');
     api.getCandidates(applicationId)
@@ -126,7 +135,38 @@ export default function AssignmentDecisionSupport({
 
   const eligible = useMemo(() => (data?.candidates || []).filter(c => c.is_eligible), [data]);
   const ineligible = useMemo(() => (data?.candidates || []).filter(c => !c.is_eligible), [data]);
-  const selected = eligible.find(c => c.id === selectedId) || null;
+
+  const filteredEligible = useMemo(() => {
+    return eligible.filter(c => {
+      if (roleFilter !== 'ALL' && c.role !== roleFilter) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        c.full_name?.toLowerCase().includes(q) ||
+        c.designation_label?.toLowerCase().includes(q) ||
+        c.organization_name?.toLowerCase().includes(q) ||
+        (c.jurisdictions || []).some(j => j.toLowerCase().includes(q))
+      );
+    });
+  }, [eligible, roleFilter, searchQuery]);
+
+  const filteredIneligible = useMemo(() => {
+    return ineligible.filter(c => {
+      if (roleFilter !== 'ALL' && c.role !== roleFilter) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        c.full_name?.toLowerCase().includes(q) ||
+        c.designation_label?.toLowerCase().includes(q) ||
+        c.organization_name?.toLowerCase().includes(q) ||
+        (c.jurisdictions || []).some(j => j.toLowerCase().includes(q))
+      );
+    });
+  }, [ineligible, roleFilter, searchQuery]);
+
+  const selected = useMemo(() => {
+    return (data?.candidates || []).find(c => c.id === selectedId) || null;
+  }, [data, selectedId]);
 
   if (loading) {
     return (
@@ -148,8 +188,9 @@ export default function AssignmentDecisionSupport({
 
   const { application, instrument, requirement } = data;
   const isReassign = Boolean(data.current_assignee_id);
-  const deviates = Boolean(data.recommended_id) && selectedId !== data.recommended_id;
-  const needsReason = deviates && !reason.trim();
+  const isOverride = isOverrideSelection || !selected?.is_eligible || (Boolean(data.recommended_id) && selectedId !== data.recommended_id);
+  const deviates = isOverride;
+  const needsReason = isOverride && !reason.trim();
   const isInSitu = application.verification_mode === 'IN_SITU';
   const canSubmit = Boolean(selected) && !needsReason && Boolean(scheduleDate) && !submitting;
 
@@ -161,7 +202,7 @@ export default function AssignmentDecisionSupport({
       await api.assignVerifier(applicationId, {
         assigned_id: selected.id,
         recommended_id: data.recommended_id,
-        is_override: deviates,
+        is_override: isOverride,
         override_reason: reason.trim(),
         scheduled_date: scheduleDate,
         time_slot: scheduleSlot,
@@ -199,6 +240,9 @@ export default function AssignmentDecisionSupport({
           Only officers who are legally allowed to verify this instrument are listed, ranked by workload, location and availability.
         </p>
       </div>
+
+      {/* Statutory Guidance for Assignment */}
+      <StatutoryGuidanceTips stage="ASSIGNMENT" />
 
       {/* Case summary + requirement */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -252,37 +296,152 @@ export default function AssignmentDecisionSupport({
         </div>
       </div>
 
+      {/* Search & Filter Bar */}
+      <div className="bg-white rounded-xl border border-slate-200 p-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+          <span className="material-symbols-outlined text-slate-400 text-[20px]">search</span>
+          <input
+            type="text"
+            placeholder="Search candidates by name, designation, office or district..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full text-xs outline-none bg-transparent text-slate-800 placeholder-slate-400"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-medium text-slate-700 outline-none"
+          >
+            <option value="ALL">All Roles (Verifier & GATC)</option>
+            <option value="VERIFIER">Field Verifier / LMO</option>
+            <option value="GATC">GATC Testing Lab</option>
+          </select>
+        </div>
+      </div>
+
       {/* Eligible candidates */}
       <section className="space-y-3">
         <div className="flex items-end justify-between">
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-            Eligible officers <span className="text-slate-400">({eligible.length})</span>
+            Eligible officers <span className="text-slate-400">({filteredEligible.length})</span>
           </h2>
-          {eligible.length > 0 && (
+          {filteredEligible.length > 0 && (
             <span className="text-[11px] text-slate-500">Match score out of 100</span>
           )}
         </div>
 
         {eligible.length === 0 ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center">
-            <span className="material-symbols-outlined text-3xl text-amber-600">person_off</span>
-            <p className="font-bold text-amber-900 text-sm mt-1">No officer can take this case right now</p>
-            <p className="text-xs text-amber-800 mt-1 max-w-lg mx-auto">
-              Nobody meets all the requirements above. Check the reasons below. Usually you'll need to add an officer
-              of the right designation in {data.instrument_district || 'this district'}, or give an officer additional charge of it.
-            </p>
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-center space-y-4">
+            <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+              <span className="material-symbols-outlined text-2xl">person_off</span>
+            </div>
+            <div>
+              <p className="font-bold text-amber-900 text-sm">No officer meets standard eligibility requirements</p>
+              <p className="text-xs text-amber-800 mt-1 max-w-xl mx-auto">
+                No officer currently satisfies jurisdiction, designation, or active workload criteria for {data.instrument_district || 'this jurisdiction'}.
+              </p>
+            </div>
+
+            {!overrideMode ? (
+              <button
+                type="button"
+                onClick={() => setOverrideMode(true)}
+                className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors inline-flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-[18px]">lock_open</span>
+                Override Eligibility & Assign
+              </button>
+            ) : (
+              <div className="bg-amber-100/70 border border-amber-300 rounded-xl p-4 text-left space-y-2 animate-in fade-in">
+                <div className="flex items-start gap-2">
+                  <span className="material-symbols-outlined text-amber-800 text-[18px] shrink-0 mt-0.5">warning</span>
+                  <div>
+                    <p className="text-xs font-bold text-amber-950">Statutory Exception Notice</p>
+                    <p className="text-[11px] text-amber-900 mt-0.5">
+                      No officer currently meets all standard eligibility requirements. This assignment will be recorded as an eligibility override in the statutory audit log. Select an active operational officer below and enter a mandatory override justification.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-2.5">
-            {eligible.map(c => (
+            {filteredEligible.map(c => (
               <CandidateRow
                 key={c.id}
                 candidate={c}
                 isRecommended={c.id === data.recommended_id}
                 isSelected={c.id === selectedId}
-                onSelect={() => setSelectedId(c.id)}
+                onSelect={() => {
+                  setSelectedId(c.id);
+                  setIsOverrideSelection(false);
+                }}
               />
             ))}
+          </div>
+        )}
+
+        {/* Override Selection List when Override Mode Enabled or Zero Eligible */}
+        {overrideMode && filteredIneligible.length > 0 && (
+          <div className="mt-4 space-y-3 border-t border-amber-200 pt-4">
+            <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px] text-amber-700">badge</span>
+              Active Candidates Available for Override Allocation ({filteredIneligible.length})
+            </h3>
+            <div className="space-y-2.5">
+              {filteredIneligible.map(c => (
+                <div
+                  key={c.id}
+                  onClick={() => {
+                    setSelectedId(c.id);
+                    setIsOverrideSelection(true);
+                  }}
+                  className={`block rounded-xl border-2 p-4 cursor-pointer transition-all ${
+                    selectedId === c.id ? 'border-amber-500 bg-amber-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-amber-200'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="candidate-override"
+                      checked={selectedId === c.id}
+                      onChange={() => {
+                        setSelectedId(c.id);
+                        setIsOverrideSelection(true);
+                      }}
+                      className="mt-3 w-4 h-4 accent-amber-600 shrink-0"
+                    />
+                    <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-[20px]">{c.role === 'GATC' ? 'science' : 'badge'}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-bold text-slate-900 text-sm">{c.full_name}</h4>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900">
+                          Override Candidate
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {c.designation_label}{c.organization_name ? ` · ${c.organization_name}` : ''}
+                      </p>
+                      <p className="text-xs text-rose-700 mt-1 font-medium flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">error</span>
+                        Standard restriction: {c.ineligible_reason}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>
@@ -343,7 +502,7 @@ export default function AssignmentDecisionSupport({
       )}
 
       {/* Schedule */}
-      {eligible.length > 0 && (
+      {Boolean(selected) && (
         <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
           <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">Schedule the inspection</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">

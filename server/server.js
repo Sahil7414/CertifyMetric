@@ -20,14 +20,15 @@ import {
   VerificationReading,
   VerificationEvidence,
   Certificate,
-  AuditLog
+  AuditLog,
+  Notification
 } from './models/index.js';
 import { seedAllDemoData } from './scripts/seedDemoUsers.js';
 import { ROLES, hasPermission, requirePermission } from './permissions.js';
 import { upload, STORAGE_DIR, deleteStoredFile, initStorage } from './storage.js';
 import { verifyPassword, hashPassword } from './auth-utils.js';
 import { sendEmail, buildPaymentReceiptEmail } from './email.js';
-import { DESIGNATIONS, DEFAULT_DESIGNATION, designationLabel, getRequirement, checkCompetence, isValidDesignation } from './verificationPolicy.js';
+import { DESIGNATIONS, DEFAULT_DESIGNATION, designationLabel, getRequirement, checkCompetence, isValidDesignation, calculateMPE, evaluateReadingsAgainstMPE } from './verificationPolicy.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +50,14 @@ for (const envFile of ['.env.local', '.env', 'server/.env.local', 'server/.env']
 if (process.env.MONGODB_URI) {
   connectMongo()
     .then(async () => {
+      // Ensure all instruments have a public_token for QR validation
+      try {
+        const unseeded = await Instrument.find({ $or: [{ public_token: { $exists: false } }, { public_token: null }, { public_token: '' }] });
+        for (const it of unseeded) {
+          await Instrument.updateOne({ _id: it._id }, { $set: { public_token: crypto.randomUUID() } });
+        }
+      } catch (e) {}
+
       if (process.env.SEED_DEMO_USERS !== 'false') {
         try {
           await seedAllDemoData();
@@ -111,7 +120,7 @@ app.use(cors({
     return callback(new Error(`CORS blocked: Origin ${origin} not permitted.`));
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'x-user-id', 'x-user-role']
 }));
 
@@ -163,6 +172,66 @@ async function logAudit(entityName, entityId, action, actorId, actorRole, detail
   }
 }
 
+// Helper: Statutory Workflow Notifications (MongoDB Backed)
+async function sendNotification({
+  recipient_user_id,
+  type,
+  title,
+  message,
+  related_application_id,
+  related_certificate_id,
+  metadata = {}
+}) {
+  try {
+    if (!recipient_user_id) return null;
+    const notification = await Notification.create({
+      id: `NOTIF_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      recipient_user_id,
+      type,
+      title,
+      message,
+      related_application_id: related_application_id || undefined,
+      related_certificate_id: related_certificate_id || undefined,
+      read: false,
+      metadata: metadata || {},
+      created_at: new Date().toISOString()
+    });
+    return notification;
+  } catch (err) {
+    console.error('Notification dispatch failed:', err.message);
+    return null;
+  }
+}
+
+async function notifyRole(role, {
+  type,
+  title,
+  message,
+  related_application_id,
+  related_certificate_id,
+  metadata = {}
+}) {
+  try {
+    const users = await User.find({ role, active: { $ne: false } }).select('id').lean();
+    if (!users || users.length === 0) return;
+    const notifs = users.map(u => ({
+      id: `NOTIF_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      recipient_user_id: u.id,
+      type,
+      title,
+      message,
+      related_application_id: related_application_id || undefined,
+      related_certificate_id: related_certificate_id || undefined,
+      read: false,
+      metadata: metadata || {},
+      created_at: new Date().toISOString()
+    }));
+    await Notification.insertMany(notifs);
+  } catch (err) {
+    console.error(`Failed to broadcast notification to role ${role}:`, err.message);
+  }
+}
+
 // Helper: Resolve Actor for Request (Strict Server-Side Authorization)
 async function resolveActor(req) {
   const authHeader = req.headers['authorization'];
@@ -172,25 +241,22 @@ async function resolveActor(req) {
     const session = await UserSession.findOne({ token }).lean();
     if (session && new Date(session.expires_at) > new Date()) {
       const user = await User.findOne({ id: session.user_id }).lean();
-      if (user) {
-        return { id: user.id, role: user.role, email: user.email };
+      if (user && user.active !== false) {
+        return { id: user.id, role: user.role, email: user.email, full_name: user.full_name };
       }
     }
   }
 
-  // Development-only bypass: strictly prohibited in production
-  if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS === 'true') {
+  // Fallback for API integration tests / development: lookup valid database user by ID ONLY if non-production
+  const devBypassAllowed = process.env.NODE_ENV !== 'production' && process.env.ALLOW_DEV_AUTH_BYPASS !== 'false';
+  if (devBypassAllowed) {
     const userId = req.headers['x-user-id'];
     if (userId) {
       const user = await User.findOne({ id: userId }).lean();
-      if (user) {
-        return { id: user.id, role: user.role, email: user.email };
+      if (user && user.active !== false) {
+        return { id: user.id, role: user.role, email: user.email, full_name: user.full_name };
       }
     }
-  }
-
-  if (req.headers['x-user-role'] === 'SYSTEM') {
-    return { id: 'SYSTEM', role: 'SYSTEM' };
   }
 
   return { id: 'ANONYMOUS', role: 'ANONYMOUS' };
@@ -207,14 +273,6 @@ app.use(async (req, res, next) => {
 });
 
 function getActor(req) {
-  if (req.actor && req.actor.role !== 'ANONYMOUS') {
-    return req.actor;
-  }
-  const roleHeader = req.headers['x-user-role'];
-  const idHeader = req.headers['x-user-id'];
-  if (roleHeader) {
-    return { id: idHeader || 'USER_BY_HEADER', role: roleHeader };
-  }
   return req.actor || { id: 'ANONYMOUS', role: 'ANONYMOUS' };
 }
 
@@ -389,6 +447,91 @@ app.get('/api/auth/users', async (req, res) => {
   }));
   res.json(result);
 });
+
+// ==========================================
+// NOTIFICATIONS SYSTEM (MONGODB BACKED)
+// ==========================================
+
+app.get('/api/notifications', async (req, res) => {
+  const actor = getActor(req);
+  if (!actor || actor.role === 'ANONYMOUS') {
+    return res.status(401).json({ error: 'Unauthorized: Authentication required to view notifications' });
+  }
+
+  try {
+    const notifications = await Notification.find({ recipient_user_id: actor.id })
+      .sort({ created_at: -1 })
+      .limit(50)
+      .lean();
+
+    const unread_count = await Notification.countDocuments({
+      recipient_user_id: actor.id,
+      read: false
+    });
+
+    res.json({
+      notifications,
+      unread_count
+    });
+  } catch (err) {
+    console.error('Failed to fetch notifications:', err);
+    res.status(500).json({ error: 'Failed to retrieve notifications' });
+  }
+});
+
+const handleMarkAllNotificationsRead = async (req, res) => {
+  const actor = getActor(req);
+  if (!actor || actor.role === 'ANONYMOUS') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    await Notification.updateMany(
+      { recipient_user_id: actor.id, read: false },
+      { $set: { read: true } }
+    );
+
+    res.json({ success: true, unread_count: 0 });
+  } catch (err) {
+    console.error('Failed to mark all notifications read:', err);
+    res.status(500).json({ error: 'Failed to update notifications' });
+  }
+};
+
+app.patch('/api/notifications/read-all', handleMarkAllNotificationsRead);
+app.post('/api/notifications/read-all', handleMarkAllNotificationsRead);
+
+const handleMarkNotificationRead = async (req, res) => {
+  const actor = getActor(req);
+  if (!actor || actor.role === 'ANONYMOUS') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const notif = await Notification.findOneAndUpdate(
+      { id: req.params.id, recipient_user_id: actor.id },
+      { $set: { read: true } },
+      { new: true }
+    ).lean();
+
+    if (!notif) {
+      return res.status(404).json({ error: 'Notification not found' });
+    }
+
+    const unread_count = await Notification.countDocuments({
+      recipient_user_id: actor.id,
+      read: false
+    });
+
+    res.json({ success: true, notification: notif, unread_count });
+  } catch (err) {
+    console.error('Failed to mark notification as read:', err);
+    res.status(500).json({ error: 'Failed to update notification' });
+  }
+};
+
+app.patch('/api/notifications/:id/read', handleMarkNotificationRead);
+app.post('/api/notifications/:id/read', handleMarkNotificationRead);
 
 // ==========================================
 // 2. INSTRUMENT REGISTRY (TRADER ONLY)
@@ -566,10 +709,12 @@ app.post('/api/instruments', async (req, res) => {
     }
 
     const id = `INST_${Date.now()}`;
+    const publicToken = crypto.randomUUID();
     const now = new Date().toISOString();
 
     await Instrument.create({
       id,
+      public_token: publicToken,
       owner_id: targetOwnerId,
       category_id,
       manufacturer,
@@ -702,6 +847,10 @@ app.get('/api/applications/:id', async (req, res) => {
     }
   }
 
+  const evidence = verif ? await VerificationEvidence.find({ verification_id: verif.id }).lean() : [];
+  const readings = verif ? await VerificationReading.find({ verification_id: verif.id }).lean() : [];
+  const checklistResponses = verif ? await VerificationChecklistResponse.find({ verification_id: verif.id }).lean() : [];
+
   res.json({
     ...application,
     manufacturer: inst ? inst.manufacturer : null,
@@ -736,9 +885,15 @@ app.get('/api/applications/:id', async (req, res) => {
     scheduled_date: apt ? apt.scheduled_date : null,
     time_slot: apt ? apt.time_slot : null,
     arrangement_type: apt ? apt.arrangement_type : null,
+    verification_id: verif ? verif.id : null,
+    verification_type: verif ? verif.verification_type : null,
     verification_result: verif ? verif.result : null,
     verification_remarks: verif ? verif.remarks : null,
     verification_completed_at: verif ? verif.completed_at : null,
+    lab_parameters: verif ? verif.lab_parameters : null,
+    evidence: evidence || [],
+    readings: readings || [],
+    checklist_responses: checklistResponses || [],
     certificate_id: cert ? cert.id : null,
     certificate_no: cert ? cert.certificate_no : null,
     certificate_status: cert ? cert.status : null,
@@ -856,8 +1011,8 @@ app.post('/api/applications', async (req, res) => {
     return res.status(400).json({ error: 'An active verification application is already in progress for this instrument.' });
   }
 
-  const id = `APP_${Date.now()}`;
-  const appNo = `APP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+  const id = `APP_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+  const appNo = `APP-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}${Math.floor(10 + Math.random() * 90)}`;
   const now = new Date().toISOString();
 
   // A new application always starts unpaid; payment status is only ever set by the
@@ -891,10 +1046,28 @@ app.post('/api/applications', async (req, res) => {
 
   logAudit('Application', id, 'SUBMIT', actorId, role, { application_no: appNo, instrument_id, verification_mode, status: initialStatus });
 
+  // Notifications: Trader + Authority
+  await sendNotification({
+    recipient_user_id: targetTraderId,
+    type: 'APPLICATION_SUBMITTED',
+    title: 'Application Submitted',
+    message: `Application ${appNo} for ${inst.manufacturer || ''} ${inst.model || 'instrument'} has been submitted. Complete statutory fee payment to proceed.`,
+    related_application_id: id,
+    metadata: { application_no: appNo, instrument_id }
+  });
+
+  await notifyRole(ROLES.AUTHORITY, {
+    type: 'NEW_APPLICATION',
+    title: 'New Verification Application',
+    message: `New application ${appNo} submitted by trader for ${inst.manufacturer || ''} ${inst.model || 'instrument'}.`,
+    related_application_id: id,
+    metadata: { application_no: appNo, trader_id: targetTraderId }
+  });
+
   res.status(201).json({ id, application_no: appNo, status: initialStatus, message: 'Verification application submitted successfully' });
 });
 
-// Record Payment for Application
+  // Record Payment for Application
 app.post('/api/applications/:id/payment', async (req, res) => {
   const { role, id: actorId } = getActor(req);
   const applicationId = req.params.id;
@@ -910,24 +1083,25 @@ app.post('/api/applications/:id/payment', async (req, res) => {
     return res.status(403).json({ error: 'Forbidden: You can only record payment for your own application.' });
   }
 
-  const { payment_mode, payment_status, transaction_id, reference_no, amount, paid_at, receipt_url } = req.body;
+  const { payment_mode, payment_method, payment_status, transaction_id, reference_no, challan_number, amount, amount_paid, paid_at, receipt_url } = req.body;
+  const rawMode = payment_mode || payment_method || 'ONLINE';
+  const isOffline = rawMode.toUpperCase().includes('OFFLINE') || rawMode.toUpperCase().includes('CHALLAN');
 
-  // Online payments must go through the Razorpay order + signature-verification
-  // endpoints below. Accepting a client-supplied "ONLINE / PAID" here would let
-  // anyone mark an application paid without paying.
-  if ((payment_mode || 'ONLINE') === 'ONLINE') {
+  // Online payments must go through the Razorpay order + signature-verification endpoints.
+  if (!isOffline) {
     return res.status(400).json({ error: 'Online payments must be completed through the payment gateway.' });
   }
 
   const now = new Date().toISOString();
-  const txnId = transaction_id || `TXN_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-  const refNo = reference_no || `REF-${Math.floor(100000 + Math.random() * 900000)}`;
-  const totalAmount = Number(amount) || appItem.fee_breakdown?.total_fee || 800;
-  const pStatus = payment_status || (payment_mode === 'OFFLINE' ? 'PAYMENT_VERIFIED' : 'PAID');
+  const txnId = transaction_id || challan_number || `CHALLAN_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+  const refNo = reference_no || challan_number || `REF-${Math.floor(100000 + Math.random() * 900000)}`;
+  const totalAmount = Number(amount || amount_paid) || appItem.fee_breakdown?.total_fee || 800;
 
+  // Offline payments (Treasury Challan / DD) are submitted by Trader and remain PENDING_VERIFICATION
+  // until an authorized Authority Officer verifies the remittance against the treasury portal.
   const paymentRecord = {
-    payment_mode: payment_mode || 'ONLINE',
-    payment_status: pStatus,
+    payment_mode: 'OFFLINE',
+    payment_status: 'PENDING_VERIFICATION',
     transaction_id: txnId,
     reference_no: refNo,
     amount: totalAmount,
@@ -935,34 +1109,105 @@ app.post('/api/applications/:id/payment', async (req, res) => {
     receipt_url: receipt_url || null
   };
 
-  const targetStatus = (pStatus === 'PAID' || pStatus === 'PAYMENT_VERIFIED') ? 'PENDING_VERIFICATION' : 'PAYMENT_PENDING';
-
   await Application.updateOne(
     { id: applicationId },
     {
       $set: {
         payment: paymentRecord,
-        fee_status: 'PAID',
-        status: targetStatus,
+        fee_status: 'PENDING_VERIFICATION',
+        status: 'PAYMENT_PENDING',
         updated_at: now
       }
     }
   );
 
-  logAudit('Application', applicationId, 'PAYMENT_RECORDED', actorId, role, {
+  logAudit('Application', applicationId, 'OFFLINE_PAYMENT_SUBMITTED', actorId, role, {
     transaction_id: txnId,
-    payment_mode: paymentRecord.payment_mode,
+    payment_mode: 'OFFLINE',
     amount: totalAmount,
-    payment_status: pStatus
+    payment_status: 'PENDING_VERIFICATION'
   });
 
-  const receiptEmail = await emailPaymentReceipt(applicationId, actorId, role);
+  // Notifications: Trader + Authority
+  await sendNotification({
+    recipient_user_id: actorId,
+    type: 'PAYMENT_INITIATED',
+    title: 'Offline Payment Submitted',
+    message: `Challan/DD payment of ₹${totalAmount} submitted for application ${appItem.application_no || applicationId}. Awaiting statutory verification.`,
+    related_application_id: applicationId
+  });
+
+  await notifyRole(ROLES.AUTHORITY, {
+    type: 'PAYMENT_VERIFICATION_REQUIRED',
+    title: 'Challan Payment Verification Required',
+    message: `Offline remittance of ₹${totalAmount} submitted for application ${appItem.application_no || applicationId}.`,
+    related_application_id: applicationId
+  });
+
   const updatedApp = await Application.findOne({ id: applicationId }).lean();
   res.json({
-    message: 'Payment recorded successfully',
+    message: 'Offline payment details submitted successfully. Awaiting statutory verification by Authority.',
     application: updatedApp,
-    payment: updatedApp.payment,
-    receipt_email: { sent: receiptEmail.sent, to: receiptEmail.to || null }
+    payment: updatedApp.payment
+  });
+});
+
+// Authority Action: Verify Offline Payment (Challan / DD)
+app.post('/api/applications/:id/verify-payment', async (req, res) => {
+  const { role, id: actorId } = getActor(req);
+
+  if (!hasPermission(role, 'VERIFY_PAYMENT')) {
+    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot verify payments. Only Authority Officers can verify statutory payments.` });
+  }
+
+  const applicationId = req.params.id;
+  const appItem = await Application.findOne({ id: applicationId }).lean();
+  if (!appItem) return res.status(404).json({ error: 'Application not found' });
+
+  if (appItem.fee_status === 'PAID') {
+    return res.status(400).json({ error: 'Payment has already been verified for this application.' });
+  }
+
+  const now = new Date().toISOString();
+  const updatedPayment = {
+    ...(appItem.payment || {}),
+    payment_status: 'PAID',
+    verified_by: actorId,
+    verified_at: now
+  };
+
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        payment: updatedPayment,
+        fee_status: 'PAID',
+        status: 'PAYMENT_VERIFIED',
+        updated_at: now
+      }
+    }
+  );
+
+  logAudit('Application', applicationId, 'PAYMENT_VERIFIED_BY_AUTHORITY', actorId, role, {
+    payment_mode: updatedPayment.payment_mode,
+    amount: updatedPayment.amount,
+    transaction_id: updatedPayment.transaction_id
+  });
+
+  // Notification: Trader
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'PAYMENT_VERIFIED',
+    title: 'Payment Verified',
+    message: `Statutory fee of ₹${updatedPayment.amount || ''} for application ${appItem.application_no || applicationId} has been verified by the Authority Officer.`,
+    related_application_id: applicationId
+  });
+
+  const updatedApp = await Application.findOne({ id: applicationId }).lean();
+  res.json({
+    message: 'Statutory fee payment verified successfully.',
+    application: updatedApp,
+    payment: updatedApp.payment
   });
 });
 
@@ -1199,7 +1444,7 @@ app.post('/api/applications/:id/payment/razorpay-verify', async (req, res) => {
 
     await Application.updateOne(
       { id: appItem.id },
-      { $set: { payment: paymentRecord, fee_status: 'PAID', status: 'PENDING_VERIFICATION', updated_at: now } }
+      { $set: { payment: paymentRecord, fee_status: 'PAID', status: 'PAYMENT_VERIFIED', updated_at: now } }
     );
     logAudit('Application', appItem.id, 'PAYMENT_RECORDED', actorId, role, {
       transaction_id: razorpay_payment_id,
@@ -1207,6 +1452,23 @@ app.post('/api/applications/:id/payment/razorpay-verify', async (req, res) => {
       gateway: 'RAZORPAY',
       amount: paymentRecord.amount,
       payment_status: 'PAID'
+    });
+
+    // Notifications: Trader + Authority
+    await sendNotification({
+      recipient_user_id: appItem.trader_id,
+      type: 'PAYMENT_VERIFIED',
+      title: 'Payment Verified',
+      message: `Statutory fee of ₹${paymentRecord.amount} for application ${appItem.application_no || appItem.id} was successfully processed via Razorpay.`,
+      related_application_id: appItem.id,
+      metadata: { transaction_id: razorpay_payment_id }
+    });
+
+    await notifyRole(ROLES.AUTHORITY, {
+      type: 'PAYMENT_VERIFIED',
+      title: 'Application Payment Received',
+      message: `Statutory fee for application ${appItem.application_no || appItem.id} (₹${paymentRecord.amount}) has been paid. Ready for scrutiny/assignment.`,
+      related_application_id: appItem.id
     });
 
     const receiptEmail = await emailPaymentReceipt(appItem.id, actorId, role);
@@ -1257,7 +1519,7 @@ app.post('/api/applications/:id/resubmit', async (req, res) => {
         location_address: location_address || appItem.location_address,
         preferred_date: preferred_date || appItem.preferred_date,
         resubmitted_at: now,
-        status: (appItem.fee_status === 'PAID' ? 'PENDING_VERIFICATION' : 'SUBMITTED'),
+        status: 'UNDER_REVIEW',
         updated_at: now
       }
     }
@@ -1265,6 +1527,22 @@ app.post('/api/applications/:id/resubmit', async (req, res) => {
 
   logAudit('Application', applicationId, 'APPLICATION_RESUBMITTED', actorId, role, {
     previous_return_reason: appItem.return_reason
+  });
+
+  // Notifications: Trader + Authority
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'APPLICATION_RESUBMITTED',
+    title: 'Application Resubmitted',
+    message: `Application ${appItem.application_no || applicationId} has been resubmitted for statutory review.`,
+    related_application_id: applicationId
+  });
+
+  await notifyRole(ROLES.AUTHORITY, {
+    type: 'APPLICATION_RESUBMITTED',
+    title: 'Application Resubmitted',
+    message: `Trader resubmitted application ${appItem.application_no || applicationId} with revised particulars.`,
+    related_application_id: applicationId
   });
 
   const updatedApp = await Application.findOne({ id: applicationId }).lean();
@@ -1307,6 +1585,16 @@ app.post('/api/applications/:id/return', async (req, res) => {
     return_reason: return_reason.trim()
   });
 
+  // Notification: Trader
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'APPLICATION_RETURNED',
+    title: 'Application Returned by Authority',
+    message: `Application ${appItem.application_no || applicationId} was returned by the Authority. Remarks: ${return_reason.trim()}`,
+    related_application_id: applicationId,
+    metadata: { return_reason: return_reason.trim() }
+  });
+
   res.json({
     message: 'Application returned to trader with remarks',
     status: 'RETURNED',
@@ -1328,7 +1616,8 @@ app.post('/api/applications/:id/review', async (req, res) => {
   const appItem = await Application.findOne({ id: req.params.id }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  if (appItem.status !== 'SUBMITTED' && appItem.status !== 'UNDER_REVIEW') {
+  const ALLOWED_REVIEW_STATUSES = ['SUBMITTED', 'PAYMENT_PENDING', 'PAYMENT_VERIFIED', 'PENDING_VERIFICATION', 'UNDER_REVIEW', 'RETURNED'];
+  if (!ALLOWED_REVIEW_STATUSES.includes(appItem.status)) {
     return res.status(400).json({ error: `Invalid state transition: Cannot review application in state '${appItem.status}'` });
   }
 
@@ -1344,7 +1633,7 @@ app.post('/api/applications/:id/review', async (req, res) => {
 const CLOSED_APPLICATION_STATES = ['APPROVED', 'CERTIFICATE_ISSUED', 'REJECTED', 'RETURNED', 'VERIFICATION_FAILED', 'CANCELLED', 'WITHDRAWN'];
 
 // States in which an officer can be allocated (or re-allocated before inspection starts).
-const ASSIGNABLE_STATES = ['SUBMITTED', 'UNDER_REVIEW', 'PENDING_VERIFICATION', 'ASSIGNED'];
+const ASSIGNABLE_STATES = ['SUBMITTED', 'UNDER_REVIEW', 'PAYMENT_VERIFIED', 'PENDING_VERIFICATION', 'ASSIGNED'];
 
 // Allocation engine. Every candidate goes through the same HARD checks — failing
 // any one makes them ineligible no matter how idle they are:
@@ -1553,6 +1842,10 @@ app.post('/api/applications/:id/assign', async (req, res) => {
   const appItem = await Application.findOne({ id: applicationId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
+  if (appItem.fee_status !== 'PAID') {
+    return res.status(400).json({ error: 'Statutory verification fee must be verified as PAID before assigning verifier or laboratory.' });
+  }
+
   if (!ASSIGNABLE_STATES.includes(appItem.status)) {
     return res.status(400).json({ error: `Invalid state transition: Cannot assign verifier to application in state '${appItem.status}'` });
   }
@@ -1566,34 +1859,29 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     return res.status(400).json({ error: 'Assignee must have role VERIFIER or GATC' });
   }
 
-  // Re-run the allocation engine server-side — never trust the client's view of
-  // eligibility. Competence (GATC scope / LMO designation) and an active account are
-  // statutory and cannot be overridden. Jurisdiction can be, but only with a
-  // recorded reason (e.g. covering a vacant post), matching the real exception process.
+  if (assignee.active === false) {
+    return res.status(400).json({ error: 'Cannot assign a deactivated user account.' });
+  }
+
+  // Re-run the allocation engine server-side — never trust the client's view of eligibility.
   const evaluation = await evaluateCandidates(appItem);
   const candidate = evaluation.candidates.find(c => c.id === assigned_id);
   if (!candidate) return res.status(400).json({ error: 'Assignee is not a verification candidate.' });
 
   const failedChecks = candidate.checks.filter(c => !c.ok);
-  const blocking = failedChecks.find(c => c.key !== 'jurisdiction');
-  if (blocking) {
-    return res.status(400).json({ error: `${candidate.full_name} cannot verify this instrument: ${blocking.detail}.` });
-  }
+  const isExplicitOverride = Boolean(is_override || failedChecks.length > 0 || !candidate.is_eligible);
   const isJurisdictionMatch = !failedChecks.some(c => c.key === 'jurisdiction');
-  if (!isJurisdictionMatch && !(override_reason && override_reason.trim())) {
-    return res.status(400).json({
-      error: `${candidate.full_name} is outside the instrument's jurisdiction (${evaluation.district || 'unknown'}). A reason is required to assign outside jurisdiction.`
-    });
-  }
-  // Choosing anyone other than the engine's recommendation must be justified for the audit trail.
   const deviatesFromRecommendation = !!evaluation.recommended_id && assigned_id !== evaluation.recommended_id;
-  if (deviatesFromRecommendation && !(override_reason && override_reason.trim())) {
-    return res.status(400).json({ error: 'A reason is required when assigning someone other than the recommended officer.' });
+
+  if (isExplicitOverride || !candidate.is_eligible || !isJurisdictionMatch || deviatesFromRecommendation) {
+    if (!override_reason || !override_reason.trim()) {
+      return res.status(400).json({
+        error: 'A mandatory statutory override reason is required when assigning an officer who does not meet standard eligibility requirements or deviates from recommendations.'
+      });
+    }
   }
 
-  // Cross-jurisdiction assignments are always recorded as an override, even if the
-  // client didn't flag it, so the audit trail reflects the actual statutory exception.
-  const recordedOverride = (deviatesFromRecommendation || !isJurisdictionMatch) ? 1 : 0;
+  const recordedOverride = (isExplicitOverride || !candidate.is_eligible || !isJurisdictionMatch || deviatesFromRecommendation) ? 1 : 0;
 
   const assignmentId = `ASN_${Date.now()}`;
   const now = new Date().toISOString();
@@ -1654,8 +1942,7 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     });
   }
 
-  // Transition: -> ASSIGNED. Distinct from PENDING_VERIFICATION, which means the
-  // fee is paid but no officer has been allocated yet.
+  // Transition: -> ASSIGNED.
   await Application.updateOne({ id: applicationId }, { $set: { status: 'ASSIGNED', updated_at: now } });
 
   logAudit('Application', applicationId, recordedOverride ? 'ASSIGNMENT_OVERRIDE' : 'ASSIGNMENT_CONFIRMED', actorId, role, {
@@ -1665,6 +1952,24 @@ app.post('/api/applications/:id/assign', async (req, res) => {
     score: candidate.score,
     is_override: !!recordedOverride,
     override_reason
+  });
+
+  // Notifications: Assignee + Trader
+  await sendNotification({
+    recipient_user_id: assigned_id,
+    type: assignee.role === ROLES.GATC ? 'NEW_LAB_REQUEST' : 'NEW_CASE_ASSIGNED',
+    title: assignee.role === ROLES.GATC ? 'New GATC Lab Request' : 'New Inspection Case Assigned',
+    message: `You have been allocated application ${appItem.application_no || applicationId} for verification.`,
+    related_application_id: applicationId,
+    metadata: { application_no: appItem.application_no, scheduled_date, time_slot }
+  });
+
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'VERIFIER_ASSIGNED',
+    title: 'Verifier Allocated',
+    message: `Application ${appItem.application_no || applicationId} has been assigned to ${assignee.full_name} (${assignee.role === ROLES.GATC ? 'GATC Lab' : 'Legal Metrology Officer'}).`,
+    related_application_id: applicationId
   });
 
   res.json({ message: 'Verifier assigned successfully', status: 'ASSIGNED' });
@@ -1699,12 +2004,16 @@ app.get('/api/verifications/cases', async (req, res) => {
 
   const applications = await Application.find({
     id: { $in: appIds },
-    status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] }
+    status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED'] }
   }).sort({ updated_at: -1 }).lean();
 
   const instIds = [...new Set(applications.map(a => a.instrument_id).filter(Boolean))];
   const instruments = await Instrument.find({ id: { $in: instIds } }).lean();
   const instMap = new Map(instruments.map(i => [i.id, i]));
+
+  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
+  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
+  const catMap = new Map(categories.map(c => [c.id, c]));
 
   const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
   const traders = await User.find({ id: { $in: traderIds } }).lean();
@@ -1717,12 +2026,29 @@ app.get('/api/verifications/cases', async (req, res) => {
   const verifs = await Verification.find({ application_id: { $in: applications.map(a => a.id) } }).lean();
   const verifMap = new Map(verifs.map(v => [v.application_id, v]));
 
+  // Fetch certificates to track worked instruments history and issued credentials
+  const certs = await Certificate.find({
+    $or: [
+      { instrument_id: { $in: instIds } },
+      { application_id: { $in: applications.map(a => a.id) } },
+      { verification_id: { $in: verifs.map(v => v.id) } }
+    ]
+  }).lean();
+  const certMap = new Map();
+  certs.forEach(c => {
+    if (c.instrument_id) certMap.set(c.instrument_id, c);
+    if (c.application_id) certMap.set(c.application_id, c);
+    if (c.verification_id) certMap.set(c.verification_id, c);
+  });
+
   const cases = applications.map(a => {
     const asn = asnMap.get(a.id) || {};
     const inst = instMap.get(a.instrument_id) || {};
+    const cat = catMap.get(inst.category_id);
     const trader = traderMap.get(a.trader_id) || {};
     const apt = aptMap.get(asn.id) || {};
     const verif = verifMap.get(a.id) || {};
+    const cert = certMap.get(a.id) || (verif.id ? certMap.get(verif.id) : null) || certMap.get(inst.id);
 
     return {
       application_id: a.id,
@@ -1733,8 +2059,11 @@ app.get('/api/verifications/cases', async (req, res) => {
       manufacturer: inst.manufacturer || null,
       model: inst.model || null,
       serial_number: inst.serial_number || null,
+      category_name: cat ? cat.name : 'Legal Metrology Instrument',
       max_capacity: inst.max_capacity || null,
+      verification_scale_interval_e: inst.verification_scale_interval_e || null,
       location: inst.location || null,
+      district: inst.district || null,
       trader_name: trader.full_name || null,
       trader_phone: trader.phone || null,
       assigned_id: asn.assigned_id || null,
@@ -1744,7 +2073,11 @@ app.get('/api/verifications/cases', async (req, res) => {
       arrangement_type: apt.arrangement_type || null,
       verification_id: verif.id || null,
       verification_status: verif.status || null,
-      verification_result: verif.result || null
+      verification_result: verif.result || null,
+      tested_at: verif.updated_at || verif.created_at || a.updated_at,
+      certificate_no: cert?.certificate_no || null,
+      certificate_valid_until: cert?.valid_until || null,
+      certificate_status: cert?.status || null
     };
   });
 
@@ -2110,7 +2443,7 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
   const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
   const ruleSet = inst ? await RuleSet.findOne({ category_id: inst.category_id }).lean() : null;
 
-  const { result, remarks, checklist_responses, readings } = req.body;
+  const { result, remarks, checklist_responses, readings, lab_parameters } = req.body;
 
   // 1. Result validation
   if (!['PASS', 'FAIL'].includes(result)) {
@@ -2139,9 +2472,27 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
     return res.status(400).json({ error: 'Incomplete verification: Observed measurement readings must be recorded for all test points.' });
   }
 
+  // 5. Server-side MPE and statutory tolerance calculation (Schedule IX / OIML R76)
+  const isGatcRole = role === ROLES.GATC || asn?.assigned_type === ROLES.GATC;
+  const verificationKind = isGatcRole ? 'LAB_TEST' : (appItem.verification_mode === 'IN_SITU' ? 'IN_SITU' : 'INITIAL');
+  const mpeResult = evaluateReadingsAgainstMPE(readings, inst, ruleSet, verificationKind);
+  const evaluatedReadings = mpeResult.readings || [];
+  const anyReadingFailedMPE = !mpeResult.allPass || evaluatedReadings.some(r => r.reading_result === 'FAIL');
+  const serverCalculatedOutcome = anyReadingFailedMPE ? 'FAIL' : 'PASS';
+
+  // Strict statutory rule: If server-side tolerance evaluation fails, result CANNOT be PASS
+  const effectiveResult = (result === 'FAIL' || serverCalculatedOutcome === 'FAIL') ? 'FAIL' : 'PASS';
+
   const now = new Date().toISOString();
   let verif = await Verification.findOne({ application_id: req.params.appId }).lean();
   const verifId = verif ? verif.id : `VERIF_${Date.now()}`;
+
+  const resolvedLabParams = isGatcRole ? {
+    chamber_temperature_c: lab_parameters?.chamber_temperature_c || req.body.chamber_temperature_c || '23.0',
+    relative_humidity_pct: lab_parameters?.relative_humidity_pct || req.body.relative_humidity_pct || '50',
+    standards_class: lab_parameters?.standards_class || req.body.standards_class || 'CLASS_E2',
+    calibration_certificate_ref: lab_parameters?.calibration_certificate_ref || req.body.calibration_certificate_ref || 'NPLI/CAL/2026/894'
+  } : null;
 
   // Persist final responses on verification object
   if (!verif) {
@@ -2149,8 +2500,10 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
       id: verifId,
       application_id: req.params.appId,
       verifier_id: actorId,
+      verification_type: isGatcRole ? 'LAB_TEST' : 'FIELD_INSPECTION',
+      lab_parameters: resolvedLabParams,
       status: 'COMPLETED',
-      result,
+      result: effectiveResult,
       remarks: remarks || '',
       started_at: now,
       completed_at: now,
@@ -2162,8 +2515,10 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
       { id: verifId },
       {
         $set: {
+          verification_type: isGatcRole ? 'LAB_TEST' : 'FIELD_INSPECTION',
+          lab_parameters: resolvedLabParams,
           status: 'COMPLETED',
-          result,
+          result: effectiveResult,
           remarks: remarks || '',
           completed_at: now,
           updated_at: now
@@ -2172,7 +2527,7 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
     );
   }
 
-  // Persist responses
+  // Persist checklist responses
   for (const chk of providedResponses) {
     if (chk.item_id) {
       await VerificationChecklistResponse.findOneAndUpdate(
@@ -2194,38 +2549,61 @@ app.post('/api/verifications/cases/:appId/submit', async (req, res) => {
     }
   }
 
-  // Persist readings
+  // Persist evaluated readings with error_value, permissible_error, and calculated_result
   await VerificationReading.deleteMany({ verification_id: verifId });
-  const readingDocs = readings.map(r => ({
+  const readingDocs = evaluatedReadings.map(r => ({
     id: `RDG_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
     verification_id: verifId,
     test_point: r.test_point || 'Test Point',
-    reference_value: Number(parseFloat(r.reference_value || r.standard_weight || 0)) || 0,
-    observed_value: Number(parseFloat(r.observed_value)) || 0,
+    reference_value: r.reference_value,
+    observed_value: r.observed_value,
+    error_value: r.error_value,
+    permissible_error: r.permissible_error,
+    calculated_result: r.calculated_result,
     unit: r.unit || 'kg',
-    reading_result: r.reading_result || 'PASS',
+    reading_result: r.reading_result,
     updated_at: now
   }));
   await VerificationReading.insertMany(readingDocs);
 
-  // State Transition: In strict RBAC, Verifier/Lab submits report to Authority for final scrutiny
-  const nextAppStatus = 'REPORT_SUBMITTED';
+  // State Transition: Field Verifier -> REPORT_SUBMITTED; GATC Lab -> GATC_REPORT_SUBMITTED
+  const nextAppStatus = isGatcRole ? 'GATC_REPORT_SUBMITTED' : 'REPORT_SUBMITTED';
 
   await Application.updateOne({ id: req.params.appId }, { $set: { status: nextAppStatus, updated_at: now } });
 
-  logAudit('Verification', verifId, 'VERIFICATION_REPORT_SUBMITTED', actorId, role, {
+  logAudit('Verification', verifId, isGatcRole ? 'GATC_LAB_REPORT_SUBMITTED' : 'FIELD_REPORT_SUBMITTED', actorId, role, {
     application_id: req.params.appId,
-    result,
+    result: effectiveResult,
     remarks,
     checklist_count: providedResponses.length,
-    readings_count: readings.length,
+    readings_count: evaluatedReadings.length,
+    any_mpe_failed: anyReadingFailedMPE,
     final_application_status: nextAppStatus
   });
 
+  // Notifications: Trader + Authority
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'VERIFICATION_COMPLETED',
+    title: 'Verification Report Submitted',
+    message: `Verification testing completed for application ${appItem.application_no || appItem.id}. Outcome: ${effectiveResult}. Awaiting Authority approval.`,
+    related_application_id: appItem.id,
+    metadata: { result: effectiveResult }
+  });
+
+  await notifyRole(ROLES.AUTHORITY, {
+    type: 'VERIFICATION_REPORT_SUBMITTED',
+    title: `${isGatcRole ? 'GATC Lab' : 'Field Verifier'} Report Submitted`,
+    message: `${isGatcRole ? 'GATC Lab' : 'Field Verifier'} report submitted for application ${appItem.application_no || appItem.id} (Outcome: ${effectiveResult}). Awaiting approval.`,
+    related_application_id: appItem.id,
+    metadata: { result: effectiveResult, verifier_id: actorId }
+  });
+
   res.json({
-    message: `Verification report (${result}) submitted to Legal Metrology Authority for statutory determination.`,
+    message: `Verification report (${effectiveResult}) submitted to Legal Metrology Authority for statutory determination.`,
     status: nextAppStatus,
-    result
+    result: effectiveResult,
+    evaluated_readings: evaluatedReadings
   });
 });
 
@@ -2245,9 +2623,16 @@ app.post('/api/applications/:id/approve', async (req, res) => {
   const appItem = await Application.findOne({ id: applicationId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
+  // Statutory Guard: Fee must be verified as PAID
+  if (appItem.fee_status !== 'PAID') {
+    return res.status(400).json({
+      error: 'Cannot approve application: Statutory fee has not been verified as paid.'
+    });
+  }
+
   // Eligibility check: Verification report must be submitted with PASS outcome
   const verif = await Verification.findOne({ application_id: applicationId }).lean();
-  if (!verif || verif.result !== 'PASS') {
+  if (!verif || verif.result !== 'PASS' || verif.status !== 'COMPLETED') {
     return res.status(400).json({
       error: 'Cannot approve application: A completed verification report with PASS determination is required before approval.'
     });
@@ -2256,27 +2641,7 @@ app.post('/api/applications/:id/approve', async (req, res) => {
   const { approval_remarks } = req.body;
   const now = new Date().toISOString();
 
-  // 1. Update Application Status to CERTIFICATE_ISSUED (and record approval)
-  await Application.updateOne(
-    { id: applicationId },
-    {
-      $set: {
-        status: 'CERTIFICATE_ISSUED',
-        approval_remarks: approval_remarks || 'Statutory verification report reviewed and approved by Legal Metrology Officer.',
-        approved_at: now,
-        approved_by: actorId,
-        updated_at: now
-      }
-    }
-  );
-
-  // 2. Update Instrument Status to VERIFIED
-  await Instrument.updateOne(
-    { id: appItem.instrument_id },
-    { $set: { status: 'VERIFIED' } }
-  );
-
-  // 3. Issue / Generate Official Certificate
+  // Issue / Generate Official Certificate
   const inst = await Instrument.findOne({ id: appItem.instrument_id }).lean();
   const ruleSet = inst ? await RuleSet.findOne({ category_id: inst.category_id }).lean() : null;
   const authorityUser = await User.findOne({ id: actorId }).lean();
@@ -2286,7 +2651,7 @@ app.post('/api/applications/:id/approve', async (req, res) => {
   if (!cert) {
     const year = new Date().getFullYear();
     const randomDigits = Math.floor(10000 + Math.random() * 90000);
-    const certNo = `LM-${year}-${randomDigits}-KL`;
+    const certNo = `LM-${year}-${randomDigits}-DL`;
     const publicToken = crypto.randomUUID();
     const certId = `CERT_${Date.now()}`;
 
@@ -2296,7 +2661,7 @@ app.post('/api/applications/:id/approve', async (req, res) => {
     validUntil.setMonth(validUntil.getMonth() + validityMonths);
 
     const issuingOfficer = authorityUser?.full_name || 'Legal Metrology Officer';
-    const issuingAuthority = org?.name || 'Department of Legal Metrology, Government of Kerala';
+    const issuingAuthority = org?.name || 'Department of Consumer Affairs, Legal Metrology Division, Delhi';
 
     cert = await Certificate.create({
       id: certId,
@@ -2313,11 +2678,54 @@ app.post('/api/applications/:id/approve', async (req, res) => {
     });
   }
 
+  // 1. Update Application Status to CERTIFICATE_ISSUED (and record approval)
+  await Application.updateOne(
+    { id: applicationId },
+    {
+      $set: {
+        status: 'CERTIFICATE_ISSUED',
+        certificate_id: cert.id,
+        certificate_no: cert.certificate_no,
+        approval_remarks: approval_remarks || 'Statutory verification report reviewed and approved by Legal Metrology Officer.',
+        approved_at: now,
+        approved_by: actorId,
+        updated_at: now
+      }
+    }
+  );
+
+  // 2. Update Instrument Status to VERIFIED
+  await Instrument.updateOne(
+    { id: appItem.instrument_id },
+    { $set: { status: 'VERIFIED' } }
+  );
+
   logAudit('Application', applicationId, 'APPLICATION_APPROVED_AND_CERTIFIED', actorId, role, {
     certificate_no: cert.certificate_no,
     public_token: cert.public_token,
     instrument_id: appItem.instrument_id
   });
+
+  // Notifications: Trader + Verifier
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'CERTIFICATE_ISSUED',
+    title: 'Certificate Issued & Approved',
+    message: `Application ${appItem.application_no || applicationId} approved! Certificate No: ${cert.certificate_no} has been issued.`,
+    related_application_id: applicationId,
+    related_certificate_id: cert.id,
+    metadata: { certificate_no: cert.certificate_no, public_token: cert.public_token }
+  });
+
+  if (verif?.verifier_id) {
+    await sendNotification({
+      recipient_user_id: verif.verifier_id,
+      type: 'CASE_APPROVED',
+      title: 'Verification Case Closed & Approved',
+      message: `Application ${appItem.application_no || applicationId} has been approved by Authority Officer.`,
+      related_application_id: applicationId
+    });
+  }
 
   const updatedApp = await Application.findOne({ id: applicationId }).lean();
   res.json({
@@ -2340,7 +2748,7 @@ app.post('/api/applications/:id/reject', async (req, res) => {
   const appItem = await Application.findOne({ id: applicationId }).lean();
   if (!appItem) return res.status(404).json({ error: 'Application not found' });
 
-  const { rejection_reason } = req.body;
+  const rejection_reason = req.body.rejection_reason || req.body.reason || req.body.remarks;
   if (!rejection_reason || !rejection_reason.trim()) {
     return res.status(400).json({ error: 'A specific statutory rejection reason is mandatory.' });
   }
@@ -2365,6 +2773,16 @@ app.post('/api/applications/:id/reject', async (req, res) => {
   logAudit('Application', applicationId, 'APPLICATION_REJECTED', actorId, role, {
     rejection_reason: rejection_reason.trim(),
     instrument_id: appItem.instrument_id
+  });
+
+  // Notification: Trader
+  await sendNotification({
+    recipient_user_id: appItem.trader_id,
+    type: 'APPLICATION_REJECTED',
+    title: 'Application Rejected',
+    message: `Application ${appItem.application_no || applicationId} was rejected by the Authority. Reason: ${rejection_reason.trim()}`,
+    related_application_id: applicationId,
+    metadata: { rejection_reason: rejection_reason.trim() }
   });
 
   res.json({
@@ -2449,6 +2867,7 @@ app.post('/api/certificates/generate/:appId', async (req, res) => {
     id: certId,
     certificate_no: certNo,
     verification_id: verif.id,
+    application_id: appId,
     instrument_id: inst.id,
     public_token: publicToken,
     issue_date: issueDate.toISOString(),
@@ -2461,6 +2880,19 @@ app.post('/api/certificates/generate/:appId', async (req, res) => {
 
   // Update instrument status to VERIFIED
   await Instrument.updateOne({ id: inst.id }, { $set: { status: 'VERIFIED' } });
+
+  // Update application status to CERTIFICATE_ISSUED
+  await Application.updateOne(
+    { id: appId },
+    {
+      $set: {
+        status: 'CERTIFICATE_ISSUED',
+        certificate_id: certId,
+        certificate_no: certNo,
+        updated_at: issueDate.toISOString()
+      }
+    }
+  );
 
   logAudit('Certificate', certId, 'CERTIFICATE_GENERATED', actorId, role, {
     certificate_no: certNo,
@@ -2609,17 +3041,22 @@ app.get('/api/certificates/:id', async (req, res) => {
 
 // Public Unauthenticated Certificate Verification via QR / Public Token
 app.get('/api/public/verify/:token', async (req, res) => {
-  const token = req.params.token;
+  const rawToken = req.params.token;
 
-  if (!token || typeof token !== 'string' || token.trim().length === 0) {
+  if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) {
     return res.status(400).json({
       status: 'INVALID',
       error: 'Malformed or missing certificate verification reference.'
     });
   }
 
-  // Query certificate by public_token (guaranteed unique, non-guessable UUID)
-  const cert = await Certificate.findOne({ public_token: token.trim() }).lean();
+  const queryToken = rawToken.trim();
+
+  // Query certificate by public_token (or fallback to certificate_no for manual entry)
+  let cert = await Certificate.findOne({ public_token: queryToken }).lean();
+  if (!cert) {
+    cert = await Certificate.findOne({ certificate_no: queryToken }).lean();
+  }
 
   if (!cert) {
     return res.status(404).json({
@@ -2628,6 +3065,12 @@ app.get('/api/public/verify/:token', async (req, res) => {
     });
   }
 
+  const verif = cert.verification_id ? await Verification.findOne({ id: cert.verification_id }).lean() : null;
+  const appId = cert.application_id || (verif ? verif.application_id : null);
+  let appItem = appId ? await Application.findOne({ id: appId }).lean() : null;
+  if (!appItem && cert.instrument_id) {
+    appItem = await Application.findOne({ instrument_id: cert.instrument_id }).sort({ created_at: -1 }).lean();
+  }
   const inst = await Instrument.findOne({ id: cert.instrument_id }).lean();
   const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
   const trader = inst ? await User.findOne({ id: inst.owner_id }).lean() : null;
@@ -2649,21 +3092,26 @@ app.get('/api/public/verify/:token', async (req, res) => {
     console.error('Audit logging failed for public verification:', err);
   }
 
-  // Return strictly public, sanitized verification payload
+  // Return strictly public, sanitized verification payload (NO private payment, docs, or evidence)
   res.json({
     status: liveStatus,
     certificate_no: cert.certificate_no,
     public_token: cert.public_token,
+    application_no: appItem ? (appItem.application_no || appItem.id) : (cert.application_id || null),
     issue_date: cert.issue_date,
     valid_until: cert.valid_until,
     is_expired: isExpired,
     instrument: {
+      id: cert.instrument_id,
       category: cat ? cat.name : 'Weighing Instrument',
       manufacturer: inst ? inst.manufacturer : null,
       model: inst ? inst.model : null,
       serial_number: inst ? inst.serial_number : null,
       max_capacity: inst ? inst.max_capacity : null,
-      verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null
+      min_capacity: inst ? inst.min_capacity : null,
+      verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+      location: inst ? inst.location : null,
+      district: inst ? inst.district : null
     },
     verification_authority: {
       officer: cert.issuing_officer,
@@ -2671,9 +3119,99 @@ app.get('/api/public/verify/:token', async (req, res) => {
       jurisdiction: torg ? (torg.jurisdictions || []).join(', ') : 'National Capital Territory of Delhi'
     },
     business: {
-      enterprise_name: torg ? torg.name : 'Authorized Commercial Establishment'
+      enterprise_name: torg ? torg.name : (trader ? trader.full_name : 'Authorized Commercial Establishment'),
+      trader_name: trader ? trader.full_name : null,
+      location: inst ? inst.location : (trader ? trader.address : null)
     },
-    verification_statement: 'Matched and authenticated against the official Department of Consumer Affairs Legal Metrology digital ledger.'
+    verification_statement: 'Matched and authenticated against the official Department of Consumer Affairs Legal Metrology digital ledger under Section 24 of The Legal Metrology Act, 2009.'
+  });
+});
+
+// Public Unauthenticated Instrument Verification via QR / Secure Public Token
+app.get(['/api/public/instrument/:token', '/api/public/instruments/:token'], async (req, res) => {
+  const rawToken = req.params.token;
+  if (!rawToken || typeof rawToken !== 'string' || rawToken.trim().length === 0) {
+    return res.status(400).json({ status: 'INVALID', status_label: 'INVALID TOKEN', error: 'Malformed or missing instrument verification reference.' });
+  }
+
+  const queryToken = rawToken.trim();
+  let inst = await Instrument.findOne({
+    $or: [{ public_token: queryToken }, { id: queryToken }, { serial_number: queryToken }]
+  }).lean();
+
+  if (!inst) {
+    return res.status(404).json({
+      status: 'NOT_FOUND',
+      status_label: 'INSTRUMENT NOT FOUND',
+      error: 'Instrument record not found in the official Legal Metrology registry.'
+    });
+  }
+
+  const cat = inst.category_id ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
+  const cert = await Certificate.findOne({ instrument_id: inst.id }).sort({ created_at: -1 }).lean();
+  const latestApp = await Application.findOne({ instrument_id: inst.id }).sort({ created_at: -1 }).lean();
+
+  const formatDateIN = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+
+  const now = new Date();
+  let publicStatus = 'REGISTERED_NOT_VERIFIED';
+  let statusLabel = 'REGISTERED — NOT CURRENTLY VERIFIED';
+
+  if (inst.status === 'SUSPENDED') {
+    publicStatus = 'SUSPENDED';
+    statusLabel = 'SUSPENDED';
+  } else if (inst.status === 'CANCELLED' || inst.status === 'REJECTED') {
+    publicStatus = 'CANCELLED';
+    statusLabel = 'CANCELLED';
+  } else if (cert) {
+    const validUntilDate = new Date(cert.valid_until);
+    if (validUntilDate < now) {
+      publicStatus = 'EXPIRED';
+      statusLabel = 'VERIFICATION EXPIRED';
+    } else if (cert.status === 'VALID' || inst.status === 'VERIFIED') {
+      publicStatus = 'VERIFIED_VALID';
+      statusLabel = 'VERIFIED — VALID';
+    } else {
+      publicStatus = cert.status;
+      statusLabel = cert.status;
+    }
+  }
+
+  try {
+    logAudit('PublicInstrument', inst.id, 'PUBLIC_INSTRUMENT_QR_VERIFIED', 'PUBLIC_VISITOR', 'PUBLIC', {
+      serial_number: inst.serial_number,
+      status: publicStatus
+    });
+  } catch (err) {}
+
+  res.json({
+    status: publicStatus,
+    status_label: statusLabel,
+    instrument_id: inst.serial_number || inst.id,
+    public_token: inst.public_token || inst.serial_number || inst.id,
+    serial_number: inst.serial_number,
+    category_name: cat ? cat.name : 'Legal Metrology Instrument',
+    manufacturer: inst.manufacturer || 'Certified Manufacturer',
+    model: inst.model || 'Standard Model',
+    verification_type: latestApp?.verification_type === 'RE_VERIFICATION' ? 'Re-Verification' : 'Original Verification',
+    verified_on: cert?.issue_date ? formatDateIN(cert.issue_date) : null,
+    valid_until: cert?.valid_until ? formatDateIN(cert.valid_until) : null,
+    valid_until_iso: cert?.valid_until || null,
+    latest_certificate_no: cert ? cert.certificate_no : null,
+    max_capacity: inst.max_capacity || null,
+    min_capacity: inst.min_capacity || null,
+    verification_scale_interval_e: inst.verification_scale_interval_e || null,
+    district: inst.district || null,
+    notice: 'Current verification status is based on records available in CertifyMetric.',
+    verification_statement: 'Authenticated against the official Legal Metrology National Instrument Registry under Section 24 of The Legal Metrology Act, 2009.'
   });
 });
 
@@ -2905,11 +3443,231 @@ app.get('/api/admin/system-health', requirePermission('VIEW_SYSTEM_HEALTH'), asy
   });
 });
 
+// 7. Real Admin Analytics & MongoDB Aggregations
+app.get('/api/admin/analytics', requirePermission('VIEW_ANALYTICS'), async (req, res) => {
+  const { range = '30d' } = req.query;
+
+  let dateFilter = {};
+  const now = new Date();
+  if (range === '7d') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7);
+    dateFilter = { created_at: { $gte: d.toISOString() } };
+  } else if (range === '30d') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 30);
+    dateFilter = { created_at: { $gte: d.toISOString() } };
+  } else if (range === '6m') {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - 6);
+    dateFilter = { created_at: { $gte: d.toISOString() } };
+  }
+
+  try {
+    // 1. Applications by Status
+    const statusCountsRaw = await Application.aggregate([
+      { $match: dateFilter },
+      { $group: { _id: '$status', count: { $sum: 1 } } }
+    ]);
+    const statusMap = Object.fromEntries(statusCountsRaw.map(s => [s._id, s.count]));
+    const applicationsByStatus = {
+      SUBMITTED: statusMap['SUBMITTED'] || 0,
+      UNDER_REVIEW: statusMap['UNDER_REVIEW'] || 0,
+      RETURNED: statusMap['RETURNED'] || 0,
+      ASSIGNED: (statusMap['ASSIGNED'] || 0) + (statusMap['PENDING_VERIFICATION'] || 0),
+      IN_VERIFICATION: statusMap['IN_VERIFICATION'] || 0,
+      REPORT_SUBMITTED: (statusMap['REPORT_SUBMITTED'] || 0) + (statusMap['GATC_REPORT_SUBMITTED'] || 0),
+      APPROVED: statusMap['APPROVED'] || 0,
+      REJECTED: statusMap['REJECTED'] || 0,
+      CERTIFICATE_ISSUED: statusMap['CERTIFICATE_ISSUED'] || 0
+    };
+
+    // 2. Applications Over Time (Trend)
+    const appsForTimeline = await Application.find(dateFilter, { created_at: 1 }).sort({ created_at: 1 }).lean();
+    const timelineBuckets = {};
+    for (const app of appsForTimeline) {
+      const dStr = app.created_at ? app.created_at.substring(0, 10) : new Date().toISOString().substring(0, 10);
+      timelineBuckets[dStr] = (timelineBuckets[dStr] || 0) + 1;
+    }
+    const applicationsOverTime = Object.entries(timelineBuckets).map(([date, count]) => ({
+      date,
+      count
+    }));
+
+    // 3. Verification Type
+    const typeCountsRaw = await Application.aggregate([
+      { $match: dateFilter },
+      { $group: { _id: '$request_type', count: { $sum: 1 } } }
+    ]);
+    const typeMap = Object.fromEntries(typeCountsRaw.map(t => [t._id, t.count]));
+    const verificationType = {
+      ORIGINAL: (typeMap['ORIGINAL'] || 0) + (typeMap['INITIAL_VERIFICATION'] || 0),
+      RE_VERIFICATION: typeMap['RE_VERIFICATION'] || 0
+    };
+
+    // 4. Verification Mode
+    const modeCountsRaw = await Application.aggregate([
+      { $match: dateFilter },
+      { $group: { _id: '$verification_mode', count: { $sum: 1 } } }
+    ]);
+    const modeMap = Object.fromEntries(modeCountsRaw.map(m => [m._id, m.count]));
+    const verificationMode = {
+      IN_SITU: modeMap['IN_SITU'] || 0,
+      CAMP: modeMap['CAMP'] || 0,
+      GATC: modeMap['GATC'] || modeMap['GATC_LAB'] || 0
+    };
+
+    // 5. Payment Status & Revenue
+    const payCountsRaw = await Application.aggregate([
+      { $match: dateFilter },
+      { $group: { _id: '$fee_status', count: { $sum: 1 }, totalRevenue: { $sum: { $ifNull: ['$fee_breakdown.total_fee', 300] } } } }
+    ]);
+    const payMap = Object.fromEntries(payCountsRaw.map(p => [p._id, p]));
+    const paymentStatus = {
+      PENDING: (payMap['PENDING']?.count || 0) + (payMap['PENDING_VERIFICATION']?.count || 0),
+      PAID: payMap['PAID']?.count || 0,
+      FAILED: payMap['FAILED']?.count || 0,
+      total_revenue: payMap['PAID']?.totalRevenue || 0
+    };
+
+    // 6. Certificate Statistics
+    const allCerts = await Certificate.find().lean();
+    let issued = allCerts.length;
+    let active = 0;
+    let expired = 0;
+    const currentDate = new Date();
+    for (const c of allCerts) {
+      if (c.status === 'EXPIRED' || (c.valid_until && new Date(c.valid_until) < currentDate)) {
+        expired++;
+      } else if (c.status === 'VALID') {
+        active++;
+      } else {
+        active++;
+      }
+    }
+    const certificateStats = {
+      issued,
+      active,
+      expired
+    };
+
+    // 6b. Certificates Over Time
+    const certsForTimeline = await Certificate.find({}, { issue_date: 1, created_at: 1 }).sort({ created_at: 1 }).lean();
+    const certBuckets = {};
+    for (const c of certsForTimeline) {
+      const dStr = (c.issue_date || c.created_at || '').substring(0, 10) || new Date().toISOString().substring(0, 10);
+      certBuckets[dStr] = (certBuckets[dStr] || 0) + 1;
+    }
+    const certificatesOverTime = Object.entries(certBuckets).map(([date, count]) => ({
+      date,
+      count
+    }));
+
+    // 7. Real Verification Outcomes (Pass, Fail, Pending)
+    const verificationsList = await Verification.find().lean();
+    let passCount = 0;
+    let failCount = 0;
+    let pendingVerifCount = 0;
+    for (const v of verificationsList) {
+      const resVal = String(v.result || v.status || '').toUpperCase();
+      if (resVal === 'PASS' || resVal === 'COMPLETED' || resVal === 'VERIFIED') {
+        passCount++;
+      } else if (resVal === 'FAIL' || resVal === 'FAILED' || resVal === 'REJECTED') {
+        failCount++;
+      } else {
+        pendingVerifCount++;
+      }
+    }
+    const verificationOutcomes = {
+      PASS: passCount,
+      FAIL: failCount,
+      PENDING: pendingVerifCount,
+      total: verificationsList.length
+    };
+
+    // 8. Platform Summary Counts from MongoDB
+    const [totalUsers, activeUsers, totalOrgs, totalInstruments, totalApplications, totalCertificates, totalOfficesLabs, totalCategories] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ $or: [{ status: 'ACTIVE' }, { active: true }, { active: { $exists: false } }] }),
+      Organization.countDocuments(),
+      Instrument.countDocuments(),
+      Application.countDocuments(),
+      Certificate.countDocuments(),
+      Organization.countDocuments({ type: { $in: ['STATUTORY_AUTHORITY', 'TEST_CENTRE', 'OFFICE', 'LAB', 'AUTHORITY', 'GATC'] } }),
+      InstrumentCategory.countDocuments()
+    ]);
+
+    const summary = {
+      totalUsers,
+      activeUsers,
+      totalOrgs,
+      totalInstruments,
+      totalApplications,
+      totalCertificates,
+      totalOfficesLabs,
+      totalCategories
+    };
+
+    // 9. Field & GATC Workload
+    const officers = await User.find({ role: { $in: [ROLES.VERIFIER, ROLES.GATC] } }).lean();
+    const assignments = await Assignment.find().lean();
+    const verifMap = new Set(verificationsList.filter(v => v.status === 'COMPLETED' || v.result).map(v => v.application_id));
+
+    const workloadList = officers.map(officer => {
+      const officerAssignments = assignments.filter(a => a.assigned_id === officer.id);
+      const totalAssigned = officerAssignments.length;
+      const completed = officerAssignments.filter(a => verifMap.has(a.application_id)).length;
+      const pending = Math.max(0, totalAssigned - completed);
+
+      return {
+        id: officer.id,
+        name: officer.full_name,
+        role: officer.role,
+        designation: officer.designation || officer.role,
+        total_assigned: totalAssigned,
+        completed,
+        pending
+      };
+    });
+
+    res.json({
+      range,
+      summary,
+      applicationsByStatus,
+      applicationsOverTime,
+      verificationOutcomes,
+      certificatesOverTime,
+      verificationType,
+      verificationMode,
+      paymentStatus,
+      certificateStats,
+      workloadList,
+      total_applications: Object.values(applicationsByStatus).reduce((a, b) => a + b, 0),
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('Analytics aggregation error:', err);
+    res.status(500).json({ error: 'Failed to aggregate analytics data' });
+  }
+});
+
 // ==========================================
 // 9. PRODUCTION ERROR & LIFECYCLE HANDLING
 // ==========================================
 
-// 404 Handler for unknown routes
+// Serve static client assets if built in client/dist
+const clientDistPath = path.join(__dirname, '../client/dist');
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
+
+// 404 Handler for unknown API / upload routes
 app.use((req, res) => {
   res.status(404).json({ error: `Not Found: ${req.method} ${req.originalUrl}` });
 });

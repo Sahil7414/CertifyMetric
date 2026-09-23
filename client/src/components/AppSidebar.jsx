@@ -110,7 +110,7 @@ export function getNavigationConfig(role, callbacks = {}) {
       return [
         {
           id: 'verifier-dashboard',
-          label: 'Assigned Inspections',
+          label: 'Assigned Work',
           icon: 'assignment_turned_in',
           tab: 'verifier-dashboard',
           matches: ['verifier-dashboard'],
@@ -123,14 +123,6 @@ export function getNavigationConfig(role, callbacks = {}) {
           tab: 'verification-workspace',
           matches: ['verification-workspace'],
           onClick: () => onSelectTab && onSelectTab('verification-workspace')
-        },
-        {
-          id: 'certificates',
-          label: 'Completed Cases',
-          icon: 'inventory_2',
-          tab: 'certificates',
-          matches: ['certificates', 'official-certificate'],
-          onClick: () => onSelectTab && onSelectTab('certificates')
         },
         {
           id: 'public-qr-verify',
@@ -147,7 +139,7 @@ export function getNavigationConfig(role, callbacks = {}) {
       return [
         {
           id: 'gatc-dashboard',
-          label: 'GATC Lab Console',
+          label: 'Lab Requests',
           icon: 'biotech',
           tab: 'gatc-dashboard',
           matches: ['gatc-dashboard'],
@@ -160,14 +152,6 @@ export function getNavigationConfig(role, callbacks = {}) {
           tab: 'verification-workspace',
           matches: ['verification-workspace'],
           onClick: () => onSelectTab && onSelectTab('verification-workspace')
-        },
-        {
-          id: 'certificates',
-          label: 'Test Reports Archive',
-          icon: 'inventory_2',
-          tab: 'certificates',
-          matches: ['certificates', 'official-certificate'],
-          onClick: () => onSelectTab && onSelectTab('certificates')
         },
         {
           id: 'public-qr-verify',
@@ -184,19 +168,51 @@ export function getNavigationConfig(role, callbacks = {}) {
       return [
         {
           id: 'admin-dashboard',
-          label: 'Portal Admin Console',
-          icon: 'admin_panel_settings',
+          label: 'Platform Dashboard',
+          icon: 'dashboard',
           tab: 'admin-dashboard',
           matches: ['admin-dashboard'],
           onClick: () => onSelectTab && onSelectTab('admin-dashboard')
         },
         {
+          id: 'admin-users',
+          label: 'Users & Roles',
+          icon: 'group',
+          tab: 'admin-users',
+          matches: ['admin-users'],
+          onClick: () => onSelectTab && onSelectTab('admin-users')
+        },
+        {
+          id: 'admin-orgs',
+          label: 'Offices & Labs',
+          icon: 'apartment',
+          tab: 'admin-orgs',
+          matches: ['admin-orgs'],
+          onClick: () => onSelectTab && onSelectTab('admin-orgs')
+        },
+        {
+          id: 'admin-master',
+          label: 'Categories & Rulesets',
+          icon: 'tune',
+          tab: 'admin-master',
+          matches: ['admin-master'],
+          onClick: () => onSelectTab && onSelectTab('admin-master')
+        },
+        {
           id: 'audit-logs',
-          label: 'Audit & Governance Ledger',
+          label: 'Audit & Governance',
           icon: 'history_edu',
           tab: 'audit-logs',
           matches: ['audit-logs'],
           onClick: () => onSelectTab && onSelectTab('audit-logs')
+        },
+        {
+          id: 'system-health',
+          label: 'System Health',
+          icon: 'health_and_safety',
+          tab: 'system-health',
+          matches: ['system-health'],
+          onClick: () => onSelectTab && onSelectTab('system-health')
         },
         {
           id: 'public-qr-verify',
@@ -433,7 +449,7 @@ export default function AppSidebar({
               {/* Action Buttons */}
               <div className="pt-1 flex items-center justify-between border-t border-[#1b365d]/60 text-[11px]">
                 <span className="text-[10px] text-slate-400 font-mono">
-                  SIH 26036
+                  CertifyMetric v1.0
                 </span>
                 {onLogout && (
                   <button

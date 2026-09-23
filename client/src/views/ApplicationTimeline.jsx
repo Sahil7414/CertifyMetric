@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import StatusBadge from '../components/StatusBadge';
+import AcknowledgementSlipModal from '../components/AcknowledgementSlipModal';
 import { api } from '../api';
 
 export default function ApplicationTimeline({
@@ -12,6 +13,7 @@ export default function ApplicationTimeline({
 }) {
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showSlipModal, setShowSlipModal] = useState(false);
 
   useEffect(() => {
     if (applicationId) {
@@ -34,8 +36,8 @@ export default function ApplicationTimeline({
   const isCompleted = ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED', 'APPROVED'].includes(application.status);
   const isFailed = application.status === 'VERIFICATION_FAILED' || application.status === 'REJECTED';
   const isReturned = application.status === 'RETURNED';
-  const isPaymentPending = application.status === 'PAYMENT_PENDING' || application.fee_status === 'PENDING' || application.payment?.payment_status === 'PENDING';
-  const isPaid = application.fee_status === 'PAID' || application.payment?.payment_status === 'PAID' || application.payment?.payment_status === 'PAYMENT_VERIFIED';
+  const isPaid = application.fee_status === 'PAID' || application.payment?.payment_status === 'PAID' || application.payment?.payment_status === 'PAYMENT_VERIFIED' || application.status === 'PAYMENT_VERIFIED' || isCompleted;
+  const isPaymentPending = !isPaid && (application.status === 'PAYMENT_PENDING' || application.fee_status === 'PENDING' || application.payment?.payment_status === 'PENDING');
 
   const totalFee = application.payment?.amount || application.fee_breakdown?.total_fee || 300;
 
@@ -212,11 +214,11 @@ export default function ApplicationTimeline({
           </div>
 
           <button
-            onClick={() => window.print()}
+            onClick={() => setShowSlipModal(true)}
             className="px-3 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-base">print</span>
-            Print Acknowledgement Slip
+            <span className="material-symbols-outlined text-base">receipt_long</span>
+            View / Print Acknowledgement Slip
           </button>
         </div>
       </div>
@@ -551,6 +553,14 @@ export default function ApplicationTimeline({
           ))}
         </div>
       </div>
+
+      {showSlipModal && (
+        <AcknowledgementSlipModal
+          application={application}
+          instrument={application.instrument}
+          onClose={() => setShowSlipModal(false)}
+        />
+      )}
     </div>
   );
 }

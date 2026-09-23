@@ -25,6 +25,7 @@ export const PERMISSIONS = {
   RETURN_APPLICATION: [ROLES.AUTHORITY],
   REJECT_APPLICATION: [ROLES.AUTHORITY],
   ASSIGN_VERIFIER: [ROLES.AUTHORITY],
+  VERIFY_PAYMENT: [ROLES.AUTHORITY],
   APPROVE_APPLICATION: [ROLES.AUTHORITY],
   GENERATE_CERTIFICATE: [ROLES.AUTHORITY],
   VIEW_OPERATIONS_QUEUE: [ROLES.AUTHORITY],
@@ -51,7 +52,8 @@ export const PERMISSIONS = {
 
   // Common / Shared read permissions
   VIEW_ALL_INSTRUMENTS: [ROLES.AUTHORITY, ROLES.PLATFORM_ADMIN, ROLES.VERIFIER, ROLES.GATC],
-  VIEW_AUDIT_LOGS: [ROLES.AUTHORITY, ROLES.PLATFORM_ADMIN]
+  VIEW_AUDIT_LOGS: [ROLES.AUTHORITY, ROLES.PLATFORM_ADMIN],
+  VIEW_ANALYTICS: [ROLES.PLATFORM_ADMIN, ROLES.AUTHORITY]
 };
 
 export function hasPermission(role, permissionKey) {
@@ -63,8 +65,8 @@ export function hasPermission(role, permissionKey) {
 // Server Middleware to enforce permissions
 export function requirePermission(permissionKey) {
   return (req, res, next) => {
-    const userRole = req.actor?.role || req.headers['x-user-role'] || req.body?.actor_role || req.query?.user_role;
-    if (!userRole) {
+    const userRole = req.actor?.role;
+    if (!userRole || userRole === 'ANONYMOUS') {
       return res.status(401).json({ error: 'Authentication/Role required' });
     }
 

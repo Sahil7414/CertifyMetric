@@ -1,6 +1,39 @@
 import React, { useEffect, useState } from 'react';
 import StatusBadge from '../components/StatusBadge';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { api, getFileUrl } from '../api';
+
+const DEFAULT_CHECKLIST_SCHEMA = [
+  { id: 'VISUAL_MARKING', title: 'Visual & Nameplate Inspection', description: 'Verify manufacturer nameplate, serial number, model, class marking, and capacity legibility.', required: true },
+  { id: 'SEAL_INTEGRITY', title: 'Tamper-Evident Seal Verification', description: 'Inspect lead/wire seals or security calibration seals for physical integrity.', required: true },
+  { id: 'ZERO_SETTING', title: 'Zero Balance & Setting Accuracy', description: 'Confirm zero-setting and zero-tracking devices operate within ±0.25e.', required: true },
+  { id: 'ECCENTRICITY', title: 'Eccentricity (Corner Load) Test', description: 'Apply 1/3 max load at key load receptor points and check variation limits.', required: true },
+  { id: 'ACCURACY_MPE', title: 'Indication Accuracy & MPE Compliance', description: 'Verify error of indication at test loads does not exceed Maximum Permissible Error (MPE).', required: true }
+];
+
+const parseCapacity = (capStr) => {
+  if (!capStr) return { val: 30, unit: 'kg' };
+  const match = String(capStr).match(/([\d.]+)\s*([a-zA-Z]+)?/);
+  if (!match) return { val: 30, unit: 'kg' };
+  const val = parseFloat(match[1]) || 30;
+  const unit = match[2] || 'kg';
+  return { val, unit };
+};
+
+const generateDefaultReadings = (capStr) => {
+  const { val, unit } = parseCapacity(capStr);
+  const minVal = Number((val * 0.01).toFixed(3)) || 0.1;
+  const qVal = Number((val * 0.25).toFixed(3)) || 7.5;
+  const hVal = Number((val * 0.5).toFixed(3)) || 15;
+
+  return [
+    { test_point: 'Zero Load Test', reference_value: 0, observed_value: '0.000', unit, reading_result: 'PASS' },
+    { test_point: `Min Capacity (${minVal}${unit})`, reference_value: minVal, observed_value: String(minVal), unit, reading_result: 'PASS' },
+    { test_point: `Quarter Load (${qVal}${unit})`, reference_value: qVal, observed_value: String(qVal), unit, reading_result: 'PASS' },
+    { test_point: `Half Capacity (${hVal}${unit})`, reference_value: hVal, observed_value: String(hVal), unit, reading_result: 'PASS' },
+    { test_point: `Max Capacity (${val}${unit})`, reference_value: val, observed_value: String(val), unit, reading_result: 'PASS' }
+  ];
+};
 
 export default function VerificationWorkspace({
   applicationId,
@@ -9,6 +42,8 @@ export default function VerificationWorkspace({
   onVerificationCompleted,
   onViewCertificate
 }) {
+  const [selectedAppId, setSelectedAppId] = useState(applicationId || null);
+  const [assignedCases, setAssignedCases] = useState([]);
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -20,6 +55,15 @@ export default function VerificationWorkspace({
   const [observations, setObservations] = useState('');
   const [evidenceList, setEvidenceList] = useState([]);
 
+  // Evidence preview state
+  const [previewDoc, setPreviewDoc] = useState(null);
+
+  // GATC Laboratory Environmental & Reference Standards State
+  const [chamberTemperature, setChamberTemperature] = useState('23.0');
+  const [relativeHumidity, setRelativeHumidity] = useState('50');
+  const [standardsClass, setStandardsClass] = useState('CLASS_E2');
+  const [calibrationCertRef, setCalibrationCertRef] = useState('NPLI/CAL/2026/894');
+
   // Evidence upload state
   const [uploadCategory, setUploadCategory] = useState('DEVICE_SETUP');
   const [uploadCaption, setUploadCaption] = useState('');
@@ -30,16 +74,64 @@ export default function VerificationWorkspace({
   const [savingDraft, setSavingDraft] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
-  const loadCase = async () => {
+  // Normalized Checklist Schema (handles text vs title, mandatory vs required)
+  const effectiveChecklistSchema = React.useMemo(() => {
+    const raw = caseData?.checklist_schema;
+    const list = (Array.isArray(raw) && raw.length > 0) ? raw : DEFAULT_CHECKLIST_SCHEMA;
+    return list.map((item, idx) => ({
+      id: item.id || `ITEM_${idx + 1}`,
+      title: item.title || item.text || item.item_name || `Checklist Item ${idx + 1}`,
+      description: item.description || item.instruction || item.details || 'Inspect compliance against legal metrology rules.',
+      required: item.required !== undefined ? Boolean(item.required) : (item.mandatory !== undefined ? Boolean(item.mandatory) : true)
+    }));
+  }, [caseData]);
+
+  const hasExplicitEmptyChecklist = Array.isArray(caseData?.checklist_schema) && caseData.checklist_schema.length === 0;
+
+  // Keep prop in sync with selected internal ID
+  useEffect(() => {
+    if (applicationId) {
+      setSelectedAppId(applicationId);
+    }
+  }, [applicationId]);
+
+  // Load list of assigned cases for switcher or fallback
+  useEffect(() => {
+    if (currentUser?.id) {
+      api.getVerifierCases(currentUser.id)
+        .then(list => {
+          const arr = Array.isArray(list) ? list : [];
+          setAssignedCases(arr);
+          if (!applicationId && arr.length > 0) {
+            setSelectedAppId(arr[0].application_id);
+          } else if (!applicationId && arr.length === 0) {
+            setLoading(false);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [currentUser, applicationId]);
+
+  const loadCase = async (appIdToFetch) => {
+    const idToUse = appIdToFetch || selectedAppId;
+    if (!idToUse) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       setError('');
-      const data = await api.getCaseWorkspace(applicationId);
+      const data = await api.getCaseWorkspace(idToUse);
       setCaseData(data);
+
+      const effectiveSchema = (data.checklist_schema && data.checklist_schema.length > 0)
+        ? data.checklist_schema
+        : DEFAULT_CHECKLIST_SCHEMA;
 
       // Populate checklist responses
       const initialResponses = {};
-      (data.checklist_schema || []).forEach(item => {
+      effectiveSchema.forEach(item => {
         const saved = (data.checklist_responses || []).find(r => r.item_id === item.id);
         initialResponses[item.id] = {
           status: saved ? saved.status : '',
@@ -52,14 +144,7 @@ export default function VerificationWorkspace({
       if (data.readings && data.readings.length > 0) {
         setReadings(data.readings);
       } else {
-        // Default standard test points for NAWI Class III (30kg scale)
-        setReadings([
-          { test_point: 'Zero Load Test', reference_value: 0, observed_value: '0.000', unit: 'kg', reading_result: 'PASS' },
-          { test_point: 'Min Capacity (100g)', reference_value: 0.1, observed_value: '0.100', unit: 'kg', reading_result: 'PASS' },
-          { test_point: 'Quarter Load (7.5kg)', reference_value: 7.5, observed_value: '7.500', unit: 'kg', reading_result: 'PASS' },
-          { test_point: 'Half Capacity (15kg)', reference_value: 15, observed_value: '15.000', unit: 'kg', reading_result: 'PASS' },
-          { test_point: 'Max Capacity (30kg)', reference_value: 30, observed_value: '30.000', unit: 'kg', reading_result: 'PASS' }
-        ]);
+        setReadings(generateDefaultReadings(data.max_capacity));
       }
 
       // Populate observations
@@ -76,17 +161,18 @@ export default function VerificationWorkspace({
   };
 
   useEffect(() => {
-    if (applicationId) {
-      loadCase();
+    if (selectedAppId) {
+      loadCase(selectedAppId);
     }
-  }, [applicationId]);
+  }, [selectedAppId]);
 
   // Handle Start Verification (ASSIGNED -> IN_PROGRESS)
   const handleStartVerification = async () => {
+    if (!selectedAppId) return;
     try {
       setLoading(true);
-      await api.startVerification(applicationId);
-      await loadCase();
+      await api.startVerification(selectedAppId);
+      await loadCase(selectedAppId);
     } catch (err) {
       alert('Error starting verification: ' + err.message);
       setLoading(false);
@@ -113,8 +199,23 @@ export default function VerificationWorkspace({
     });
   };
 
+  // Add custom reading test point
+  const handleAddReading = () => {
+    const { unit } = parseCapacity(caseData?.max_capacity);
+    setReadings(prev => [
+      ...prev,
+      { test_point: `Custom Test Point ${prev.length + 1}`, reference_value: 0, observed_value: '', unit, reading_result: 'PASS' }
+    ]);
+  };
+
+  // Delete reading test point
+  const handleDeleteReading = (index) => {
+    setReadings(prev => prev.filter((_, i) => i !== index));
+  };
+
   // Save Draft
   const handleSaveDraft = async () => {
+    if (!selectedAppId) return;
     try {
       setSavingDraft(true);
       setSaveSuccessMsg('');
@@ -125,7 +226,7 @@ export default function VerificationWorkspace({
         note: val.note
       }));
 
-      await api.saveDraft(applicationId, {
+      await api.saveDraft(selectedAppId, {
         checklist_responses: formattedResponses,
         readings,
         observations
@@ -143,7 +244,7 @@ export default function VerificationWorkspace({
   // Evidence Upload
   const handleEvidenceUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !selectedAppId) return;
 
     try {
       setUploading(true);
@@ -152,7 +253,7 @@ export default function VerificationWorkspace({
       formData.append('category', uploadCategory);
       formData.append('caption', uploadCaption || file.name);
 
-      const uploaded = await api.uploadEvidence(applicationId, formData);
+      const uploaded = await api.uploadEvidence(selectedAppId, formData);
       setEvidenceList(prev => [uploaded, ...prev]);
       setUploadCaption('');
       e.target.value = '';
@@ -165,9 +266,10 @@ export default function VerificationWorkspace({
 
   // Evidence Delete
   const handleDeleteEvidence = async (evidenceId) => {
+    if (!selectedAppId) return;
     if (!window.confirm('Are you sure you want to remove this evidence file?')) return;
     try {
-      await api.deleteEvidence(applicationId, evidenceId);
+      await api.deleteEvidence(selectedAppId, evidenceId);
       setEvidenceList(prev => prev.filter(e => e.id !== evidenceId));
     } catch (err) {
       alert('Failed to delete evidence: ' + err.message);
@@ -177,7 +279,9 @@ export default function VerificationWorkspace({
   // Validation before submission
   const getValidationErrors = () => {
     const errors = [];
-    const schema = caseData?.checklist_schema || [];
+    const schema = (caseData?.checklist_schema && caseData.checklist_schema.length > 0)
+      ? caseData.checklist_schema
+      : DEFAULT_CHECKLIST_SCHEMA;
 
     // Required checklist items
     const requiredItems = schema.filter(item => item.required);
@@ -202,6 +306,7 @@ export default function VerificationWorkspace({
 
   // Submit Result (PASS / FAIL)
   const handleSubmitResult = async (resultOutcome) => {
+    if (!selectedAppId) return;
     const errors = getValidationErrors();
     if (errors.length > 0) {
       alert('Cannot submit verification:\n• ' + errors.join('\n• '));
@@ -228,15 +333,21 @@ export default function VerificationWorkspace({
         note: val.note
       }));
 
-      await api.submitVerification(applicationId, {
+      await api.submitVerification(selectedAppId, {
         result: resultOutcome,
         remarks: observations,
         checklist_responses: formattedResponses,
-        readings
+        readings,
+        lab_parameters: (currentUser?.role === 'GATC' || caseData?.assigned_type === 'GATC') ? {
+          chamber_temperature_c: chamberTemperature,
+          relative_humidity_pct: relativeHumidity,
+          standards_class: standardsClass,
+          calibration_certificate_ref: calibrationCertRef
+        } : null
       });
 
-      await loadCase();
-      if (onVerificationCompleted) onVerificationCompleted(applicationId);
+      await loadCase(selectedAppId);
+      if (onVerificationCompleted) onVerificationCompleted(selectedAppId);
     } catch (err) {
       alert('Failed to submit verification report: ' + err.message);
     } finally {
@@ -249,6 +360,24 @@ export default function VerificationWorkspace({
       <div className="p-16 text-center text-slate-500 text-xs">
         <span className="material-symbols-outlined text-3xl animate-spin block mb-2 text-primary">progress_activity</span>
         Loading statutory verification case...
+      </div>
+    );
+  }
+
+  // Handle case where no case is selected and no assigned cases exist
+  if (!selectedAppId && assignedCases.length === 0) {
+    return (
+      <div className="card p-8 text-center space-y-3 max-w-lg mx-auto my-12">
+        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+          <span className="material-symbols-outlined text-3xl">assignment_late</span>
+        </div>
+        <h3 className="text-base font-bold text-slate-900">No Verification Cases Assigned</h3>
+        <p className="text-xs text-slate-500 max-w-sm mx-auto">
+          You currently have no pending verification assignments in your queue. Please check back when new cases are assigned by the Authority.
+        </p>
+        <button onClick={onBack} className="btn btn-primary btn-sm mx-auto">
+          Return to Queue
+        </button>
       </div>
     );
   }
@@ -274,15 +403,31 @@ export default function VerificationWorkspace({
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-300 pb-16">
       {/* Top Header Navigation */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary transition-colors cursor-pointer"
         >
           <span className="material-symbols-outlined text-[16px]">arrow_back</span>
           Back to Assigned Queue
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {assignedCases.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Select Case:</span>
+              <select
+                value={selectedAppId || ''}
+                onChange={(e) => setSelectedAppId(e.target.value)}
+                className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-primary shadow-xs"
+              >
+                {assignedCases.map(c => (
+                  <option key={c.application_id} value={c.application_id}>
+                    {c.application_no} • {c.manufacturer} {c.model} ({c.application_status})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded-md">
             {caseData.application_no}
           </span>
@@ -442,8 +587,8 @@ export default function VerificationWorkspace({
             </div>
           </div>
 
-          {/* Certificate Generation & Status Section for PASS outcome */}
-          {caseData.verification_result === 'PASS' && (
+          {/* Certificate Status Section: Visible only to Authority or Trader */}
+          {caseData.verification_result === 'PASS' && (currentUser?.role === 'AUTHORITY' || currentUser?.role === 'TRADER') && (
             <div className="bg-white p-5 rounded-xl border border-emerald-200 shadow-xs space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
@@ -523,6 +668,19 @@ export default function VerificationWorkspace({
             </div>
           )}
 
+          {/* Submission confirmation indicator for Field Verifier & GATC */}
+          {caseData.verification_result === 'PASS' && (currentUser?.role === 'VERIFIER' || currentUser?.role === 'GATC') && (
+            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-emerald-950 font-semibold">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-emerald-600 text-lg">verified</span>
+                <span>Verification Report Submitted to Authority Officer for Scrutiny & Approval.</span>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-200 text-emerald-900 uppercase shrink-0">
+                REPORT SUBMITTED
+              </span>
+            </div>
+          )}
+
           {caseData.verification_result === 'FAIL' && (
             <div className="p-3.5 bg-rose-100/70 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-center gap-2">
               <span className="material-symbols-outlined text-rose-600 text-lg">block</span>
@@ -595,6 +753,9 @@ export default function VerificationWorkspace({
           {/* ========================================================
               STEP 1: CHECKLIST
              ======================================================== */}
+          {/* ========================================================
+              STEP 1: CHECKLIST
+             ======================================================== */}
           {activeStep === 'checklist' && (
             <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-5 animate-in fade-in duration-200">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -607,16 +768,31 @@ export default function VerificationWorkspace({
                   </p>
                 </div>
                 <span className="text-xs font-semibold px-2.5 py-1 bg-slate-100 rounded-full text-slate-700">
-                  {Object.values(checklistResponses).filter(v => v.status).length} / {caseData.checklist_schema?.length} Evaluated
+                  {Object.values(checklistResponses).filter(v => Boolean(v?.status)).length} / {effectiveChecklistSchema.length} Evaluated
                 </span>
               </div>
 
+              {hasExplicitEmptyChecklist && (
+                <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-amber-700 text-lg shrink-0 mt-0.5">warning</span>
+                  <div>
+                    <strong className="block font-bold">Unconfigured Category Checklist</strong>
+                    <p className="mt-0.5">
+                      No statutory verification checklist has been configured for this instrument category in the master RuleSet. The standard default inspection template below is displayed.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-4">
-                {caseData.checklist_schema?.map((item) => {
+                {effectiveChecklistSchema.map((item) => {
                   const current = checklistResponses[item.id] || { status: '', note: '' };
+                  const isFailWithoutNote = current.status === 'FAIL' && !current.note?.trim();
 
                   return (
-                    <div key={item.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-3">
+                    <div key={item.id} className={`p-4 rounded-xl text-xs space-y-3 border transition-colors ${
+                      isFailWithoutNote ? 'bg-rose-50/70 border-rose-300' : 'bg-slate-50 border-slate-200'
+                    }`}>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
                           <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
@@ -631,7 +807,7 @@ export default function VerificationWorkspace({
                           <button
                             type="button"
                             onClick={() => handleChecklistChange(item.id, 'PASS')}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all flex items-center gap-1 ${
+                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all flex items-center gap-1 cursor-pointer ${
                               current.status === 'PASS'
                                 ? 'bg-emerald-600 text-white shadow-xs'
                                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -643,7 +819,7 @@ export default function VerificationWorkspace({
                           <button
                             type="button"
                             onClick={() => handleChecklistChange(item.id, 'FAIL')}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all flex items-center gap-1 ${
+                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all flex items-center gap-1 cursor-pointer ${
                               current.status === 'FAIL'
                                 ? 'bg-rose-600 text-white shadow-xs'
                                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -655,7 +831,7 @@ export default function VerificationWorkspace({
                           <button
                             type="button"
                             onClick={() => handleChecklistChange(item.id, 'NA')}
-                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all flex items-center gap-1 ${
+                            className={`px-3 py-1.5 rounded-lg font-bold text-xs transition-all flex items-center gap-1 cursor-pointer ${
                               current.status === 'NA'
                                 ? 'bg-slate-700 text-white shadow-xs'
                                 : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
@@ -666,15 +842,20 @@ export default function VerificationWorkspace({
                         </div>
                       </div>
 
-                      {/* Optional Note for this check */}
+                      {/* Note Input */}
                       <div>
                         <input
                           type="text"
-                          placeholder="Add specific observation or note for this check (optional)..."
+                          placeholder={current.status === 'FAIL' ? 'Failure rationale is mandatory for FAIL items...' : 'Add specific observation or note for this check (optional)...'}
                           value={current.note}
                           onChange={(e) => handleChecklistChange(item.id, undefined, e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-primary"
+                          className={`w-full bg-white border rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden ${
+                            isFailWithoutNote ? 'border-rose-400 focus:border-rose-600' : 'border-slate-200 focus:border-primary'
+                          }`}
                         />
+                        {isFailWithoutNote && (
+                          <p className="text-[10px] text-rose-600 font-bold mt-1">Please enter an observation note explaining why this item failed.</p>
+                        )}
                       </div>
                     </div>
                   );
@@ -722,45 +903,97 @@ export default function VerificationWorkspace({
               </div>
 
               <div className="space-y-3">
-                {readings.map((reading, idx) => (
-                  <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-4 gap-3 items-center">
-                    <div className="sm:col-span-2">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Check / Reference Test Point</span>
-                      <strong className="text-slate-900 text-sm">{reading.test_point}</strong>
-                      <span className="text-[11px] text-slate-500 block font-mono">
-                        Reference: {reading.reference_value} {reading.unit}
-                      </span>
-                    </div>
+                {readings.map((reading, idx) => {
+                  const refNum = parseFloat(reading.reference_value) || 0;
+                  const obsNum = parseFloat(reading.observed_value);
+                  const hasObs = reading.observed_value !== '' && reading.observed_value !== undefined && !isNaN(obsNum);
+                  const diff = hasObs ? (obsNum - refNum).toFixed(4) : null;
 
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Observed Value</span>
-                      <div className="flex items-center gap-1.5 mt-0.5">
+                  return (
+                    <div key={idx} className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs grid grid-cols-1 sm:grid-cols-5 gap-3 items-center">
+                      <div className="sm:col-span-2">
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Check / Reference Test Point</span>
                         <input
-                          type="number"
-                          step="any"
-                          value={reading.observed_value}
-                          onChange={(e) => handleReadingChange(idx, 'observed_value', e.target.value)}
-                          placeholder="0.000"
-                          className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary focus:outline-hidden focus:border-primary shadow-xs"
+                          type="text"
+                          value={reading.test_point}
+                          onChange={(e) => handleReadingChange(idx, 'test_point', e.target.value)}
+                          className="font-bold text-slate-900 text-sm bg-transparent border-b border-transparent hover:border-slate-300 focus:border-primary focus:bg-white focus:outline-none w-full"
                         />
-                        <span className="text-xs font-bold text-slate-500">{reading.unit}</span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1">
+                            Ref:
+                            <input
+                              type="number"
+                              step="any"
+                              value={reading.reference_value}
+                              onChange={(e) => handleReadingChange(idx, 'reference_value', e.target.value)}
+                              className="w-16 px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono font-bold text-xs"
+                            />
+                            {reading.unit}
+                          </span>
+                          {hasObs && (
+                            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                              Math.abs(parseFloat(diff)) > 0.05 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                            }`}>
+                              Error: {parseFloat(diff) > 0 ? `+${diff}` : diff} {reading.unit}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Observed Value</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <input
+                            type="number"
+                            step="any"
+                            value={reading.observed_value}
+                            onChange={(e) => handleReadingChange(idx, 'observed_value', e.target.value)}
+                            placeholder="0.000"
+                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold text-primary focus:outline-none focus:border-primary shadow-xs"
+                          />
+                          <span className="text-xs font-bold text-slate-500">{reading.unit}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Point Result</span>
+                          <select
+                            value={reading.reading_result || 'PASS'}
+                            onChange={(e) => handleReadingChange(idx, 'reading_result', e.target.value)}
+                            className="w-full mt-0.5 bg-white border border-slate-300 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-primary shadow-xs"
+                          >
+                            <option value="PASS">PASS (Within Tolerance)</option>
+                            <option value="FAIL">FAIL (Exceeds Error)</option>
+                            <option value="ACCEPTABLE">ACCEPTABLE</option>
+                          </select>
+                        </div>
+                        {readings.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteReading(idx)}
+                            title="Remove test point"
+                            className="mt-4 p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+                        )}
                       </div>
                     </div>
+                  );
+                })}
 
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Point Result</span>
-                      <select
-                        value={reading.reading_result || 'PASS'}
-                        onChange={(e) => handleReadingChange(idx, 'reading_result', e.target.value)}
-                        className="w-full mt-0.5 bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-hidden focus:border-primary shadow-xs"
-                      >
-                        <option value="PASS">PASS (Within Tolerance)</option>
-                        <option value="FAIL">FAIL (Exceeds Error)</option>
-                        <option value="ACCEPTABLE">ACCEPTABLE</option>
-                      </select>
-                    </div>
-                  </div>
-                ))}
+                <div className="pt-2 flex justify-start">
+                  <button
+                    type="button"
+                    onClick={handleAddReading}
+                    className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1 border border-slate-200 cursor-pointer transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add</span>
+                    Add Measurement Test Point
+                  </button>
+                </div>
               </div>
 
               {/* Bottom Nav */}
@@ -806,6 +1039,62 @@ export default function VerificationWorkspace({
                   Record overall findings, environmental context, or specific rationale (mandatory if issuing a FAIL outcome).
                 </p>
               </div>
+
+              {/* GATC Lab Testing Environment & Standards (when role is GATC) */}
+              {(currentUser?.role === 'GATC' || caseData?.assigned_type === 'GATC') && (
+                <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2 text-indigo-900 font-bold text-xs">
+                    <span className="material-symbols-outlined text-base text-indigo-700">science</span>
+                    Laboratory Metrological Environment & Working Standards
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <label className="text-slate-500 block text-[10px] font-bold uppercase mb-1">Chamber Temp (°C)</label>
+                      <input
+                        type="text"
+                        value={chamberTemperature}
+                        onChange={e => setChamberTemperature(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold"
+                        placeholder="23.0"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block text-[10px] font-bold uppercase mb-1">Relative Humidity (%)</label>
+                      <input
+                        type="text"
+                        value={relativeHumidity}
+                        onChange={e => setRelativeHumidity(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold"
+                        placeholder="50"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block text-[10px] font-bold uppercase mb-1">Standards Class</label>
+                      <select
+                        value={standardsClass}
+                        onChange={e => setStandardsClass(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold"
+                      >
+                        <option value="CLASS_E1">Class E1 (Primary Metrology)</option>
+                        <option value="CLASS_E2">Class E2 (High Precision)</option>
+                        <option value="CLASS_F1">Class F1 (Standard Precision)</option>
+                        <option value="CLASS_F2">Class F2 (Industrial Lab)</option>
+                        <option value="CLASS_M1">Class M1 (Working Standards)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-slate-500 block text-[10px] font-bold uppercase mb-1">Calibration Cert Ref</label>
+                      <input
+                        type="text"
+                        value={calibrationCertRef}
+                        onChange={e => setCalibrationCertRef(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold"
+                        placeholder="NPLI/CAL/2026/894"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Quick Tap Chips for Mobile Verifiers */}
               <div>
@@ -976,14 +1265,22 @@ export default function VerificationWorkspace({
                           </div>
 
                           <div className="px-3 pb-3 pt-1 border-t border-slate-100 flex items-center justify-between">
-                            <a
-                              href={getFileUrl(ev.file_path)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] text-primary hover:underline font-semibold"
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewDoc({
+                                  file_name: ev.file_name,
+                                  file_path: ev.file_path,
+                                  file_type: ev.file_type,
+                                  category: ev.category || 'Inspection Evidence',
+                                  uploaded_at: ev.created_at
+                                })
+                              }
+                              className="text-[11px] text-primary hover:underline font-bold flex items-center gap-1 cursor-pointer"
                             >
-                              Preview File
-                            </a>
+                              <span className="material-symbols-outlined text-xs">visibility</span>
+                              <span>Preview File</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteEvidence(ev.id)}
@@ -1193,6 +1490,14 @@ export default function VerificationWorkspace({
             </div>
           )}
         </div>
+      )}
+
+      {/* Document Preview Lightbox Modal */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          document={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
       )}
     </div>
   );

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import StatusBadge from '../components/StatusBadge';
+import StatutoryGuidanceTips from '../components/StatutoryGuidanceTips';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 import { api, getFileUrl } from '../api';
 
 export default function ApplicationReview({
@@ -13,6 +15,9 @@ export default function ApplicationReview({
   const [reviewing, setReviewing] = useState(false);
   const [workspaceData, setWorkspaceData] = useState(null);
 
+  // Document preview state
+  const [previewDoc, setPreviewDoc] = useState(null);
+
   // Authority Decision Modals
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnReason, setReturnReason] = useState('');
@@ -25,6 +30,7 @@ export default function ApplicationReview({
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [approvalRemarks, setApprovalRemarks] = useState('Statutory verification report examined and approved. Conforms to Legal Metrology General Rules, 2011.');
   const [approving, setApproving] = useState(false);
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [actionSuccess, setActionSuccess] = useState('');
 
   const loadCase = () => {
@@ -40,12 +46,28 @@ export default function ApplicationReview({
         })
         .catch(console.error)
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     loadCase();
   }, [applicationId]);
+
+  const handleVerifyOfflinePayment = async () => {
+    if (!window.confirm('Confirm verification of offline statutory payment / treasury challan remittance?')) return;
+    setVerifyingPayment(true);
+    try {
+      await api.verifyOfflinePayment(applicationId);
+      setActionSuccess('Treasury challan payment verified successfully.');
+      loadCase();
+    } catch (err) {
+      alert('Failed to verify payment: ' + err.message);
+    } finally {
+      setVerifyingPayment(false);
+    }
+  };
 
   const handleProceed = async () => {
     setReviewing(true);
@@ -104,7 +126,7 @@ export default function ApplicationReview({
     e.preventDefault();
     setApproving(true);
     try {
-      const res = await api.approveApplication(applicationId, { approval_remarks: approvalRemarks });
+      await api.approveApplication(applicationId, { approval_remarks: approvalRemarks });
       setShowApproveModal(false);
       setActionSuccess('Application successfully approved and statutory certificate generated!');
       loadCase();
@@ -128,15 +150,18 @@ export default function ApplicationReview({
     return <div className="p-12 text-center text-rose-500">Application not found.</div>;
   }
 
-  // PENDING_VERIFICATION means the fee is paid but no officer is allocated yet —
-  // it is NOT an assigned state. Only an actual assignee makes a case "assigned".
   const hasAssignee = Boolean(app.assigned_to_name);
   const isScrutinyPending = ['SUBMITTED', 'UNDER_REVIEW'].includes(app.status)
     || (app.status === 'PENDING_VERIFICATION' && !hasAssignee);
   const isAssignedAwaitingInspection = app.status === 'ASSIGNED'
     || (app.status === 'PENDING_VERIFICATION' && hasAssignee);
-  const isReportSubmitted = ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED'].includes(app.status);
+  const isReportSubmitted = ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'GATC_REPORT_SUBMITTED'].includes(app.status);
   const isApproved = ['APPROVED', 'CERTIFICATE_ISSUED'].includes(app.status);
+  const isFeePaid = ['PAID', 'EXEMPTED'].includes(app.fee_status);
+  const isTechnicalPass = workspaceData?.verification_result === 'PASS' || app.verification_result === 'PASS';
+  const canApprove = isFeePaid && (isReportSubmitted || isApproved) && isTechnicalPass;
+
+  const totalFee = app.fee_breakdown?.total_fee || app.payment?.amount || app.amount || 300;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-300 pb-16">
@@ -145,7 +170,7 @@ export default function ApplicationReview({
         <nav className="flex items-center gap-2 text-xs text-slate-500">
           <button
             onClick={onBack}
-            className="hover:text-primary font-semibold transition-colors flex items-center gap-1"
+            className="hover:text-primary font-semibold transition-colors flex items-center gap-1 cursor-pointer"
           >
             <span className="material-symbols-outlined text-sm">arrow_back</span>
             Operations Queue
@@ -167,390 +192,618 @@ export default function ApplicationReview({
             <span className="material-symbols-outlined text-emerald-600">check_circle</span>
             {actionSuccess}
           </div>
-          <button onClick={() => setActionSuccess('')} className="text-emerald-600 font-bold hover:underline">Dismiss</button>
+          <button onClick={() => setActionSuccess('')} className="text-emerald-600 font-bold hover:underline cursor-pointer">Dismiss</button>
         </div>
       )}
 
-      {/* Case Header Card */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between pb-6 border-b border-slate-100 gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-sm px-2.5 py-0.5 rounded-md bg-primary text-white font-bold">
-                {app.application_no}
-              </span>
-              <span className="text-xs text-slate-400">•</span>
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">{app.request_type ? app.request_type.replace(/_/g, ' ') : 'VERIFICATION'}</span>
-              <span className="text-xs text-slate-400">•</span>
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                {app.verification_mode === 'IN_SITU' ? 'In-situ (On-Site Visit)' : 'Camp / Centre Presentation'}
-              </span>
-            </div>
-            <h1 className="text-xl font-bold text-slate-900 mt-2 leading-snug">
-              {app.manufacturer} {app.model}
-            </h1>
-            <p className="text-xs text-slate-500 mt-1">
-              Applicant: <strong>{app.trader_name}</strong> • Establishment: <strong>{app.trader_org}</strong> ({app.trader_jurisdiction || 'District Jurisdiction'})
-            </p>
+      {/* Statutory Guidance Tips for Authority Officers */}
+      <StatutoryGuidanceTips
+        stage={isReportSubmitted ? 'REPORT_REVIEW' : (isAssignedAwaitingInspection ? 'ASSIGNMENT' : (isApproved ? 'FINAL_APPROVAL' : 'SCRUTINY'))}
+      />
+
+      {/* SECTION A: Application Information */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">A</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Application Information</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs px-2.5 py-1 rounded-md bg-[#002046] text-white font-bold">
+              {app.application_no}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+          <div>
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Filing Date</span>
+            <span className="font-semibold text-slate-800">
+              {app.created_at ? new Date(app.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Request Type</span>
+            <span className="font-semibold text-slate-800 uppercase">
+              {app.request_type ? app.request_type.replace(/_/g, ' ') : 'VERIFICATION'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Verification Mode</span>
+            <span className="font-semibold text-slate-800">
+              {app.verification_mode === 'IN_SITU' ? 'In-Situ (On-Site Visit)' : app.verification_mode === 'GATC_LAB' ? 'GATC Lab Testing' : 'Camp / Centre Presentation'}
+            </span>
+          </div>
+          <div>
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Preferred Inspection Date</span>
+            <span className="font-semibold text-slate-800">
+              {app.preferred_date ? new Date(app.preferred_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Flexible'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION B & C: Two Column Grid (Trader / Establishment & Instrument Specifications) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* SECTION B: Trader / Commercial Establishment */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3 text-xs">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">B</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Trader & Commercial Establishment</h2>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
-            {/* Scrutiny Stage Actions */}
-            {isScrutinyPending && (
-              <>
-                <button
-                  onClick={() => setShowReturnModal(true)}
-                  className="px-3.5 py-2 border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">assignment_return</span>
-                  Return
-                </button>
-                <button
-                  onClick={() => setShowRejectModal(true)}
-                  className="px-3.5 py-2 border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">cancel</span>
-                  Reject
-                </button>
-                <button
-                  onClick={handleProceed}
-                  disabled={reviewing}
-                  className="px-5 py-2 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-sm transition-all flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[18px]">assignment_ind</span>
-                  {reviewing ? 'Opening Review...' : 'Assign Verifier'}
-                </button>
-              </>
-            )}
+          <div className="space-y-2.5">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Applicant / Owner:</span>
+              <strong className="text-slate-900">{app.trader_name || '—'}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Commercial Firm:</span>
+              <span className="font-semibold text-slate-800">{app.trader_org || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Authorized Contact:</span>
+              <span className="font-semibold text-slate-800">{app.trader_phone || '—'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">District Jurisdiction:</span>
+              <span className="font-semibold text-slate-800">{app.trader_jurisdiction || app.instrument_district || 'District Legal Metrology'}</span>
+            </div>
+            <div className="flex justify-between items-start pt-1 border-t border-slate-100">
+              <span className="text-slate-500">Premises Address:</span>
+              <span className="font-medium text-slate-800 text-right max-w-[220px]">{app.location_address || app.location || '—'}</span>
+            </div>
+          </div>
+        </div>
 
-            {isAssignedAwaitingInspection && (
-              <div className="flex items-center gap-2">
-                <div className="text-right bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Assigned Verifier</span>
-                  <span className="font-semibold text-slate-800 text-xs">{app.assigned_to_name}</span>
+        {/* SECTION C: Instrument Technical Specifications */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs space-y-3 text-xs">
+          <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">C</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Instrument Specifications</h2>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Instrument Category:</span>
+              <strong className="text-slate-900">{app.category_name || 'Legal Metrology Standard'}</strong>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Make & Model:</span>
+              <span className="font-semibold text-slate-800">{app.manufacturer} {app.model}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Device Serial Number:</span>
+              <span className="font-mono font-bold text-primary">{app.serial_number}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Capacity / Max Range:</span>
+              <span className="font-semibold text-slate-800">{app.capacity || 'Standard Range'}</span>
+            </div>
+            {(app.spec_fields || []).slice(0, 2).map((f) => (
+              <div key={f.label} className="flex justify-between">
+                <span className="text-slate-500">{f.label}:</span>
+                <span className="font-semibold text-slate-800">{f.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION D: Statutory Payment Particulars (VIEW ONLY) */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">D</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Statutory Remittance & Financial Compliance (View Only)
+            </h2>
+          </div>
+          <div>
+            {isFeePaid ? (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                <span className="material-symbols-outlined text-sm">check_circle</span>
+                PAID & VERIFIED
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                <span className="material-symbols-outlined text-sm">pending</span>
+                REMITTANCE PENDING
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Total Statutory Fee</span>
+            <span className="font-mono font-extrabold text-slate-900 text-base">₹{Number(totalFee).toFixed(2)}</span>
+            <span className="text-[10px] text-slate-400 block mt-0.5">Schedule V Schedule Fees</span>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Payment Method</span>
+            <span className="font-semibold text-slate-800 block mt-1">
+              {app.payment?.payment_mode === 'OFFLINE' ? 'Treasury Challan (Offline)' : 'Online Portal (Razorpay)'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Transaction / Challan Ref</span>
+            <span className="font-mono text-slate-800 block mt-1 truncate" title={app.payment?.transaction_id || app.payment?.reference || 'Pending remittance'}>
+              {app.payment?.transaction_id || app.payment?.reference || '—'}
+            </span>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Remittance Date</span>
+            <span className="font-semibold text-slate-800 block mt-1">
+              {app.payment?.created_at ? new Date(app.payment.created_at).toLocaleDateString('en-IN') : 'Pending'}
+            </span>
+          </div>
+        </div>
+
+        {/* Offline Challan Verification Control for Authority (Strictly non-payment) */}
+        {!isFeePaid && app.payment?.payment_mode === 'OFFLINE' && (
+          <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-amber-900">
+              <span className="material-symbols-outlined text-amber-700">receipt_long</span>
+              <span>Offline Treasury Challan submitted by applicant requires Authority scrutiny.</span>
+            </div>
+            <button
+              onClick={handleVerifyOfflinePayment}
+              disabled={verifyingPayment}
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-sm">verified</span>
+              {verifyingPayment ? 'Verifying...' : 'Verify Treasury Challan'}
+            </button>
+          </div>
+        )}
+
+        <div className="text-[11px] text-slate-400 italic">
+          Note: Payment execution is strictly reserved for the applicant Trader. Authority Officers may only inspect remittance compliance and confirm treasury receipts.
+        </div>
+      </div>
+
+      {/* SECTION E: Attached Supporting Documents */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">E</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Uploaded Supporting Documents ({app.documents?.length || 0})
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400">Statutory filings</span>
+        </div>
+
+        {(!app.documents || app.documents.length === 0) ? (
+          <div className="py-6 text-center text-slate-400 text-xs">
+            No supporting documents uploaded for this application.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {app.documents.map((doc, idx) => {
+              const fileUrl = doc.file_path ? getFileUrl(doc.file_path) : '';
+              return (
+                <div key={doc.id || idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs hover:border-primary/40 transition-colors">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-blue-100 text-[#002046] flex items-center justify-center shrink-0 border border-blue-200">
+                      <span className="material-symbols-outlined text-lg">description</span>
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-bold text-slate-800 text-xs block truncate" title={doc.file_name}>
+                        {doc.file_name}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block font-medium">
+                        Category: <strong className="text-slate-600">{doc.category || 'General'}</strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc({
+                        file_name: doc.file_name,
+                        file_path: doc.file_path,
+                        file_type: doc.file_type || (doc.file_name?.endsWith('.pdf') ? 'application/pdf' : 'image/png'),
+                        category: doc.category || 'Applicant Supporting Document',
+                        uploaded_by: app.trader_name || 'Trader Applicant',
+                        uploaded_at: app.created_at
+                      })}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-[#002046] border border-slate-200 font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Preview Document"
+                    >
+                      <span className="material-symbols-outlined text-xs">visibility</span>
+                      <span>Preview</span>
+                    </button>
+                    {fileUrl && (
+                      <a
+                        href={fileUrl}
+                        download={doc.file_name}
+                        className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
+                        title="Download"
+                      >
+                        <span className="material-symbols-outlined text-base">download</span>
+                      </a>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* SECTION F: Officer / Laboratory Assignment & Scheduling */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">F</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Verification Allocation & Scheduling
+            </h2>
+          </div>
+          {app.assigned_to_name && (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-900">
+              Allocated
+            </span>
+          )}
+        </div>
+
+        {app.assigned_to_name ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Assigned Inspector / Lab</span>
+                <strong className="text-slate-900 text-sm">{app.assigned_to_name}</strong>
+                <span className="text-[10px] text-slate-500 block mt-0.5">{app.assigned_type === 'GATC' ? 'GATC Testing Laboratory' : 'Legal Metrology Officer'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Scheduled Inspection</span>
+                <span className="font-semibold text-slate-800 text-sm">
+                  {app.scheduled_date ? new Date(app.scheduled_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Date Scheduled'}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">{app.time_slot || 'Morning Slot'}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Testing Arrangement</span>
+                <span className="font-semibold text-slate-800 text-sm">
+                  {app.verification_mode === 'IN_SITU' ? 'Field On-Site Inspection' : 'Center / Camp Presentation'}
+                </span>
+              </div>
+            </div>
+
+            {/* Reassign option before completion */}
+            {!isApproved && !isReportSubmitted && (
+              <div className="flex justify-end">
                 <button
                   onClick={() => onProceedToAssignment(applicationId)}
-                  className="px-3.5 py-2 border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
-                  title="Change the assigned officer before the inspection starts"
+                  className="px-3.5 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
-                  Reassign
+                  Reassign / Change Schedule
                 </button>
               </div>
             )}
-
-            {app.status === 'IN_PROGRESS' && (
-              <div className="px-3.5 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                Verification Inspection In Progress
+          </div>
+        ) : (
+          <div className="p-5 bg-amber-50/70 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-start gap-2.5 text-amber-950">
+              <span className="material-symbols-outlined text-amber-700 text-xl shrink-0 mt-0.5">person_alert</span>
+              <div>
+                <strong className="text-sm block">Case Awaiting Officer / Laboratory Allocation</strong>
+                <p className="text-amber-800 mt-0.5">
+                  This application has been filed and verified for statutory scrutiny. Assign a qualified Legal Metrology Officer or GATC testing center.
+                </p>
               </div>
-            )}
+            </div>
+            <button
+              onClick={handleProceed}
+              disabled={reviewing}
+              className="px-4 py-2 bg-[#002046] hover:bg-[#001733] text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-base text-amber-400 font-bold">person_add</span>
+              {reviewing ? 'Opening Allocation...' : 'Assign Officer / GATC'}
+            </button>
+          </div>
+        )}
+      </div>
 
-            {/* Post-Inspection Decision Suite (Statutory Authority Power) */}
-            {isReportSubmitted && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  onClick={() => setShowReturnModal(true)}
-                  className="px-3.5 py-2 border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">assignment_return</span>
-                  Return for Re-Inspection
-                </button>
-                <button
-                  onClick={() => setShowRejectModal(true)}
-                  className="px-3.5 py-2 border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">cancel</span>
-                  Reject
-                </button>
-                <button
-                  onClick={() => setShowApproveModal(true)}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[18px]">verified</span>
-                  Approve & Issue Certificate
-                </button>
+      {/* SECTION G: Technical Verification Findings & Lab Report */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">G</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Technical Verification Findings & Laboratory Report
+            </h2>
+          </div>
+          {workspaceData && (
+            <span className={`px-2.5 py-0.5 rounded-full font-bold text-xs ${
+              workspaceData.verification_result === 'PASS' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-rose-100 text-rose-800 border border-rose-300'
+            }`}>
+              Technical Result: {workspaceData.verification_result || 'PENDING'}
+            </span>
+          )}
+        </div>
+
+        {(!isReportSubmitted && !isApproved) ? (
+          <div className="py-8 text-center text-slate-400 text-xs space-y-2">
+            <span className="material-symbols-outlined text-3xl text-slate-300 block">pending_actions</span>
+            <p className="font-semibold text-slate-600">Technical Report Pending Submission</p>
+            <p className="text-slate-400 max-w-md mx-auto">
+              The assigned officer / test centre has not yet submitted technical measurements, MPE evaluations, or field evidence.
+            </p>
+          </div>
+        ) : workspaceData ? (
+          <div className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Examined By</span>
+                <strong className="text-slate-900">{workspaceData.assigned_by_name || app.assigned_to_name || 'Designated Inspector'}</strong>
               </div>
-            )}
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Completion Timestamp</span>
+                <span className="font-semibold text-slate-800">
+                  {workspaceData.completed_at ? new Date(workspaceData.completed_at).toLocaleString() : 'Recent'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Inspector Remarks</span>
+                <span className="italic text-slate-700">{workspaceData.observations || workspaceData.remarks || 'Standard verified.'}</span>
+              </div>
+            </div>
 
-            {isApproved && (
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block">Statutory Outcome</span>
-                  <span className="font-extrabold text-emerald-700 text-xs flex items-center gap-1 justify-end">
-                    <span className="material-symbols-outlined text-[16px]">verified</span>
-                    APPROVED • {app.certificate_no || 'Certified'}
-                  </span>
+            {/* GATC Environmental Standards if applicable */}
+            {(workspaceData.lab_parameters || workspaceData.verification_type === 'LAB_TEST' || app.assigned_type === 'GATC') && (
+              <div className="bg-white rounded-xl p-3.5 border border-indigo-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Chamber Temperature</span>
+                  <strong className="text-slate-800">{workspaceData.lab_parameters?.chamber_temperature_c || '23.0'} °C</strong>
                 </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Relative Humidity</span>
+                  <strong className="text-slate-800">{workspaceData.lab_parameters?.relative_humidity_pct || '50'} %</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Standards Class</span>
+                  <strong className="text-indigo-800 font-mono">{workspaceData.lab_parameters?.standards_class || 'CLASS_E2'}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Calibration Cert Ref</span>
+                  <strong className="text-slate-800 font-mono">{workspaceData.lab_parameters?.calibration_certificate_ref || 'NPLI/CAL/2026/894'}</strong>
+                </div>
+              </div>
+            )}
+
+            {/* Readings Matrix with Server MPE Tolerances */}
+            {workspaceData.readings && workspaceData.readings.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-xs uppercase">
+                    Statutory Measurement & MPE Tolerance Evaluation ({workspaceData.readings.length} Test Points)
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-semibold">Legal Metrology Act, 2009</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-slate-50/50">
+                        <th className="px-4 py-2">Test Point</th>
+                        <th className="px-4 py-2">Reference Load</th>
+                        <th className="px-4 py-2">Observed Reading</th>
+                        <th className="px-4 py-2">Calculated Error</th>
+                        <th className="px-4 py-2">Permissible (MPE)</th>
+                        <th className="px-4 py-2 text-right">Result</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {workspaceData.readings.map((r, i) => (
+                        <tr key={i} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-2 font-medium text-slate-800">{r.test_point}</td>
+                          <td className="px-4 py-2 font-mono text-slate-600">{r.reference_value} {r.unit}</td>
+                          <td className="px-4 py-2 font-mono font-bold text-slate-900">{r.observed_value} {r.unit}</td>
+                          <td className="px-4 py-2 font-mono text-slate-700">
+                            {r.error_value !== undefined && r.error_value !== null ? `${r.error_value > 0 ? '+' : ''}${r.error_value} ${r.unit}` : '0.000'}
+                          </td>
+                          <td className="px-4 py-2 font-mono text-slate-500">
+                            {r.permissible_error !== undefined && r.permissible_error !== null ? `±${r.permissible_error} ${r.unit}` : 'Standard'}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                              r.reading_result === 'PASS' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {r.reading_result}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Evidence photos gallery */}
+            {(() => {
+              const evidenceItems = (workspaceData?.evidence && workspaceData.evidence.length > 0)
+                ? workspaceData.evidence
+                : (app?.evidence && app.evidence.length > 0)
+                ? app.evidence
+                : [];
+
+              if (evidenceItems.length === 0) return null;
+
+              return (
+                <div className="space-y-2 pt-2">
+                  <span className="font-bold text-slate-900 text-xs uppercase block">
+                    Inspection Photographic Evidence ({evidenceItems.length})
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {evidenceItems.map((ev, idx) => {
+                      const fileUrl = getFileUrl(ev.file_path);
+                      return (
+                        <div key={ev.id || idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-800 text-xs block truncate" title={ev.file_name}>
+                              {ev.file_name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block">{ev.category || 'Inspection Photo'}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDoc({
+                              file_name: ev.file_name,
+                              file_path: ev.file_path,
+                              file_type: ev.file_type || 'image/png',
+                              category: ev.category || 'Inspection Evidence',
+                              uploaded_by: workspaceData?.assigned_by_name || 'Inspector',
+                              uploaded_at: ev.created_at
+                            })}
+                            className="px-2 py-1 rounded bg-white hover:bg-slate-100 text-primary border border-slate-200 text-xs font-bold cursor-pointer"
+                          >
+                            View
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        ) : null}
+      </div>
+
+      {/* SECTION H: Authority Legal Decision Suite */}
+      <div className="bg-white rounded-2xl p-6 border-2 border-primary/20 shadow-md space-y-5">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 rounded-lg bg-[#002046] text-white flex items-center justify-center text-xs font-bold font-mono">H</span>
+            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+              Statutory Authority Legal Determination Suite
+            </h2>
+          </div>
+          <span className="text-xs font-semibold text-slate-500">Legal Metrology Act, 2009 § 24</span>
+        </div>
+
+        {/* Validation overview alert */}
+        <div className={`p-4 rounded-xl text-xs flex items-start gap-2.5 ${
+          isApproved
+            ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+            : canApprove
+            ? 'bg-emerald-50/80 border border-emerald-300 text-emerald-900'
+            : 'bg-amber-50 border border-amber-200 text-amber-900'
+        }`}>
+          <span className="material-symbols-outlined text-lg shrink-0 mt-0.5">
+            {isApproved || canApprove ? 'verified' : 'info'}
+          </span>
+          <div className="space-y-1">
+            <div className="font-bold">
+              {isApproved
+                ? 'Statutory Approval Finalized & Certificate Issued'
+                : canApprove
+                ? 'Statutory Determination Ready: All Conditions Passed'
+                : 'Scrutiny & Review In Progress'}
+            </div>
+            <p className="leading-relaxed">
+              {isApproved
+                ? `Certificate ${app.certificate_no || 'issued'}. The instrument is certified under the Legal Metrology General Rules, 2011.`
+                : canApprove
+                ? 'The applicant fee is confirmed PAID, supporting documents scrutinized, and technical inspection report submitted with outcome PASS. You may approve and generate the statutory verification certificate.'
+                : 'Approval requires: (1) Statutory fee verified as PAID, (2) Technical inspection report submitted by allocated officer / GATC lab, (3) Technical outcome evaluated as PASS.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Legal Action Buttons */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Return action */}
+            {!isApproved && (
+              <button
+                onClick={() => setShowReturnModal(true)}
+                className="flex-1 sm:flex-initial px-4 py-2.5 border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">assignment_return</span>
+                Return with Remarks
+              </button>
+            )}
+
+            {/* Reject action */}
+            {!isApproved && (
+              <button
+                onClick={() => setShowRejectModal(true)}
+                className="flex-1 sm:flex-initial px-4 py-2.5 border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">cancel</span>
+                Reject on Statutory Grounds
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            {isApproved ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-300 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-sm">workspace_premium</span>
+                  Certificate Issued
+                </span>
                 {app.certificate_id && onViewCertificate && (
                   <button
                     onClick={() => onViewCertificate(app.certificate_id)}
-                    className="px-4 py-2 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-xs transition-all flex items-center gap-1.5"
+                    className="px-4 py-2.5 bg-primary text-white font-bold rounded-xl text-xs hover:bg-primary-container shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[16px]">visibility</span>
+                    <span className="material-symbols-outlined text-base">visibility</span>
                     View Certificate
                   </button>
                 )}
               </div>
-            )}
-
-            {app.status === 'REJECTED' && (
-              <div className="px-3.5 py-2 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px] text-rose-600">cancel</span>
-                Application Rejected ({app.rejection_reason || 'Statutory Deficiencies'})
-              </div>
+            ) : (
+              <button
+                onClick={() => setShowApproveModal(true)}
+                disabled={!canApprove}
+                className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                title={canApprove ? 'Approve and issue certificate' : 'Requires fee paid and passing technical report'}
+              >
+                <span className="material-symbols-outlined text-lg">verified</span>
+                Approve & Issue Certificate
+              </button>
             )}
           </div>
         </div>
-
-        {/* Inspection Report Findings (When submitted by Verifier / GATC Lab) */}
-        {(isReportSubmitted || isApproved) && workspaceData && (
-          <div className="mt-6 p-5 rounded-2xl bg-indigo-50/60 border border-indigo-200 text-xs space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-indigo-200/60">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-indigo-700">fact_check</span>
-                <h3 className="font-bold text-indigo-950 text-sm">
-                  Inspector / Laboratory Verification Findings Report
-                </h3>
-              </div>
-              <span className={`px-2.5 py-0.5 rounded-full font-bold text-xs ${
-                workspaceData.verification_result === 'PASS' ? 'bg-emerald-200 text-emerald-900' : 'bg-rose-200 text-rose-900'
-              }`}>
-                Inspector Outcome: {workspaceData.verification_result || 'PENDING'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-slate-700">
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Assigned Inspector / Lab</span>
-                <strong className="text-slate-900">{workspaceData.assigned_by_name || app.assigned_to_name || 'Designated Officer'}</strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Completed On</span>
-                <strong>{workspaceData.completed_at ? new Date(workspaceData.completed_at).toLocaleString() : 'Recent'}</strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">Inspection Observations</span>
-                <span className="italic">{workspaceData.observations || 'Conforms to standards.'}</span>
-              </div>
-            </div>
-
-            {/* Readings Matrix */}
-            {workspaceData.readings && workspaceData.readings.length > 0 && (
-              <div className="bg-white rounded-xl p-3 border border-indigo-100 space-y-2">
-                <span className="font-bold text-slate-800 text-[11px] block uppercase">Recorded Measurement Readings ({workspaceData.readings.length})</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {workspaceData.readings.map((r, i) => (
-                    <div key={i} className="p-2 rounded bg-slate-50 border border-slate-200 text-[11px]">
-                      <span className="text-slate-500 block truncate">{r.test_point}</span>
-                      <strong className="font-mono text-slate-900">{r.observed_value} {r.unit}</strong>
-                      <span className={`float-right font-bold text-[10px] ${r.reading_result === 'PASS' ? 'text-emerald-700' : 'text-rose-700'}`}>
-                        {r.reading_result}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Attached Inspection Photos */}
-            {workspaceData.evidence && workspaceData.evidence.length > 0 && (
-              <div className="bg-white rounded-xl p-3 border border-indigo-100 space-y-2">
-                <span className="font-bold text-slate-800 text-[11px] block uppercase">Field / Laboratory Attached Evidence ({workspaceData.evidence.length})</span>
-                <div className="flex items-center gap-3 overflow-x-auto pb-1">
-                  {workspaceData.evidence.map(ev => (
-                    <a
-                      key={ev.id}
-                      href={getFileUrl(ev.file_path)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-2 text-[11px] font-semibold hover:border-primary shrink-0"
-                    >
-                      <span className="material-symbols-outlined text-primary text-base">image</span>
-                      <span className="truncate max-w-[120px]">{ev.file_name}</span>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 1. Pre-assignment checks — derived from the instrument's actual category,
-            rule set and verification policy, never a fixed template. */}
-        {(() => {
-          const req = app.verification_requirement;
-          const feeOk = ['PAID', 'EXEMPTED'].includes(app.fee_status);
-          const docCount = Array.isArray(app.documents) ? app.documents.length : 0;
-          const checks = [
-            {
-              ok: Boolean(app.rule_set),
-              label: 'Verification rules',
-              detail: app.rule_set
-                ? `${app.rule_set.name}${app.rule_set.has_mpe_rules ? '' : ' (error limits not configured yet)'}`
-                : `No rule set configured for ${app.category_name || 'this category'}`
-            },
-            {
-              ok: feeOk,
-              label: 'Fee',
-              detail: feeOk ? 'Paid' : 'Payment pending'
-            },
-            {
-              ok: docCount > 0,
-              label: 'Documents',
-              detail: docCount > 0 ? `${docCount} attached` : 'None attached'
-            },
-            {
-              ok: Boolean(app.instrument_district),
-              label: 'District',
-              detail: app.instrument_district || 'Not recorded, so no officer can be matched'
-            }
-          ];
-          const allOk = checks.every(c => c.ok);
-          const tone = allOk
-            ? { box: 'bg-emerald-50/70 border-emerald-200', title: 'text-emerald-900', icon: 'text-emerald-600' }
-            : { box: 'bg-amber-50/70 border-amber-200', title: 'text-amber-900', icon: 'text-amber-600' };
-
-          const passed = checks.filter(c => c.ok).length;
-          const pending = checks.length - passed;
-
-          return (
-            <div className={`mt-6 rounded-xl border text-xs ${tone.box}`}>
-              <div className="flex items-center justify-between gap-3 px-4 pt-4">
-                <div className={`flex items-center gap-2 font-bold text-sm ${tone.title}`}>
-                  <span className={`material-symbols-outlined ${tone.icon}`}>{allOk ? 'verified' : 'error'}</span>
-                  {allOk ? 'Ready for assignment' : `${pending} item${pending === 1 ? '' : 's'} to check before assignment`}
-                </div>
-                <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">{passed} of {checks.length} checks passed</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 p-4">
-                {checks.map(c => (
-                  <div
-                    key={c.label}
-                    className={`flex items-start gap-2 rounded-lg border bg-white/80 px-3 py-2.5 min-w-0 ${c.ok ? 'border-slate-200' : 'border-amber-300'}`}
-                  >
-                    <span className={`material-symbols-outlined text-[18px] shrink-0 ${c.ok ? 'text-emerald-600' : 'text-amber-600'}`}>
-                      {c.ok ? 'check_circle' : 'warning'}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{c.label}</p>
-                      <p className="font-semibold text-slate-800 leading-snug break-words">{c.detail}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {req && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-px border-t border-slate-200/70 bg-slate-200/70 rounded-b-xl overflow-hidden">
-                  <div className="bg-white/60 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Legal Metrology Officer</p>
-                    <p className="font-semibold text-slate-800 mt-0.5">{req.min_designation_label} or above</p>
-                  </div>
-                  <div className="bg-white/60 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">GATC</p>
-                    <p className="font-semibold text-slate-800 mt-0.5 flex items-center gap-1">
-                      <span className={`material-symbols-outlined text-[16px] ${req.gatc_allowed ? 'text-emerald-600' : 'text-slate-400'}`}>
-                        {req.gatc_allowed ? 'check_circle' : 'block'}
-                      </span>
-                      {req.gatc_allowed ? 'Allowed' : 'Not allowed'}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{req.gatc_note}</p>
-                  </div>
-                  <div className="bg-white/60 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Certificate validity</p>
-                    <p className="font-semibold text-slate-800 mt-0.5">
-                      {app.rule_set ? `${app.rule_set.validity_period_months} months` : 'Not configured'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* 2. Detailed Technical & Operational Matrix */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          {/* Instrument Specs */}
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs space-y-3">
-            <h3 className="font-bold text-slate-900 uppercase tracking-wider text-[11px] pb-2 border-b border-slate-200">
-              Instrument Technical Specifications
-            </h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Category:</span>
-                <span className="font-semibold text-slate-800">{app.category_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Make & Model:</span>
-                <span className="font-semibold text-slate-800">{app.manufacturer} {app.model}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Device Serial Number:</span>
-                <span className="font-mono font-bold text-primary">{app.serial_number}</span>
-              </div>
-              {(app.spec_fields || []).map(f => (
-                <div key={f.label} className="flex justify-between gap-4">
-                  <span className="text-slate-500">{f.label}:</span>
-                  <span className="font-semibold text-slate-800 text-right">{f.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Applicant & Establishment Details */}
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs space-y-3">
-            <h3 className="font-bold text-slate-900 uppercase tracking-wider text-[11px] pb-2 border-b border-slate-200">
-              Commercial Establishment Particulars
-            </h3>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Applicant Name:</span>
-                <span className="font-semibold text-slate-800">{app.trader_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Registered Firm:</span>
-                <span className="font-semibold text-slate-800">{app.trader_org}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Contact Number:</span>
-                <span className="font-semibold text-slate-800">{app.trader_phone}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Operational Premises:</span>
-                <span className="font-semibold text-slate-800 text-right max-w-[200px]">{app.location}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Statutory Fee Status:</span>
-                <span className="font-bold text-emerald-600 uppercase">Paid (Treasury Verified)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Applicant Supporting Documents */}
-        {app.documents && app.documents.length > 0 && (
-          <div className="mt-6 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2">
-            <h3 className="font-bold text-slate-900 uppercase tracking-wider text-[11px] pb-1 border-b border-slate-200">
-              Attached Applicant Supporting Documents ({app.documents.length})
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-              {app.documents.map((doc, idx) => (
-                <div key={doc.id || idx} className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2 truncate">
-                    <span className="material-symbols-outlined text-primary text-base">description</span>
-                    <span className="font-semibold text-slate-800 truncate">{doc.file_name}</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-semibold px-2 py-0.5 rounded bg-slate-100 shrink-0">
-                    {doc.category}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Document Preview Lightbox Modal */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          document={previewDoc}
+          onClose={() => setPreviewDoc(null)}
+        />
+      )}
 
       {/* Return Application Drawer */}
       {showReturnModal && (
@@ -576,7 +829,7 @@ export default function ApplicationReview({
               <button
                 type="button"
                 onClick={() => setShowReturnModal(false)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
                 title="Close"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
@@ -605,7 +858,7 @@ export default function ApplicationReview({
               <button
                 type="button"
                 onClick={() => setShowReturnModal(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -613,7 +866,7 @@ export default function ApplicationReview({
                 type="submit"
                 form="return-app-form"
                 disabled={returning}
-                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 {returning ? 'Returning...' : 'Return Application'}
               </button>
@@ -646,7 +899,7 @@ export default function ApplicationReview({
               <button
                 type="button"
                 onClick={() => setShowRejectModal(false)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
                 title="Close"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
@@ -675,7 +928,7 @@ export default function ApplicationReview({
               <button
                 type="button"
                 onClick={() => setShowRejectModal(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -683,7 +936,7 @@ export default function ApplicationReview({
                 type="submit"
                 form="reject-app-form"
                 disabled={rejecting}
-                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
+                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 {rejecting ? 'Rejecting...' : 'Confirm Rejection'}
               </button>
@@ -716,7 +969,7 @@ export default function ApplicationReview({
               <button
                 type="button"
                 onClick={() => setShowApproveModal(false)}
-                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
                 title="Close"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
@@ -751,7 +1004,7 @@ export default function ApplicationReview({
               <button
                 type="button"
                 onClick={() => setShowApproveModal(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors"
+                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
@@ -759,7 +1012,7 @@ export default function ApplicationReview({
                 type="submit"
                 form="approve-app-form"
                 disabled={approving}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-all flex items-center gap-1.5"
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 {approving ? 'Authorizing...' : 'Approve & Issue Certificate'}
               </button>

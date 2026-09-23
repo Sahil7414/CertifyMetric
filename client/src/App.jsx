@@ -23,14 +23,29 @@ import RegisterView from './views/RegisterView';
 import AuditLogView from './views/AuditLogView';
 import GatcDashboard from './views/GatcDashboard';
 import AdminDashboard from './views/AdminDashboard';
+import AdminUsersView from './views/AdminUsersView';
+import AdminOrgsView from './views/AdminOrgsView';
+import AdminMasterDataView from './views/AdminMasterDataView';
+import AdminSystemHealthView from './views/AdminSystemHealthView';
 import { api, setApiUser, getStoredAuth } from './api';
 
 const ROLE_ALLOWED_TABS = {
   TRADER: ['dashboard', 'instruments', 'instrument-detail', 'apply-verification', 'applications', 'application-timeline', 'applications-rejected', 'vendor-apply-tank', 'certificates', 'official-certificate', 'public-qr-verify'],
   AUTHORITY: ['authority-dashboard', 'applications', 'application-timeline', 'application-review', 'assignment-decision', 'certificates', 'official-certificate', 'audit-logs', 'public-qr-verify'],
-  VERIFIER: ['verifier-dashboard', 'verification-workspace', 'certificates', 'official-certificate', 'public-qr-verify'],
-  GATC: ['gatc-dashboard', 'verification-workspace', 'certificates', 'official-certificate', 'public-qr-verify'],
-  PLATFORM_ADMIN: ['admin-dashboard', 'audit-logs', 'public-qr-verify']
+  VERIFIER: ['verifier-dashboard', 'verification-workspace', 'public-qr-verify'],
+  GATC: ['gatc-dashboard', 'verification-workspace', 'public-qr-verify'],
+  PLATFORM_ADMIN: [
+    'admin-dashboard',
+    'admin-users',
+    'admin-orgs',
+    'admin-master',
+    'audit-logs',
+    'system-health',
+    'applications',
+    'certificates',
+    'instruments',
+    'public-qr-verify'
+  ]
 };
 
 const getInitialRoleTab = (role) => {
@@ -42,6 +57,198 @@ const getInitialRoleTab = (role) => {
   return 'dashboard';
 };
 
+export function computePathForState(tab, entityIds = {}, role = null) {
+  const { instrumentId, applicationId, certificateId } = entityIds;
+  switch (tab) {
+    case 'dashboard':
+      return '/dashboard';
+    case 'authority-dashboard':
+      return '/authority/dashboard';
+    case 'verifier-dashboard':
+      return '/verifier/dashboard';
+    case 'gatc-dashboard':
+      return '/gatc/dashboard';
+    case 'admin-dashboard':
+      return '/admin/dashboard';
+
+    case 'instruments':
+      return '/instruments';
+    case 'instrument-detail':
+      return instrumentId ? `/instruments/${encodeURIComponent(instrumentId)}` : '/instruments';
+    case 'apply-verification':
+      return instrumentId ? `/apply-verification?instrument=${encodeURIComponent(instrumentId)}` : '/apply-verification';
+    case 'vendor-apply-tank':
+      return '/vendor-apply-tank';
+
+    case 'applications':
+      return '/applications';
+    case 'applications-rejected':
+      return '/applications/rejected';
+    case 'application-timeline':
+      return applicationId ? `/applications/${encodeURIComponent(applicationId)}/timeline` : '/applications';
+    case 'application-review':
+      return applicationId ? `/applications/${encodeURIComponent(applicationId)}/review` : '/applications';
+    case 'assignment-decision':
+      return applicationId ? `/applications/${encodeURIComponent(applicationId)}/assign` : '/applications';
+
+    case 'verification-workspace':
+      return applicationId ? `/verifications/workspace/${encodeURIComponent(applicationId)}` : '/verifications/workspace';
+
+    case 'certificates':
+      return '/certificates';
+    case 'official-certificate':
+      return certificateId ? `/certificates/${encodeURIComponent(certificateId)}` : '/certificates';
+
+    case 'audit-logs':
+      return '/audit-logs';
+    case 'admin-users':
+      return '/admin/users';
+    case 'admin-orgs':
+      return '/admin/organizations';
+    case 'admin-master':
+      return '/admin/master-data';
+    case 'system-health':
+      return '/admin/system-health';
+
+    case 'public-qr-verify':
+      return '/public-qr-verify';
+
+    default:
+      return '/dashboard';
+  }
+}
+
+export function parseRouteFromUrl(pathname, search, role) {
+  const cleanPath = (pathname || window.location.pathname).replace(/\/+$/, '') || '/';
+  const params = new URLSearchParams(search !== undefined ? search : window.location.search);
+
+  // 1. Check Public Verify Routes
+  if (cleanPath.startsWith('/public/instrument') || cleanPath.startsWith('/public/instruments') || (cleanPath === '/verify' && params.get('mode') === 'INSTRUMENT')) {
+    const parts = cleanPath.split('/').filter(Boolean);
+    const tok = parts.length > 2 ? decodeURIComponent(parts.slice(2).join('/')).trim() : (params.get('instrument') || params.get('token') || '');
+    return { isPublicVerify: true, publicMode: 'INSTRUMENT', publicToken: tok };
+  }
+  if (cleanPath.startsWith('/verify') || params.has('verify')) {
+    const parts = cleanPath.split('/').filter(Boolean);
+    const tok = parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')).trim() : (params.get('verify') || params.get('token') || '');
+    return { isPublicVerify: true, publicMode: 'CERTIFICATE', publicToken: tok };
+  }
+
+  // 2. Pre-auth Routes
+  if (cleanPath === '/login') {
+    return { isPreAuth: true, showLanding: false, showRegister: false };
+  }
+  if (cleanPath === '/register') {
+    return { isPreAuth: true, showLanding: false, showRegister: true };
+  }
+  if (cleanPath === '/') {
+    return { isPreAuth: true, showLanding: true, showRegister: false };
+  }
+
+  // 3. Authenticated Routes
+  if (cleanPath === '/dashboard') {
+    return { tab: getInitialRoleTab(role) };
+  }
+  if (cleanPath === '/authority/dashboard') {
+    return { tab: 'authority-dashboard' };
+  }
+  if (cleanPath === '/verifier/dashboard') {
+    return { tab: 'verifier-dashboard' };
+  }
+  if (cleanPath === '/gatc/dashboard') {
+    return { tab: 'gatc-dashboard' };
+  }
+  if (cleanPath === '/admin/dashboard') {
+    return { tab: 'admin-dashboard' };
+  }
+
+  // Instruments
+  if (cleanPath === '/instruments') {
+    return { tab: 'instruments' };
+  }
+  if (cleanPath.startsWith('/instruments/')) {
+    const id = decodeURIComponent(cleanPath.slice('/instruments/'.length));
+    return { tab: 'instrument-detail', instrumentId: id };
+  }
+
+  // Apply Verification
+  if (cleanPath === '/apply-verification') {
+    const instId = params.get('instrument') || null;
+    return { tab: 'apply-verification', instrumentId: instId };
+  }
+  if (cleanPath === '/vendor-apply-tank') {
+    return { tab: 'vendor-apply-tank' };
+  }
+
+  // Applications
+  if (cleanPath === '/applications') {
+    return { tab: 'applications' };
+  }
+  if (cleanPath === '/applications/rejected') {
+    return { tab: 'applications-rejected' };
+  }
+  if (cleanPath.startsWith('/applications/')) {
+    const sub = cleanPath.slice('/applications/'.length);
+    const parts = sub.split('/');
+    const id = decodeURIComponent(parts[0]);
+    const action = parts[1];
+    if (action === 'timeline') {
+      return { tab: 'application-timeline', applicationId: id };
+    }
+    if (action === 'review') {
+      return { tab: 'application-review', applicationId: id };
+    }
+    if (action === 'assign') {
+      return { tab: 'assignment-decision', applicationId: id };
+    }
+    // Default /applications/:id
+    return {
+      tab: role === 'AUTHORITY' ? 'application-review' : 'application-timeline',
+      applicationId: id
+    };
+  }
+
+  // Verification Workspace
+  if (cleanPath.startsWith('/verifications/workspace')) {
+    const sub = cleanPath.slice('/verifications/workspace'.length);
+    const id = sub ? decodeURIComponent(sub.replace(/^\//, '')) : null;
+    return { tab: 'verification-workspace', applicationId: id || null };
+  }
+
+  // Certificates
+  if (cleanPath === '/certificates') {
+    return { tab: 'certificates' };
+  }
+  if (cleanPath.startsWith('/certificates/')) {
+    const id = decodeURIComponent(cleanPath.slice('/certificates/'.length));
+    return { tab: 'official-certificate', certificateId: id };
+  }
+
+  // Admin / Audit
+  if (cleanPath === '/audit-logs') {
+    return { tab: 'audit-logs' };
+  }
+  if (cleanPath === '/admin/users') {
+    return { tab: 'admin-users' };
+  }
+  if (cleanPath === '/admin/organizations') {
+    return { tab: 'admin-orgs' };
+  }
+  if (cleanPath === '/admin/master-data') {
+    return { tab: 'admin-master' };
+  }
+  if (cleanPath === '/admin/system-health') {
+    return { tab: 'system-health' };
+  }
+
+  if (cleanPath === '/public-qr-verify') {
+    return { tab: 'public-qr-verify' };
+  }
+
+  // Fallback
+  return { tab: getInitialRoleTab(role) };
+}
+
 // Reads the current path once at module scope so the initial render already
 // matches the URL — avoids a flash of the wrong screen on refresh/deep-link.
 const getInitialPreAuthState = () => {
@@ -51,39 +258,70 @@ const getInitialPreAuthState = () => {
   return { showLanding: true, showRegister: false };
 };
 
+const getInitialPublicVerifyState = () => {
+  const path = window.location.pathname;
+  const params = new URLSearchParams(window.location.search);
+
+  // Check instrument routes first: /public/instrument or /public/instrument/:token
+  if (path.startsWith('/public/instrument') || path.startsWith('/public/instruments')) {
+    const parts = path.split('/').filter(Boolean);
+    const tok = parts.length > 2 ? decodeURIComponent(parts.slice(2).join('/')).trim() : (params.get('instrument') || '');
+    return { isRoute: true, mode: 'INSTRUMENT', token: tok };
+  }
+
+  if (params.has('instrument')) {
+    return { isRoute: true, mode: 'INSTRUMENT', token: params.get('instrument') || '' };
+  }
+
+  // Check certificate routes: /verify or /verify/:token
+  if (path.startsWith('/verify') || params.has('verify') || params.has('token')) {
+    const parts = path.split('/').filter(Boolean);
+    const tok = parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')).trim() : (params.get('verify') || params.get('token') || '');
+    return { isRoute: true, mode: 'CERTIFICATE', token: tok };
+  }
+
+  return { isRoute: false, mode: 'CERTIFICATE', token: null };
+};
+
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(() => getStoredAuth().user);
-  const [currentRole, setCurrentRole] = useState(() => getStoredAuth().user?.role || null);
+  // Tracks how many history entries this session has pushed internally.
+  // Used by navigateBack to decide whether window.history.back() is safe.
+  const navDepthRef = React.useRef(0);
+  const authUser = getStoredAuth().user;
+  const initialParsedRoute = authUser ? parseRouteFromUrl(window.location.pathname, window.location.search, authUser.role) : null;
+  const initialPreAuthState = getInitialPreAuthState();
+
+  const [currentUser, setCurrentUser] = useState(() => authUser);
+  const [currentRole, setCurrentRole] = useState(() => authUser?.role || null);
   const [showLanding, setShowLanding] = useState(() =>
-    getStoredAuth().user ? false : getInitialPreAuthState().showLanding
+    authUser ? false : initialPreAuthState.showLanding
   );
   const [showRegister, setShowRegister] = useState(() =>
-    getStoredAuth().user ? false : getInitialPreAuthState().showRegister
+    authUser ? false : initialPreAuthState.showRegister
   );
+
   const [activeTab, setActiveTab] = useState(() => {
-    const role = getStoredAuth().user?.role;
-    return getInitialRoleTab(role);
+    if (initialParsedRoute?.tab) {
+      const allowed = ROLE_ALLOWED_TABS[authUser?.role] || [];
+      if (allowed.includes(initialParsedRoute.tab)) return initialParsedRoute.tab;
+    }
+    return getInitialRoleTab(authUser?.role);
   });
 
-  // Public QR Verification Route State (No auth required)
-  const [publicVerifyToken, setPublicVerifyToken] = useState(() => {
-    const path = window.location.pathname;
-    if (path.startsWith('/verify/')) {
-      const t = path.replace('/verify/', '').trim();
-      return t || null;
-    }
-    const params = new URLSearchParams(window.location.search);
-    return params.get('verify') || null;
-  });
+  // Public QR / Engine Verification Route State (No auth required)
+  const initialVerifyState = getInitialPublicVerifyState();
+  const [publicVerifyMode, setPublicVerifyMode] = useState(initialVerifyState.mode);
+  const [publicVerifyToken, setPublicVerifyToken] = useState(initialVerifyState.token);
+  const [isPublicVerifyRoute, setIsPublicVerifyRoute] = useState(initialVerifyState.isRoute);
 
   // Selected Entities for Drill-down Views
-  const [selectedInstrumentId, setSelectedInstrumentId] = useState(null);
-  const [selectedApplicationId, setSelectedApplicationId] = useState(null);
-  const [selectedCertificateId, setSelectedCertificateId] = useState(null);
+  const [selectedInstrumentId, setSelectedInstrumentId] = useState(() => initialParsedRoute?.instrumentId || null);
+  const [selectedApplicationId, setSelectedApplicationId] = useState(() => initialParsedRoute?.applicationId || null);
+  const [selectedCertificateId, setSelectedCertificateId] = useState(() => initialParsedRoute?.certificateId || null);
 
   // Modals & Navigation States
   const [showAddModal, setShowAddModal] = useState(false);
-  const [applyModalInstId, setApplyModalInstId] = useState(null);
+  const [applyModalInstId, setApplyModalInstId] = useState(() => (initialParsedRoute?.tab === 'apply-verification' ? (initialParsedRoute.instrumentId || null) : null));
   const [resubmitAppData, setResubmitAppData] = useState(null);
   const [pendingPaymentAppData, setPendingPaymentAppData] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
@@ -123,8 +361,74 @@ export default function App() {
     }
   };
 
+  // Central Router: Updates Browser History, URL, and React View State
+  const navigateTo = (tab, entityIds = {}, replace = false) => {
+    const role = currentRole || currentUser?.role;
+    const allowed = ROLE_ALLOWED_TABS[role] || [];
+    const validTab = allowed.includes(tab) ? tab : getInitialRoleTab(role);
+
+    const instId = entityIds.instrumentId !== undefined ? entityIds.instrumentId : (validTab === 'instrument-detail' ? selectedInstrumentId : null);
+    const appId = entityIds.applicationId !== undefined ? entityIds.applicationId : (['application-timeline', 'application-review', 'assignment-decision', 'verification-workspace'].includes(validTab) ? selectedApplicationId : null);
+    const certId = entityIds.certificateId !== undefined ? entityIds.certificateId : (validTab === 'official-certificate' ? selectedCertificateId : null);
+
+    const path = computePathForState(validTab, {
+      instrumentId: instId,
+      applicationId: appId,
+      certificateId: certId
+    }, role);
+
+    const stateObj = {
+      tab: validTab,
+      instrumentId: instId,
+      applicationId: appId,
+      certificateId: certId
+    };
+
+    if (replace) {
+      window.history.replaceState(stateObj, '', path);
+    } else {
+      const currentUrl = window.location.pathname + window.location.search;
+      if (currentUrl !== path) {
+        window.history.pushState(stateObj, '', path);
+        navDepthRef.current += 1;
+      }
+    }
+
+    setActiveTab(validTab);
+    setSelectedInstrumentId(instId);
+    setSelectedApplicationId(appId);
+    setSelectedCertificateId(certId);
+    if (validTab === 'apply-verification') {
+      setApplyModalInstId(instId);
+    }
+    setShowAddModal(false);
+    setShowQrModal(false);
+    // Scroll to top on forward navigation (not on replace/back)
+    if (!replace) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  };
+
+  // Navigates back in browser history if this session has pushed entries,
+  // otherwise falls back to the specified destination.
+  const navigateBack = (fallbackTab, fallbackIds = {}) => {
+    if (navDepthRef.current > 0) {
+      navDepthRef.current -= 1;
+      window.history.back();
+    } else {
+      navigateTo(fallbackTab, fallbackIds, true);
+    }
+  };
+
   useEffect(() => {
     if (currentUser) {
+      // If user is authenticated at root '/', replace with their designated role dashboard
+      if (window.location.pathname === '/' || !window.location.pathname) {
+        const targetTab = getInitialRoleTab(currentUser.role);
+        const path = computePathForState(targetTab, {}, currentUser.role);
+        window.history.replaceState({ tab: targetTab }, '', path);
+      }
+
       api.getMe().then(res => {
         if (!res || !res.user) {
           handleLogout();
@@ -139,25 +443,26 @@ export default function App() {
       setLoading(false);
     }
 
-    // Listen for browser navigation changes (Back/Forward, pushState, QR scan links)
-    const handlePopState = () => {
+    // Listen for browser navigation changes (Back and Forward buttons)
+    const handlePopState = (event) => {
       const path = window.location.pathname;
-      if (path.startsWith('/verify/')) {
-        setPublicVerifyToken(path.replace('/verify/', '').trim() || null);
-        return;
-      }
-      const params = new URLSearchParams(window.location.search);
-      const verifyParam = params.get('verify');
-      if (verifyParam) {
-        setPublicVerifyToken(verifyParam);
-        return;
-      }
-      setPublicVerifyToken(null);
+      const search = window.location.search;
+      const user = getStoredAuth().user;
 
-      // Pre-auth screen transitions (Landing / Login / Register) — this makes the
-      // browser's Back button move between these screens instead of leaving the
-      // app entirely, since without pushState history had nowhere else to go.
-      if (!getStoredAuth().user) {
+      // 1. Standalone Public Verify routes (/verify, /public/instrument)
+      const publicState = getInitialPublicVerifyState();
+      if (publicState.isRoute) {
+        setIsPublicVerifyRoute(true);
+        setPublicVerifyMode(publicState.mode);
+        setPublicVerifyToken(publicState.token);
+        return;
+      }
+      setIsPublicVerifyRoute(false);
+      setPublicVerifyToken(null);
+      setPublicVerifyMode('CERTIFICATE');
+
+      // 2. Pre-auth screen transitions (Landing / Login / Register)
+      if (!user) {
         if (path === '/register') {
           setShowLanding(false);
           setShowRegister(true);
@@ -168,15 +473,53 @@ export default function App() {
           setShowLanding(true);
           setShowRegister(false);
         }
+        return;
       }
+
+      // 3. Authenticated routes
+      const parsed = parseRouteFromUrl(path, search, user.role);
+      if (parsed.isPublicVerify) {
+        setIsPublicVerifyRoute(true);
+        setPublicVerifyMode(parsed.publicMode);
+        setPublicVerifyToken(parsed.publicToken);
+        return;
+      }
+
+      const allowed = ROLE_ALLOWED_TABS[user.role] || [];
+      const targetTab = allowed.includes(parsed.tab) ? parsed.tab : getInitialRoleTab(user.role);
+
+      const instId = parsed.instrumentId !== undefined ? parsed.instrumentId : (event.state?.instrumentId || null);
+      const appId = parsed.applicationId !== undefined ? parsed.applicationId : (event.state?.applicationId || null);
+      const certId = parsed.certificateId !== undefined ? parsed.certificateId : (event.state?.certificateId || null);
+
+      setActiveTab(targetTab);
+      setSelectedInstrumentId(instId);
+      setSelectedApplicationId(appId);
+      setSelectedCertificateId(certId);
+      if (targetTab === 'apply-verification') {
+        setApplyModalInstId(instId);
+      }
+      setShowAddModal(false);
+      setShowQrModal(false);
     };
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const handleVerifyPublicToken = (token) => {
-    window.history.pushState({}, '', `/verify/${token}`);
-    setPublicVerifyToken(token);
+  const handleVerifyPublicToken = (token, mode = 'CERTIFICATE') => {
+    const cleanToken = token ? token.trim() : '';
+    if (mode === 'INSTRUMENT') {
+      window.history.pushState({}, '', cleanToken ? `/public/instrument/${encodeURIComponent(cleanToken)}` : '/public/instrument');
+      setIsPublicVerifyRoute(true);
+      setPublicVerifyMode('INSTRUMENT');
+      setPublicVerifyToken(cleanToken);
+    } else {
+      window.history.pushState({}, '', cleanToken ? `/verify/${encodeURIComponent(cleanToken)}` : '/verify');
+      setIsPublicVerifyRoute(true);
+      setPublicVerifyMode('CERTIFICATE');
+      setPublicVerifyToken(cleanToken);
+    }
   };
 
   const handleLoginSuccess = (authData) => {
@@ -186,11 +529,18 @@ export default function App() {
     setApiUser(user, token);
     setShowLanding(false);
     setShowRegister(false);
-    window.history.pushState({}, '', '/dashboard');
 
-    // Determine portal / dashboard strictly based on database role:
+    // Determine portal / dashboard strictly based on database role.
+    // Use replaceState so the user cannot press Back to return to the
+    // login/landing screen after a successful authentication.
     const targetTab = getInitialRoleTab(user.role);
+    const path = computePathForState(targetTab, {}, user.role);
+    window.history.replaceState({ tab: targetTab }, '', path);
+    navDepthRef.current = 0; // reset internal depth after login
     setActiveTab(targetTab);
+    setSelectedInstrumentId(null);
+    setSelectedApplicationId(null);
+    setSelectedCertificateId(null);
 
     refreshAllData(user);
   };
@@ -216,7 +566,9 @@ export default function App() {
     setCurrentRole(null);
     setShowLanding(true);
     setShowRegister(false);
-    window.history.pushState({}, '', '/');
+    // Use replaceState so Forward after logout cannot revisit protected routes.
+    window.history.replaceState({}, '', '/');
+    navDepthRef.current = 0;
     setInstruments([]);
     setApplications([]);
     setCertificates([]);
@@ -225,32 +577,36 @@ export default function App() {
   const handleOpenApplyModal = (instrumentId = null) => {
     setResubmitAppData(null);
     setPendingPaymentAppData(null);
-    setApplyModalInstId(instrumentId);
-    setActiveTab('apply-verification');
+    navigateTo('apply-verification', { instrumentId: instrumentId || null });
   };
 
   const handleOpenResubmit = (app) => {
     setPendingPaymentAppData(null);
     setResubmitAppData(app);
-    setApplyModalInstId(app?.instrument_id || null);
-    setActiveTab('apply-verification');
+    navigateTo('apply-verification', { instrumentId: app?.instrument_id || null });
   };
 
   const handleOpenPayment = (app) => {
     setResubmitAppData(null);
     setPendingPaymentAppData(app);
-    setApplyModalInstId(app?.instrument_id || null);
-    setActiveTab('apply-verification');
+    navigateTo('apply-verification', { instrumentId: app?.instrument_id || null });
   };
 
   // Standalone Public Verification Route (Immediate render, no auth/login or data loading required)
-  if (publicVerifyToken) {
+  if (isPublicVerifyRoute || publicVerifyToken !== null) {
     return (
       <PublicCertificateVerification
+        mode={publicVerifyMode}
         token={publicVerifyToken}
         onExit={() => {
-          window.history.pushState({}, '', '/');
-          setPublicVerifyToken(null);
+          if (window.history.length > 1) {
+            window.history.back();
+          } else {
+            window.history.pushState({}, '', '/');
+            setIsPublicVerifyRoute(false);
+            setPublicVerifyToken(null);
+            setPublicVerifyMode('CERTIFICATE');
+          }
         }}
       />
     );
@@ -261,6 +617,7 @@ export default function App() {
     const goToLogin = () => {
       window.history.pushState({}, '', '/login');
       setShowLanding(false);
+      setShowRegister(false);
     };
     const goToLanding = () => {
       window.history.pushState({}, '', '/');
@@ -269,22 +626,29 @@ export default function App() {
     };
     const goToRegister = () => {
       window.history.pushState({}, '', '/register');
+      setShowLanding(false);
       setShowRegister(true);
     };
     const backToLoginFromRegister = () => {
-      window.history.pushState({}, '', '/login');
-      setShowRegister(false);
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.history.pushState({}, '', '/login');
+        setShowLanding(false);
+        setShowRegister(false);
+      }
     };
 
     if (showLanding) {
       return (
         <PortalLanding
           onGoToLogin={goToLogin}
+          onGoToRegister={goToRegister}
           onTrackApplication={(appNo) => {
-            // Switch to login for secure access to application tracking
             goToLogin();
           }}
-          onVerifyCertificate={handleVerifyPublicToken}
+          onVerifyCertificate={(tok) => handleVerifyPublicToken(tok, 'CERTIFICATE')}
+          onValidateInstrument={(tok) => handleVerifyPublicToken(tok, 'INSTRUMENT')}
           onDirectDemoLogin={handleDirectDemoLogin}
         />
       );
@@ -321,13 +685,31 @@ export default function App() {
   }
 
   const handleTabChange = (tab) => {
-    const allowed = ROLE_ALLOWED_TABS[currentRole] || [];
-    if (!allowed.includes(tab)) {
-      console.warn(`Access denied to tab '${tab}' for role '${currentRole}'`);
-      setActiveTab(getInitialRoleTab(currentRole));
+    navigateTo(tab);
+  };
+
+  const handleNotificationNavigate = (appId, type, certId) => {
+    if (certId) {
+      navigateTo('official-certificate', { certificateId: certId });
       return;
     }
-    setActiveTab(tab);
+
+    if (appId) {
+      if (currentRole === 'AUTHORITY') {
+        navigateTo('application-review', { applicationId: appId });
+      } else if (currentRole === 'VERIFIER' || currentRole === 'GATC') {
+        navigateTo('verification-workspace', { applicationId: appId });
+      } else {
+        // Commercial Trader
+        if (type === 'PAYMENT_INITIATED' || type === 'PAYMENT_REQUIRED') {
+          navigateTo('applications');
+        } else {
+          navigateTo('application-timeline', { applicationId: appId });
+        }
+      }
+    } else {
+      navigateTo(getInitialRoleTab(currentRole));
+    }
   };
 
   return (
@@ -341,36 +723,31 @@ export default function App() {
         onOpenAddModal={() => setShowAddModal(true)}
         onVerifyPublicToken={handleVerifyPublicToken}
         onLogout={handleLogout}
-        onGoHome={() => handleTabChange(getInitialRoleTab(currentRole))}
+        onGoHome={() => navigateTo(getInitialRoleTab(currentRole))}
+        onNavigateToApplication={handleNotificationNavigate}
       >
-        {/* LMOMS Vehicle Tank Verification View (Matches Screenshot) */}
-            {activeTab === 'vendor-apply-tank' && (
-              <VendorApplyVerificationView
-                instruments={instruments}
-                onOpenApplyModal={handleOpenApplyModal}
-                onOpenAddModal={() => setShowAddModal(true)}
-              />
-            )}
+        {/* LMOMS Vehicle Tank Verification View */}
+        {activeTab === 'vendor-apply-tank' && (
+          <VendorApplyVerificationView
+            instruments={instruments}
+            onOpenApplyModal={handleOpenApplyModal}
+            onOpenAddModal={() => setShowAddModal(true)}
+          />
+        )}
 
-            {/* Resubmit Rejected Weights/Measures */}
-            {activeTab === 'applications-rejected' && (
-              <ApplicationsList
-                applications={applications.filter(a => a.status === 'FAILED' || a.status === 'REJECTED')}
-                onSelectApplication={(id) => {
-                  setSelectedApplicationId(id);
-                  setActiveTab('application-timeline');
-                }}
-                onOpenApplyModal={handleOpenApplyModal}
-                onSelectCertificate={(id) => {
-                  setSelectedCertificateId(id);
-                  setActiveTab('official-certificate');
-                }}
-              />
-            )}
+        {/* Resubmit Rejected Weights/Measures */}
+        {activeTab === 'applications-rejected' && (
+          <ApplicationsList
+            applications={applications.filter(a => a.status === 'FAILED' || a.status === 'REJECTED')}
+            onSelectApplication={(id) => navigateTo('application-timeline', { applicationId: id })}
+            onOpenApplyModal={handleOpenApplyModal}
+            onSelectCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
+          />
+        )}
 
-            {/* ========================================================
-                TRADER VIEWS: Login -> Dashboard -> Add Instrument -> Apply for Verification
-               ======================================================== */}
+        {/* ========================================================
+            TRADER VIEWS: Login -> Dashboard -> Add Instrument -> Apply for Verification
+           ======================================================== */}
         {activeTab === 'dashboard' && (
           <TraderDashboard
             currentUser={currentUser}
@@ -379,18 +756,9 @@ export default function App() {
             certificates={certificates}
             onOpenAddModal={() => setShowAddModal(true)}
             onOpenApplyModal={handleOpenApplyModal}
-            onSelectInstrument={(id) => {
-              setSelectedInstrumentId(id);
-              setActiveTab('instrument-detail');
-            }}
-            onSelectApplication={(id) => {
-              setSelectedApplicationId(id);
-              setActiveTab('application-timeline');
-            }}
-            onSelectCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onSelectInstrument={(id) => navigateTo('instrument-detail', { instrumentId: id })}
+            onSelectApplication={(id) => navigateTo('application-timeline', { applicationId: id })}
+            onSelectCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
             onResubmitApplication={handleOpenResubmit}
             onPayApplication={handleOpenPayment}
             onRequestVerification={handleOpenApplyModal}
@@ -398,9 +766,9 @@ export default function App() {
               setQrModalInfo(info);
               setShowQrModal(true);
             }}
-            onViewAllInstruments={() => setActiveTab('instruments')}
-            onViewAllApplications={() => setActiveTab('applications')}
-            onViewAllCertificates={() => setActiveTab('certificates')}
+            onViewAllInstruments={() => navigateTo('instruments')}
+            onViewAllApplications={() => navigateTo('applications')}
+            onViewAllCertificates={() => navigateTo('certificates')}
           />
         )}
 
@@ -416,23 +784,20 @@ export default function App() {
               setApplyModalInstId(null);
               setResubmitAppData(null);
               setPendingPaymentAppData(null);
-              setActiveTab('dashboard');
+              navigateBack('dashboard');
             }}
             onApplicationCreated={async (newAppId) => {
               await refreshAllData();
-              setSelectedApplicationId(newAppId);
-              setActiveTab('application-timeline');
+              navigateTo('application-timeline', { applicationId: newAppId });
             }}
             onPaymentCompleted={() => {
-              // Reload shared data so dashboard/lists stop showing the application as unpaid.
               refreshAllData();
             }}
             onOpenAddInstrument={() => {
               setShowAddModal(true);
             }}
             onViewApplicationTimeline={(newAppId) => {
-              setSelectedApplicationId(newAppId);
-              setActiveTab('application-timeline');
+              navigateTo('application-timeline', { applicationId: newAppId });
             }}
           />
         )}
@@ -442,10 +807,7 @@ export default function App() {
             instruments={instruments}
             onOpenAddModal={() => setShowAddModal(true)}
             onOpenApplyModal={handleOpenApplyModal}
-            onSelectInstrument={(id) => {
-              setSelectedInstrumentId(id);
-              setActiveTab('instrument-detail');
-            }}
+            onSelectInstrument={(id) => navigateTo('instrument-detail', { instrumentId: id })}
             onRequestVerification={handleOpenApplyModal}
             onOpenQR={(info) => {
               setQrModalInfo(info);
@@ -457,64 +819,52 @@ export default function App() {
         {activeTab === 'instrument-detail' && (
           <InstrumentDetail
             instrumentId={selectedInstrumentId}
-            onBack={() => setActiveTab('instruments')}
+            onBack={() => navigateBack('instruments')}
             onRequestVerification={handleOpenApplyModal}
             onOpenApplyModal={handleOpenApplyModal}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
             }}
-            onSelectCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onSelectCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
           />
         )}
 
         {activeTab === 'applications' && (
           <ApplicationsList
             applications={applications}
-            onSelectApplication={(id) => {
-              setSelectedApplicationId(id);
-              setActiveTab('application-timeline');
-            }}
+            currentRole={currentRole}
+            onSelectApplication={(id) => navigateTo(currentRole === 'AUTHORITY' ? 'application-review' : 'application-timeline', { applicationId: id })}
+            onAssignApplication={(id) => navigateTo('assignment-decision', { applicationId: id })}
+            onReviewApplication={(id) => navigateTo('application-review', { applicationId: id })}
             onOpenApplyModal={handleOpenApplyModal}
-            onSelectCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onSelectCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
             onResubmitApplication={handleOpenResubmit}
-            onPayApplication={handleOpenPayment}
+            onPayApplication={currentRole === 'TRADER' ? handleOpenPayment : null}
           />
         )}
 
         {activeTab === 'application-timeline' && (
           <ApplicationTimeline
             applicationId={selectedApplicationId}
-            onBack={() => setActiveTab(currentRole === 'AUTHORITY' ? 'authority-dashboard' : 'applications')}
+            onBack={() => navigateBack(currentRole === 'AUTHORITY' ? 'authority-dashboard' : 'applications')}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
             }}
-            onSelectCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onSelectCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
             onResubmitApplication={handleOpenResubmit}
-            onPayApplication={handleOpenPayment}
+            onPayApplication={currentRole === 'TRADER' ? handleOpenPayment : null}
           />
         )}
 
         {/* ========================================================
-            CERTIFICATE VIEWS (Slice 3)
+            CERTIFICATE VIEWS
            ======================================================== */}
         {activeTab === 'certificates' && (
           <CertificatesList
             certificates={certificates}
-            onSelectCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onSelectCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
@@ -526,7 +876,7 @@ export default function App() {
         {activeTab === 'official-certificate' && (
           <OfficialCertificate
             certificateId={selectedCertificateId}
-            onBack={() => setActiveTab(currentRole === 'TRADER' ? 'certificates' : currentRole === 'AUTHORITY' ? 'authority-dashboard' : 'verifier-dashboard')}
+            onBack={() => navigateBack(currentRole === 'TRADER' || currentRole === 'AUTHORITY' ? 'certificates' : 'verifier-dashboard')}
             onOpenQR={(info) => {
               setQrModalInfo(info);
               setShowQrModal(true);
@@ -543,26 +893,20 @@ export default function App() {
             currentUser={currentUser}
             applications={applications}
             stats={stats}
-            onReviewApplication={(id) => {
-              setSelectedApplicationId(id);
-              setActiveTab('application-review');
-            }}
-            onViewWorkload={() => setActiveTab('audit-logs')}
+            onReviewApplication={(id) => navigateTo('application-review', { applicationId: id })}
+            onAssignApplication={(id) => navigateTo('assignment-decision', { applicationId: id })}
+            onViewQueue={() => navigateTo('applications')}
+            onViewCertificates={() => navigateTo('certificates')}
+            onViewAuditLogs={() => navigateTo('audit-logs')}
           />
         )}
 
         {activeTab === 'application-review' && (
           <ApplicationReview
             applicationId={selectedApplicationId}
-            onBack={() => setActiveTab('authority-dashboard')}
-            onProceedToAssignment={(id) => {
-              setSelectedApplicationId(id);
-              setActiveTab('assignment-decision');
-            }}
-            onViewCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onBack={() => navigateBack('authority-dashboard')}
+            onProceedToAssignment={(id) => navigateTo('assignment-decision', { applicationId: id })}
+            onViewCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
           />
         )}
 
@@ -570,11 +914,10 @@ export default function App() {
           <AssignmentDecisionSupport
             applicationId={selectedApplicationId}
             currentUser={currentUser}
-            onBack={() => setActiveTab('application-review')}
+            onBack={() => navigateBack('application-review', { applicationId: selectedApplicationId })}
             onAssignmentComplete={async (appId) => {
               await refreshAllData();
-              setSelectedApplicationId(appId);
-              setActiveTab('application-timeline');
+              navigateTo('application-timeline', { applicationId: appId });
             }}
           />
         )}
@@ -585,20 +928,47 @@ export default function App() {
         {activeTab === 'gatc-dashboard' && (
           <GatcDashboard
             currentUser={currentUser}
-            onOpenCase={(appId) => {
-              setSelectedApplicationId(appId);
-              setActiveTab('verification-workspace');
-            }}
+            onOpenCase={(appId) => navigateTo('verification-workspace', { applicationId: appId })}
+            onViewAllCases={() => navigateTo('verification-workspace')}
           />
         )}
 
         {/* ========================================================
-            PLATFORM ADMIN CONSOLE
+            PLATFORM ADMIN CONSOLE & DEDICATED MANAGEMENT VIEWS
            ======================================================== */}
         {activeTab === 'admin-dashboard' && (
           <AdminDashboard
             currentUser={currentUser}
-            onViewAuditLogs={() => setActiveTab('audit-logs')}
+            onViewAuditLogs={() => navigateTo('audit-logs')}
+            onNavigateTab={(tab) => navigateTo(tab)}
+          />
+        )}
+
+        {activeTab === 'admin-users' && (
+          <AdminUsersView
+            currentUser={currentUser}
+            onBack={() => navigateBack('admin-dashboard')}
+          />
+        )}
+
+        {activeTab === 'admin-orgs' && (
+          <AdminOrgsView
+            currentUser={currentUser}
+            onBack={() => navigateBack('admin-dashboard')}
+          />
+        )}
+
+        {activeTab === 'admin-master' && (
+          <AdminMasterDataView
+            currentUser={currentUser}
+            onBack={() => navigateBack('admin-dashboard')}
+          />
+        )}
+
+        {activeTab === 'system-health' && (
+          <AdminSystemHealthView
+            currentUser={currentUser}
+            onBack={() => navigateBack('admin-dashboard')}
           />
         )}
 
@@ -608,10 +978,8 @@ export default function App() {
         {activeTab === 'verifier-dashboard' && (
           <VerifierDashboard
             currentUser={currentUser}
-            onOpenCase={(appId) => {
-              setSelectedApplicationId(appId);
-              setActiveTab('verification-workspace');
-            }}
+            onOpenCase={(appId) => navigateTo('verification-workspace', { applicationId: appId })}
+            onViewAllCases={() => navigateTo('verification-workspace')}
           />
         )}
 
@@ -619,14 +987,11 @@ export default function App() {
           <VerificationWorkspace
             applicationId={selectedApplicationId}
             currentUser={currentUser}
-            onBack={() => setActiveTab(currentRole === 'GATC' ? 'gatc-dashboard' : 'verifier-dashboard')}
+            onBack={() => navigateBack(currentRole === 'GATC' ? 'gatc-dashboard' : 'verifier-dashboard')}
             onVerificationCompleted={async () => {
               await refreshAllData();
             }}
-            onViewCertificate={(id) => {
-              setSelectedCertificateId(id);
-              setActiveTab('official-certificate');
-            }}
+            onViewCertificate={(id) => navigateTo('official-certificate', { certificateId: id })}
           />
         )}
 
@@ -635,6 +1000,16 @@ export default function App() {
            ======================================================== */}
         {activeTab === 'audit-logs' && (
           <AuditLogView />
+        )}
+
+        {/* ========================================================
+            PUBLIC VERIFICATION CONSOLE (Authenticated Roles)
+           ======================================================== */}
+        {activeTab === 'public-qr-verify' && (
+          <PublicCertificateVerification
+            mode="CERTIFICATE"
+            onExit={() => navigateTo(getInitialRoleTab(currentRole))}
+          />
         )}
       </AuthenticatedLayout>
 
@@ -645,12 +1020,10 @@ export default function App() {
           onClose={() => setShowAddModal(false)}
           onCreated={async (newId) => {
             await refreshAllData();
-            setSelectedInstrumentId(newId);
-            setActiveTab('instrument-detail');
+            navigateTo('instrument-detail', { instrumentId: newId });
           }}
         />
       )}
-
 
       {/* Global QR Code Inspection Modal */}
       {showQrModal && (

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 import PaymentReceipt from '../components/PaymentReceipt';
+import AcknowledgementSlipModal from '../components/AcknowledgementSlipModal';
 
 const printReceipt = () => {
   document.body.classList.add('printing-receipt');
@@ -64,6 +65,27 @@ export default function ApplyVerificationView({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  if (currentUser?.role && currentUser.role !== 'TRADER') {
+    return (
+      <div className="max-w-2xl mx-auto my-12 p-8 bg-white rounded-2xl border border-amber-200 shadow-sm text-center space-y-4 animate-in fade-in">
+        <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center mx-auto">
+          <span className="material-symbols-outlined text-3xl">lock</span>
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">Payment Execution Restricted</h2>
+        <p className="text-xs text-slate-600 max-w-md mx-auto">
+          Statutory fee payments and application filing are reserved exclusively for Commercial Trader applicants under Section 24 of the Legal Metrology Act, 2009. Authority officers and staff can scrutinize fee details and verify treasury challans in the Application Review workspace.
+        </p>
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-5 py-2.5 bg-[#002046] text-white text-xs font-bold rounded-xl hover:bg-[#1b365d] transition-all cursor-pointer"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   // 1. Verification Type: 'ORIGINAL' | 'RE_VERIFICATION'
   const [verificationType, setVerificationType] = useState(() => {
@@ -146,6 +168,7 @@ export default function ApplyVerificationView({
   const [offlineBankName, setOfflineBankName] = useState('State Bank of India');
   const [offlineDate, setOfflineDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [showSlipModal, setShowSlipModal] = useState(false);
 
   // Result / Output
   const [createdApp, setCreatedApp] = useState(
@@ -1561,6 +1584,15 @@ export default function ApplyVerificationView({
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   type="button"
+                  onClick={() => setShowSlipModal(true)}
+                  className="px-4 py-2 border border-slate-300 bg-white text-slate-800 font-bold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer text-xs shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-sm text-primary">receipt_long</span>
+                  <span>Official Acknowledgement Slip</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={printReceipt}
                   className="px-4 py-2 border border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer text-xs"
                 >
@@ -1630,6 +1662,45 @@ export default function ApplyVerificationView({
           </div>
         )}
       </div>
+
+      {showSlipModal && (
+        <AcknowledgementSlipModal
+          application={{
+            ...(createdApp || {}),
+            id: createdApp?.id || 'APP-NEW',
+            application_no: createdApp?.application_no || 'APP-2026-XXXX',
+            status: createdApp?.status || (paymentResult ? 'PAYMENT_VERIFIED' : 'SUBMITTED'),
+            fee_status: paymentResult?.payment_status || createdApp?.fee_status || 'PAID',
+            request_type: verificationType,
+            verification_type: verificationType,
+            verification_mode: verificationMode,
+            contact_person: contactPerson,
+            contact_phone: contactPhone,
+            location_address: premisesAddress,
+            establishment_name: firmName,
+            district: selectedInst?.district,
+            manufacturer: selectedInst?.manufacturer,
+            model: selectedInst?.model,
+            serial_number: selectedInst?.serial_number,
+            category_name: selectedInst?.category_name,
+            max_capacity: selectedInst?.max_capacity,
+            verification_scale_interval_e: selectedInst?.verification_scale_interval_e,
+            fee_breakdown: feeBreakdown,
+            payment: paymentResult || createdApp?.payment
+          }}
+          instrument={selectedInst || {
+            manufacturer: createdApp?.manufacturer,
+            model: createdApp?.model,
+            serial_number: createdApp?.serial_number,
+            category_name: createdApp?.category_name,
+            max_capacity: createdApp?.max_capacity,
+            verification_scale_interval_e: createdApp?.verification_scale_interval_e,
+            district: createdApp?.district,
+            location: premisesAddress
+          }}
+          onClose={() => setShowSlipModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import StatusBadge from '../components/StatusBadge';
 import ApplicationDetailsModal from '../components/ApplicationDetailsModal';
+import ListToolbar from '../components/ListToolbar';
+import PageHeader from '../components/PageHeader';
 
 export default function ApplicationsList({
   applications = [],
+  currentRole = null,
   onSelectApplication,
+  onAssignApplication,
+  onReviewApplication,
   onOpenApplyModal,
   onSelectCertificate,
   onResubmitApplication,
@@ -12,144 +17,227 @@ export default function ApplicationsList({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [modeFilter, setModeFilter] = useState('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL');
+  const [sortOption, setSortOption] = useState('NEWEST');
   const [selectedDetailApp, setSelectedDetailApp] = useState(null);
 
+  const isAuthority = currentRole === 'AUTHORITY' || currentRole === 'PLATFORM_ADMIN';
+  const isTrader = currentRole === 'TRADER';
+  const [allocationFilter, setAllocationFilter] = useState('ALL');
   const safeApplications = Array.isArray(applications) ? applications : [];
-
-  const filteredApps = safeApplications.filter((app) => {
-    const matchesSearch =
-      !searchTerm ||
-      app.application_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.manufacturer?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.model?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.serial_number?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    let matchesStatus = true;
-    if (statusFilter === 'ALL') {
-      matchesStatus = true;
-    } else if (statusFilter === 'PENDING') {
-      matchesStatus = ['SUBMITTED', 'PENDING_VERIFICATION', 'UNDER_REVIEW', 'ASSIGNED', 'IN_PROGRESS', 'DOCUMENT_VERIFIED', 'INSPECTION_SCHEDULED'].includes(app.status);
-    } else if (statusFilter === 'PAYMENT_PENDING') {
-      matchesStatus = app.status === 'PAYMENT_PENDING' || app.fee_status === 'PENDING' || app.payment?.payment_status === 'PENDING';
-    } else if (statusFilter === 'RETURNED') {
-      matchesStatus = app.status === 'RETURNED';
-    } else if (statusFilter === 'COMPLETED') {
-      matchesStatus = ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED', 'APPROVED'].includes(app.status);
-    } else if (statusFilter === 'REJECTED') {
-      matchesStatus = app.status === 'VERIFICATION_FAILED' || app.status === 'REJECTED';
-    }
-
-    return matchesSearch && matchesStatus;
-  });
 
   const returnedCount = safeApplications.filter(a => a.status === 'RETURNED').length;
   const paymentPendingCount = safeApplications.filter(a => a.status === 'PAYMENT_PENDING' || a.fee_status === 'PENDING' || a.payment?.payment_status === 'PENDING').length;
 
+  const filteredApps = useMemo(() => {
+    return safeApplications.filter((app) => {
+      const q = searchTerm.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        app.application_no?.toLowerCase().includes(q) ||
+        app.manufacturer?.toLowerCase().includes(q) ||
+        app.model?.toLowerCase().includes(q) ||
+        app.serial_number?.toLowerCase().includes(q) ||
+        app.trader_name?.toLowerCase().includes(q) ||
+        app.location?.toLowerCase().includes(q) ||
+        app.assigned_to_name?.toLowerCase().includes(q);
+
+      let matchesStatus = true;
+      if (statusFilter === 'ALL') {
+        matchesStatus = true;
+      } else if (statusFilter === 'PENDING') {
+        matchesStatus = ['SUBMITTED', 'PENDING_VERIFICATION', 'UNDER_REVIEW', 'ASSIGNED', 'IN_PROGRESS', 'DOCUMENT_VERIFIED', 'INSPECTION_SCHEDULED'].includes(app.status);
+      } else if (statusFilter === 'PAYMENT_PENDING') {
+        matchesStatus = app.status === 'PAYMENT_PENDING' || app.fee_status === 'PENDING' || app.payment?.payment_status === 'PENDING';
+      } else if (statusFilter === 'RETURNED') {
+        matchesStatus = app.status === 'RETURNED';
+      } else if (statusFilter === 'COMPLETED') {
+        matchesStatus = ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED', 'APPROVED'].includes(app.status);
+      } else if (statusFilter === 'REJECTED') {
+        matchesStatus = app.status === 'VERIFICATION_FAILED' || app.status === 'REJECTED';
+      }
+
+      let matchesMode = true;
+      if (modeFilter !== 'ALL') {
+        matchesMode = app.verification_mode === modeFilter;
+      }
+
+      let matchesType = true;
+      if (typeFilter !== 'ALL') {
+        const isReVer = app.verification_type === 'RE_VERIFICATION' || app.request_type === 'RE_VERIFICATION';
+        matchesType = typeFilter === 'RE_VERIFICATION' ? isReVer : !isReVer;
+      }
+
+      let matchesAllocation = true;
+      if (allocationFilter === 'UNASSIGNED') {
+        matchesAllocation = !app.assigned_id;
+      } else if (allocationFilter === 'ASSIGNED') {
+        matchesAllocation = Boolean(app.assigned_id);
+      }
+
+      return matchesSearch && matchesStatus && matchesMode && matchesType && matchesAllocation;
+    }).sort((a, b) => {
+      if (sortOption === 'NEWEST') {
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      }
+      if (sortOption === 'OLDEST') {
+        return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+      }
+      if (sortOption === 'FEE_DESC') {
+        const feeA = a.fee_breakdown?.total_fee || a.payment?.amount || 0;
+        const feeB = b.fee_breakdown?.total_fee || b.payment?.amount || 0;
+        return feeB - feeA;
+      }
+      if (sortOption === 'APP_NO') {
+        return (a.application_no || '').localeCompare(b.application_no || '');
+      }
+      return 0;
+    });
+  }, [safeApplications, searchTerm, statusFilter, modeFilter, typeFilter, allocationFilter, sortOption]);
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('ALL');
+    setModeFilter('ALL');
+    setTypeFilter('ALL');
+    setAllocationFilter('ALL');
+    setSortOption('NEWEST');
+  };
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900">Verification Applications & Tracking</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#002046] text-white">
-              {safeApplications.length} Total
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Monitor filed applications, statutory fee remittance, return clarifications, and verification decisions
-          </p>
-        </div>
-        {onOpenApplyModal && (
-          <button
-            onClick={() => onOpenApplyModal(null)}
-            className="px-4 py-2.5 bg-[#002046] hover:bg-[#1b365d] text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[16px]">add_circle</span>
-            Apply for Verification
-          </button>
-        )}
-      </div>
+    <div className="space-y-5 animate-in fade-in duration-300">
+      {/* Page Header */}
+      <PageHeader
+        icon={isAuthority ? "assignment" : "receipt_long"}
+        title={isAuthority ? "Statutory Applications & Allocation Queue" : "Verification Applications & Tracking"}
+        subtitle={
+          isAuthority
+            ? "Review filed verification applications, scrutinize compliance, and assign Field Officers or GATC Testing Laboratories"
+            : "Monitor filed applications, statutory fee remittance, return clarifications, and verification decisions"
+        }
+        badge={{ text: `${safeApplications.length} Total`, variant: 'primary' }}
+        actions={
+          !isAuthority && onOpenApplyModal && (
+            <button
+              onClick={() => onOpenApplyModal(null)}
+              className="btn btn-primary btn-sm"
+            >
+              <span className="material-symbols-outlined text-[15px]">add_circle</span>
+              Apply for Verification
+            </button>
+          )
+        }
+      />
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* Status Filter Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs">
-            {[
-              { key: 'ALL', label: 'All Applications', badge: null },
-              { key: 'PENDING', label: 'Under Review', badge: null },
-              { key: 'PAYMENT_PENDING', label: 'Payment Pending', badge: paymentPendingCount > 0 ? paymentPendingCount : null, color: 'bg-amber-100 text-amber-900' },
-              { key: 'RETURNED', label: 'Returned', badge: returnedCount > 0 ? returnedCount : null, color: 'bg-rose-100 text-rose-900 font-bold' },
-              { key: 'COMPLETED', label: 'Approved / Certified', badge: null },
-              { key: 'REJECTED', label: 'Rejected', badge: null }
-            ].map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusFilter(tab.key)}
-                className={`px-3 py-1.5 rounded-lg font-semibold text-xs whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
-                  statusFilter === tab.key
-                    ? 'bg-[#002046] text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.badge && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${statusFilter === tab.key ? 'bg-white text-slate-900 font-bold' : tab.color}`}>
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+      {/* Filter and Search Bar using ListToolbar */}
+      <ListToolbar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        searchPlaceholder="Search by APP No, Model, SN, Trader..."
+        filters={[
+          {
+            id: 'status',
+            label: 'Status',
+            value: statusFilter,
+            onChange: setStatusFilter,
+            options: [
+              { label: 'All Applications', value: 'ALL' },
+              { label: 'Under Review', value: 'PENDING' },
+              { label: 'Payment Pending', value: 'PAYMENT_PENDING', badge: paymentPendingCount > 0 ? paymentPendingCount : null },
+              { label: 'Returned for Clarification', value: 'RETURNED', badge: returnedCount > 0 ? returnedCount : null },
+              { label: 'Approved / Certified', value: 'COMPLETED' },
+              { label: 'Rejected', value: 'REJECTED' }
+            ]
+          },
+          {
+            id: 'type',
+            label: 'Type',
+            value: typeFilter,
+            onChange: setTypeFilter,
+            options: [
+              { label: 'All Verification Types', value: 'ALL' },
+              { label: 'Original Verification', value: 'ORIGINAL' },
+              { label: 'Re-Verification', value: 'RE_VERIFICATION' }
+            ]
+          },
+          {
+            id: 'mode',
+            label: 'Mode',
+            value: modeFilter,
+            onChange: setModeFilter,
+            options: [
+              { label: 'All Modes', value: 'ALL' },
+              { label: 'In-Situ (On-Site)', value: 'IN_SITU' },
+              { label: 'Camp / Presentation', value: 'CAMP' },
+              { label: 'GATC Lab Testing', value: 'GATC_LAB' }
+            ]
+          },
+          ...(isAuthority ? [{
+            id: 'allocation',
+            label: 'Allocation',
+            value: allocationFilter,
+            onChange: setAllocationFilter,
+            options: [
+              { label: 'All Allocation', value: 'ALL' },
+              { label: 'Needs Allocation (Unassigned)', value: 'UNASSIGNED' },
+              { label: 'Assigned to Officer / Lab', value: 'ASSIGNED' }
+            ]
+          }] : [])
+        ]}
+        sortOptions={[
+          { label: 'Newest Applied', value: 'NEWEST' },
+          { label: 'Oldest Applied', value: 'OLDEST' },
+          { label: 'Fee: High to Low', value: 'FEE_DESC' },
+          { label: 'Application ID', value: 'APP_NO' }
+        ]}
+        sortValue={sortOption}
+        onSortChange={setSortOption}
+        onReset={handleResetFilters}
+        totalCount={safeApplications.length}
+        filteredCount={filteredApps.length}
+      />
 
-          {/* Search Box */}
-          <div className="relative min-w-[240px]">
-            <span className="material-symbols-outlined absolute left-3 top-2 text-slate-400 text-base pointer-events-none">
-              search
-            </span>
-            <input
-              type="text"
-              placeholder="Search by APP No, Model, SN..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-primary font-mono"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Applications Table (LMOMS Format: Application ID, Instrument, Verification Type, Applied Date, Total Fee, Payment Status, Application Status, Assigned Office/Verifier, Action) */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Applications Table (LMOMS Format) */}
+      <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs min-w-[1000px]">
-            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+          <table className="data-table min-w-[1000px]">
+            <thead>
               <tr>
-                <th className="px-5 py-3.5">Application ID</th>
-                <th className="px-5 py-3.5">Instrument & SN</th>
-                <th className="px-5 py-3.5">Verification Type</th>
-                <th className="px-5 py-3.5">Applied Date</th>
-                <th className="px-5 py-3.5">Total Fee</th>
-                <th className="px-5 py-3.5">Payment Status</th>
-                <th className="px-5 py-3.5">Application Status</th>
-                <th className="px-5 py-3.5">Assigned Office / Verifier</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
+                <th>Application ID</th>
+                <th>Instrument & SN</th>
+                <th>Verification Type</th>
+                <th>Applied Date</th>
+                <th>Total Fee</th>
+                <th>Payment Status</th>
+                <th>Application Status</th>
+                <th>Assigned Office / Verifier</th>
+                <th className="text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 text-slate-700">
+            <tbody>
               {filteredApps.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-slate-400">
-                    <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">inbox</span>
-                    No applications match the selected filter criteria.
+                  <td colSpan={9} className="py-0">
+                    <div className="empty-state">
+                      <div className="empty-state-icon">
+                        <span className="material-symbols-outlined text-3xl text-slate-400">receipt_long</span>
+                      </div>
+                      <p className="text-sm font-semibold text-slate-600 mb-1">No Applications Found</p>
+                      <p className="text-xs text-slate-400 max-w-xs">
+                        {searchTerm || statusFilter !== 'ALL'
+                          ? 'No applications match the current search and filter criteria.'
+                          : 'No applications filed yet. Click "Apply for Verification" to submit your first application.'}
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (
                 filteredApps.map((app) => {
                   const isApproved = ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED', 'APPROVED'].includes(app.status);
                   const isReturned = app.status === 'RETURNED';
-                  const isPaymentPending = app.status === 'PAYMENT_PENDING' || app.fee_status === 'PENDING' || app.payment?.payment_status === 'PENDING';
-                  const isPaid = app.fee_status === 'PAID' || app.payment?.payment_status === 'PAID' || app.payment?.payment_status === 'PAYMENT_VERIFIED';
+                  const isPaid = app.fee_status === 'PAID' || app.payment?.payment_status === 'PAID' || app.payment?.payment_status === 'PAYMENT_VERIFIED' || app.status === 'PAYMENT_VERIFIED' || isApproved;
+                  const isPaymentPending = !isPaid && (app.status === 'PAYMENT_PENDING' || app.fee_status === 'PENDING' || app.payment?.payment_status === 'PENDING');
 
                   const totalFee = app.fee_breakdown?.total_fee || app.payment?.amount || app.amount || 300;
 
@@ -173,9 +261,9 @@ export default function ApplicationsList({
                           <span className="font-bold text-slate-900 block truncate max-w-[200px]" title={`${app.manufacturer} ${app.model}`}>
                             {app.manufacturer} {app.model}
                           </span>
-                          <span className="font-mono text-[11px] text-slate-500 block">SN: {app.serial_number}</span>
+                          <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded inline-block mt-0.5">SN: {app.serial_number}</span>
                           {app.location && (
-                            <span className="text-[10px] text-slate-400 truncate max-w-[180px] block" title={app.location}>
+                            <span className="text-[10px] text-slate-400 truncate max-w-[180px] block mt-0.5" title={app.location}>
                               {app.location}
                             </span>
                           )}
@@ -227,7 +315,7 @@ export default function ApplicationsList({
                                 <span className="material-symbols-outlined text-[12px]">pending</span>
                                 PENDING
                               </span>
-                              {onPayApplication && (
+                              {isTrader && onPayApplication && (
                                 <button
                                   onClick={() => onPayApplication(app)}
                                   className="block px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] transition-all shadow-2xs cursor-pointer"
@@ -260,63 +348,174 @@ export default function ApplicationsList({
 
                         {/* 9. Actions */}
                         <td className="px-5 py-3.5 align-middle text-right space-x-1.5 whitespace-nowrap">
-                          {isReturned ? (
+                          {isAuthority ? (
+                            /* AUTHORITY ACTIONS ON APPLICATIONS QUEUE */
                             <>
-                              <button
-                                onClick={() => setSelectedDetailApp(app)}
-                                className="px-2.5 py-1 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-semibold transition-all cursor-pointer"
-                              >
-                                Details
-                              </button>
-                              <button
-                                onClick={() => onResubmitApplication ? onResubmitApplication(app) : onSelectApplication(app.id)}
-                                className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-sm font-bold">replay</span>
-                                Resubmit
-                              </button>
-                            </>
-                          ) : isPaymentPending ? (
-                            <>
-                              <button
-                                onClick={() => setSelectedDetailApp(app)}
-                                className="px-2.5 py-1 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-semibold transition-all cursor-pointer"
-                              >
-                                Details
-                              </button>
-                              <button
-                                onClick={() => onPayApplication ? onPayApplication(app) : onSelectApplication(app.id)}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-sm font-bold">payments</span>
-                                Pay
-                              </button>
-                            </>
-                          ) : isApproved ? (
-                            <>
-                              <button
-                                onClick={() => setSelectedDetailApp(app)}
-                                className="px-2.5 py-1 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-semibold transition-all cursor-pointer"
-                              >
-                                Details
-                              </button>
-                              {(app.certificate_id || app.status === 'CERTIFICATE_ISSUED') && onSelectCertificate && (
-                                <button
-                                  onClick={() => onSelectCertificate(app.certificate_id)}
-                                  className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-sm">workspace_premium</span>
-                                  Certificate
-                                </button>
+                              {(!app.assigned_id || ['SUBMITTED', 'UNDER_REVIEW', 'PAYMENT_VERIFIED', 'PENDING_VERIFICATION'].includes(app.status)) ? (
+                                <>
+                                  <button
+                                    onClick={() => onAssignApplication ? onAssignApplication(app.id) : onSelectApplication(app.id)}
+                                    className="px-3 py-1.5 bg-[#002046] hover:bg-[#001733] text-white font-bold rounded-lg text-xs transition-all inline-flex items-center gap-1.5 shadow-2xs cursor-pointer border border-[#002046]"
+                                    title="Allocate to Field Officer or GATC Lab"
+                                  >
+                                    <span className="material-symbols-outlined text-sm text-amber-400 font-bold">person_add</span>
+                                    <span>Assign Officer / GATC</span>
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                </>
+                              ) : ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED'].includes(app.status) ? (
+                                <>
+                                  <button
+                                    onClick={() => onReviewApplication ? onReviewApplication(app.id) : onSelectApplication(app.id)}
+                                    className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-lg text-xs transition-all inline-flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                                    title="Review submitted inspection report and issue certificate"
+                                  >
+                                    <span className="material-symbols-outlined text-sm text-amber-300">rate_review</span>
+                                    <span>Review & Issue</span>
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                </>
+                              ) : ['ASSIGNED', 'IN_PROGRESS', 'SCHEDULED', 'INSPECTION_SCHEDULED'].includes(app.status) ? (
+                                <>
+                                  <button
+                                    onClick={() => onAssignApplication ? onAssignApplication(app.id) : onSelectApplication(app.id)}
+                                    className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-[#002046] border border-blue-200 font-bold rounded-lg text-xs transition-all inline-flex items-center gap-1 cursor-pointer shadow-2xs"
+                                    title="Reassign or change assigned officer / lab"
+                                  >
+                                    <span className="material-symbols-outlined text-sm text-blue-700">edit_attributes</span>
+                                    <span>Reassign</span>
+                                  </button>
+                                  <button
+                                    onClick={() => onReviewApplication ? onReviewApplication(app.id) : onSelectApplication(app.id)}
+                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold rounded-lg text-xs transition-all inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <span>Review</span>
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                </>
+                              ) : isApproved ? (
+                                <>
+                                  {(app.certificate_id || app.status === 'CERTIFICATE_ISSUED') && onSelectCertificate && (
+                                    <button
+                                      onClick={() => onSelectCertificate(app.certificate_id)}
+                                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    >
+                                      <span className="material-symbols-outlined text-sm">workspace_premium</span>
+                                      Certificate
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => onSelectApplication(app.id)}
+                                    className="px-3 py-1.5 bg-[#002046] hover:bg-[#1b365d] text-white rounded-lg font-bold text-xs transition-all inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-xs">visibility</span>
+                                    <span>Review</span>
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1.5 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                </>
                               )}
                             </>
                           ) : (
-                            <button
-                              onClick={() => setSelectedDetailApp(app)}
-                              className="px-3 py-1 bg-[#002046] hover:bg-[#1b365d] text-white rounded font-bold text-xs transition-all cursor-pointer"
-                            >
-                              Details
-                            </button>
+                            /* TRADER ACTIONS */
+                            <>
+                              {isReturned ? (
+                                <>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                  <button
+                                    onClick={() => onResubmitApplication ? onResubmitApplication(app) : onSelectApplication(app.id)}
+                                    className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-sm font-bold">replay</span>
+                                    Resubmit
+                                  </button>
+                                </>
+                              ) : isPaymentPending ? (
+                                <>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                  {onPayApplication ? (
+                                    <button
+                                      onClick={() => onPayApplication(app)}
+                                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    >
+                                      <span className="material-symbols-outlined text-sm font-bold">payments</span>
+                                      Pay
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => onSelectApplication(app.id)}
+                                      className="px-3 py-1 bg-[#002046] hover:bg-[#1b365d] text-white font-bold rounded text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    >
+                                      <span className="material-symbols-outlined text-sm font-bold">visibility</span>
+                                      Review
+                                    </button>
+                                  )}
+                                </>
+                              ) : isApproved ? (
+                                <>
+                                  <button
+                                    onClick={() => setSelectedDetailApp(app)}
+                                    className="px-2.5 py-1 text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded text-xs font-semibold transition-all cursor-pointer"
+                                  >
+                                    Details
+                                  </button>
+                                  {(app.certificate_id || app.status === 'CERTIFICATE_ISSUED') && onSelectCertificate && (
+                                    <button
+                                      onClick={() => onSelectCertificate(app.certificate_id)}
+                                      className="px-3 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded font-bold text-xs transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                                    >
+                                      <span className="material-symbols-outlined text-sm">workspace_premium</span>
+                                      Certificate
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => setSelectedDetailApp(app)}
+                                  className="px-3 py-1 bg-[#002046] hover:bg-[#1b365d] text-white rounded font-bold text-xs transition-all cursor-pointer"
+                                >
+                                  Details
+                                </button>
+                              )}
+                            </>
                           )}
                         </td>
                       </tr>
@@ -382,7 +581,16 @@ export default function ApplicationsList({
       <ApplicationDetailsModal
         application={selectedDetailApp}
         isOpen={Boolean(selectedDetailApp)}
+        currentRole={currentRole}
         onClose={() => setSelectedDetailApp(null)}
+        onAssignApplication={(id) => {
+          setSelectedDetailApp(null);
+          if (onAssignApplication) onAssignApplication(id);
+        }}
+        onReviewApplication={(id) => {
+          setSelectedDetailApp(null);
+          if (onReviewApplication) onReviewApplication(id);
+        }}
         onResubmitApplication={onResubmitApplication}
         onPayApplication={onPayApplication}
         onSelectCertificate={onSelectCertificate}

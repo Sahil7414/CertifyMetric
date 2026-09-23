@@ -2,18 +2,18 @@ import React, { useEffect, useState } from 'react';
 import StatusBadge from '../components/StatusBadge';
 import { api } from '../api';
 
-export default function GatcDashboard({
-  currentUser,
-  onOpenCase
-}) {
+export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases, onSelectCertificate }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState('ALL');
+  const [activeTab, setActiveTab] = useState('QUEUE'); // 'QUEUE' | 'HISTORY'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [outcomeFilter, setOutcomeFilter] = useState('ALL'); // 'ALL' | 'PASS' | 'FAIL' | 'IN_PROGRESS'
 
   const loadCases = () => {
     if (currentUser?.id) {
       setLoading(true);
-      api.getVerifierCases(currentUser.id)
+      api
+        .getVerifierCases(currentUser.id)
         .then(setCases)
         .catch(console.error)
         .finally(() => setLoading(false));
@@ -24,224 +24,441 @@ export default function GatcDashboard({
     loadCases();
   }, [currentUser]);
 
-  const pendingCases = cases.filter(c => ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS'].includes(c.application_status));
-  const submittedCases = cases.filter(c => ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'].includes(c.application_status));
+  const safeCases = Array.isArray(cases) ? cases : [];
 
-  const filteredCases = cases.filter(c => {
-    if (activeFilter === 'PENDING') return ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS'].includes(c.application_status);
-    if (activeFilter === 'SUBMITTED') return ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'].includes(c.application_status);
-    return true;
+  const pendingCases = safeCases.filter((c) =>
+    ['ASSIGNED', 'PENDING_VERIFICATION'].includes(c.application_status)
+  );
+  const inProgressCases = safeCases.filter((c) => c.application_status === 'IN_PROGRESS');
+  const reportsPending = safeCases.filter(
+    (c) => c.application_status === 'IN_PROGRESS' || c.application_status === 'PENDING_VERIFICATION'
+  );
+  const submittedCases = safeCases.filter((c) =>
+    ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED'].includes(c.application_status)
+  );
+
+  // Worked Instruments: Any case where the lab has recorded testing or completed report
+  const workedInstruments = safeCases.filter((c) =>
+    ['IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED'].includes(c.application_status) ||
+    Boolean(c.verification_id) || Boolean(c.verification_result)
+  );
+
+  // Top 5 priority lab cases (active only)
+  const priorityCases = safeCases
+    .filter((c) => !['APPROVED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'].includes(c.application_status))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    .slice(0, 5);
+
+  // Filtered Worked Instruments History
+  const filteredHistory = workedInstruments.filter((c) => {
+    const q = searchQuery.toLowerCase().trim();
+    const matchQuery = !q ||
+      (c.serial_number && c.serial_number.toLowerCase().includes(q)) ||
+      (c.manufacturer && c.manufacturer.toLowerCase().includes(q)) ||
+      (c.model && c.model.toLowerCase().includes(q)) ||
+      (c.trader_name && c.trader_name.toLowerCase().includes(q)) ||
+      (c.application_no && c.application_no.toLowerCase().includes(q)) ||
+      (c.certificate_no && c.certificate_no.toLowerCase().includes(q));
+
+    let matchOutcome = true;
+    if (outcomeFilter === 'PASS') matchOutcome = c.verification_result === 'PASS' || c.application_status === 'APPROVED';
+    else if (outcomeFilter === 'FAIL') matchOutcome = c.verification_result === 'FAIL' || c.application_status === 'VERIFICATION_FAILED';
+    else if (outcomeFilter === 'IN_PROGRESS') matchOutcome = c.application_status === 'IN_PROGRESS';
+
+    return matchQuery && matchOutcome;
   });
+
+  const passedCount = workedInstruments.filter(c => c.verification_result === 'PASS' || c.application_status === 'APPROVED').length;
+  const failedCount = workedInstruments.filter(c => c.verification_result === 'FAIL' || c.application_status === 'VERIFICATION_FAILED').length;
+  const certifiedCount = workedInstruments.filter(c => Boolean(c.certificate_no) || c.application_status === 'APPROVED').length;
 
   if (loading) {
     return (
-      <div className="p-16 text-center text-slate-500 text-xs">
-        <span className="material-symbols-outlined text-3xl animate-spin block mb-2 text-primary">progress_activity</span>
-        Loading Government Approved Test Centre Laboratory Console...
+      <div className="space-y-4 max-w-7xl mx-auto animate-pulse">
+        <div className="h-32 skeleton rounded-2xl"></div>
+        <div className="grid grid-cols-5 gap-4">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-24 skeleton rounded-2xl"></div>
+          ))}
+        </div>
+        <div className="h-64 skeleton rounded-2xl"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-in fade-in duration-300">
-      {/* 1. Laboratory Identity Header */}
-      <div className="bg-gradient-to-r from-[#0c2340] via-[#143d66] to-[#00529b] rounded-2xl p-6 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+      {/* ====================================================
+          1. Laboratory Identity Header (No Profile Image)
+         ==================================================== */}
+      <div className="bg-gradient-to-r from-[#0c2340] via-[#143d66] to-[#00529b] rounded-2xl p-5 sm:p-6 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur-xs border border-white/20 flex items-center justify-center text-cyan-300 shadow-inner shrink-0">
-            <span className="material-symbols-outlined text-4xl">biotech</span>
+          <div className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-xs border border-white/20 flex items-center justify-center text-cyan-300 shadow-inner shrink-0">
+            <span className="material-symbols-outlined text-3xl">biotech</span>
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-white tracking-tight">{currentUser?.full_name}</h1>
-              <span className="text-[10px] uppercase font-mono font-extrabold px-2.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 border border-cyan-400/30">
-                GATC Test Facility • NABL Traceable
+              <h1 className="text-lg sm:text-xl font-bold text-white">
+                {currentUser?.organization_name || currentUser?.full_name || 'GATC Laboratory Testing Unit'}
+              </h1>
+              <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 border border-cyan-400/30">
+                Government Approved Test Centre
               </span>
             </div>
-            <p className="text-xs text-slate-300 mt-1">
-              Statutory Laboratory Metrology Testing Centre • Department of Legal Metrology
+            <p className="text-xs text-slate-300 mt-0.5">
+              Legal Metrology Calibration & Testing • <strong className="text-white font-bold">{workedInstruments.length} Instruments Tested</strong> ({safeCases.length} total lab requests)
             </p>
-            <div className="flex items-center gap-3 text-[11px] text-slate-300 pt-1">
-              <span>Station ID: <strong className="text-white font-mono">{currentUser?.id}</strong></span>
-              <span>•</span>
-              <span className="text-emerald-300 font-semibold flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                Chamber Environment: 20.1°C • 52% RH (Calibrated)
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={loadCases}
+          className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl border border-white/20 flex items-center gap-1.5 cursor-pointer transition-all self-end md:self-center shadow-2xs"
+        >
+          <span className="material-symbols-outlined text-sm">sync</span>
+          <span>Refresh Queue</span>
+        </button>
+      </div>
+
+      {/* ====================================================
+          2. 5 GATC Lab Operational KPIs
+         ==================================================== */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Assigned Lab Cases</span>
+            <span className="material-symbols-outlined text-[#0c2340] text-xl">science</span>
+          </div>
+          <div className="text-2xl font-extrabold text-[#0c2340]">{safeCases.length}</div>
+          <p className="text-[10px] text-slate-500 mt-1">Total lab assignments</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Pending Tests</span>
+            <span className="material-symbols-outlined text-amber-600 text-xl">hourglass_empty</span>
+          </div>
+          <div className="text-2xl font-extrabold text-amber-600">{pendingCases.length}</div>
+          <p className="text-[10px] text-slate-500 mt-1">Awaiting testing</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Tests In Progress</span>
+            <span className="material-symbols-outlined text-purple-600 text-xl">biotech</span>
+          </div>
+          <div className="text-2xl font-extrabold text-purple-600">{inProgressCases.length}</div>
+          <p className="text-[10px] text-slate-500 mt-1">Active lab evaluations</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Worked Instruments</span>
+            <span className="material-symbols-outlined text-blue-600 text-xl">history</span>
+          </div>
+          <div className="text-2xl font-extrabold text-blue-600">{workedInstruments.length}</div>
+          <p className="text-[10px] text-slate-500 mt-1">Total lab evaluated</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs col-span-2 sm:col-span-1">
+          <div className="flex items-center justify-between text-slate-500 mb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Submitted Reports</span>
+            <span className="material-symbols-outlined text-emerald-600 text-xl">verified</span>
+          </div>
+          <div className="text-2xl font-extrabold text-emerald-600">{submittedCases.length}</div>
+          <p className="text-[10px] text-slate-500 mt-1">Completed lab reports</p>
+        </div>
+      </div>
+
+      {/* ====================================================
+          3. Workload vs History Segmented Switcher
+         ==================================================== */}
+      <div className="flex items-center gap-2 p-1.5 bg-slate-200/70 rounded-xl w-full sm:w-auto self-start">
+        <button
+          type="button"
+          onClick={() => setActiveTab('QUEUE')}
+          className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'QUEUE'
+              ? 'bg-white text-[#002046] shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base">checklist</span>
+          <span>Active Lab Queue ({priorityCases.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('HISTORY')}
+          className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'HISTORY'
+              ? 'bg-white text-[#002046] shadow-xs'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <span className="material-symbols-outlined text-base text-cyan-700">history_edu</span>
+          <span>Worked Instruments History ({workedInstruments.length})</span>
+        </button>
+      </div>
+
+      {/* ====================================================
+          4A. TAB 1: ACTIVE QUEUE
+         ==================================================== */}
+      {activeTab === 'QUEUE' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/50">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Priority Lab Cases</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Summary of laboratory testing requests</p>
+            </div>
+            {onViewAllCases && (
+              <button
+                type="button"
+                onClick={onViewAllCases}
+                className="text-xs font-bold text-cyan-800 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>View Full Workspace ({safeCases.length})</span>
+                <span className="material-symbols-outlined text-sm">arrow_forward</span>
+              </button>
+            )}
+          </div>
+
+          <div className="divide-y divide-slate-200">
+            {priorityCases.length === 0 ? (
+              <div className="p-8 text-center text-slate-400">
+                <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">science</span>
+                No active laboratory test cases in queue.
+              </div>
+            ) : (
+              priorityCases.map((c) => {
+                const isInProgress = c.application_status === 'IN_PROGRESS';
+
+                return (
+                  <div
+                    key={c.application_id}
+                    className="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1 text-xs flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-cyan-800 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded">
+                          {c.application_no}
+                        </span>
+                        <StatusBadge status={c.application_status} />
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                          {c.verification_mode === 'LABORATORY' || c.arrangement_type === 'LAB_TESTING' ? 'GATC Lab Standards' : 'Direct Testing'}
+                        </span>
+                      </div>
+
+                      <h3 className="font-bold text-slate-900 text-sm pt-0.5">
+                        {c.manufacturer} {c.model}
+                      </h3>
+
+                      <div className="text-slate-600 flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
+                        <span>
+                          <strong className="text-slate-700">Serial:</strong> <span className="font-mono">{c.serial_number}</span>
+                        </span>
+                        <span>
+                          <strong className="text-slate-700">Trader:</strong> {c.trader_name}
+                        </span>
+                        <span>
+                          <strong className="text-slate-700">Location:</strong> {c.location}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="self-end md:self-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenCase(c.application_id)}
+                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer ${
+                          isInProgress
+                            ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold'
+                            : 'bg-[#0c2340] hover:bg-[#143d66] text-white'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[15px]">
+                          {isInProgress ? 'biotech' : 'science'}
+                        </span>
+                        <span>{isInProgress ? 'Resume Lab Test' : 'Open Lab Workspace'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ====================================================
+          4B. TAB 2: WORKED INSTRUMENTS HISTORY
+         ==================================================== */}
+      {activeTab === 'HISTORY' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-4 p-4 sm:p-5">
+          {/* Header & Description */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <h2 className="text-base font-bold text-[#0c2340] flex items-center gap-2">
+                <span className="material-symbols-outlined text-cyan-700">history_edu</span>
+                <span>GATC Lab Tested Instruments History</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Statutory ledger of instruments calibrated, tested under laboratory conditions, and evaluated by this centre
+              </p>
+            </div>
+
+            {/* Quick Metrics */}
+            <div className="flex items-center gap-3 text-xs">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
+                <strong>{passedCount}</strong> Passed MPE
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 font-semibold">
+                <strong>{failedCount}</strong> Tolerance Failures
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-cyan-50 text-cyan-800 border border-cyan-200 font-semibold">
+                <strong>{certifiedCount}</strong> Certified
               </span>
             </div>
           </div>
-        </div>
 
-        <div className="text-left md:text-right border-t md:border-t-0 pt-3 md:pt-0 border-white/10">
-          <span className="text-[10px] text-cyan-200 uppercase font-bold tracking-wider block">Lab Testing Mandate</span>
-          <span className="text-xs font-semibold text-white/90">
-            Schedule VII & OIML Technical Evaluations
-          </span>
-          <span className="block text-[11px] text-slate-300 mt-0.5">
-            Reports Transmitted to Legal Metrology Officer
-          </span>
-        </div>
-      </div>
+          {/* Search & Filter Toolbar */}
+          <div className="flex flex-col sm:flex-row gap-2.5">
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-sm">
+                search
+              </span>
+              <input
+                type="text"
+                placeholder="Search lab-tested instruments by serial number, make, trader, or certificate..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-600/20 focus:border-cyan-600"
+              />
+            </div>
 
-      {/* 2. Statutory Role Separation Notice */}
-      <div className="p-4 rounded-xl bg-amber-50 border border-amber-200/80 text-xs text-amber-900 flex items-start gap-3">
-        <span className="material-symbols-outlined text-amber-600 text-lg shrink-0 mt-0.5">info</span>
-        <div className="space-y-0.5">
-          <strong className="font-bold text-amber-950">Statutory Boundary Notification — Technical Test Reports:</strong>
-          <p className="text-amber-800 leading-relaxed">
-            As a Government Approved Test Centre (GATC), your findings and measurements are recorded as <strong>Technical Laboratory Reports</strong>. Final statutory legal verification decisions, certificate generation, and legal stamp authorizations are reserved for the designated Legal Metrology Authority Officer.
-          </p>
-        </div>
-      </div>
-
-      {/* 3. Laboratory Performance & Workload KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Active Lab Requests</span>
-            <span className="material-symbols-outlined text-primary text-xl">pending_actions</span>
-          </div>
-          <div className="text-2xl font-extrabold text-slate-900 font-mono">{pendingCases.length}</div>
-          <span className="text-[10px] text-slate-400">Awaiting technical evaluation</span>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Reports Forwarded</span>
-            <span className="material-symbols-outlined text-emerald-600 text-xl">fact_check</span>
-          </div>
-          <div className="text-2xl font-extrabold text-slate-900 font-mono">{submittedCases.length}</div>
-          <span className="text-[10px] text-slate-400">Transmitted to Authority</span>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Mass Standards</span>
-            <span className="material-symbols-outlined text-cyan-600 text-xl">balance</span>
-          </div>
-          <div className="text-2xl font-extrabold text-slate-900 font-mono">Class E2 / F1</div>
-          <span className="text-[10px] text-slate-400">NPL Traceable Reference</span>
-        </div>
-
-        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs">
-          <div className="flex items-center justify-between text-slate-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Chamber Status</span>
-            <span className="material-symbols-outlined text-indigo-600 text-xl">thermostat</span>
-          </div>
-          <div className="text-base font-extrabold text-emerald-600 flex items-center gap-1 mt-1">
-            <span className="material-symbols-outlined text-sm">check_circle</span> In Spec (ISO 17025)
-          </div>
-          <span className="text-[10px] text-slate-400">20°C ± 0.5°C • 50% RH</span>
-        </div>
-      </div>
-
-      {/* 4. Laboratory Testing Queue */}
-      <div className="space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
-          <div>
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-              Laboratory Testing Queue ({filteredCases.length})
-            </h2>
-            <p className="text-xs text-slate-500">Technical metrological test cases dispatched by District Legal Metrology Officers</p>
-          </div>
-
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-xs font-semibold">
-            <button
-              onClick={() => setActiveFilter('ALL')}
-              className={`px-3 py-1 rounded-lg transition-all ${activeFilter === 'ALL' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              All Cases ({cases.length})
-            </button>
-            <button
-              onClick={() => setActiveFilter('PENDING')}
-              className={`px-3 py-1 rounded-lg transition-all ${activeFilter === 'PENDING' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              Testing Active ({pendingCases.length})
-            </button>
-            <button
-              onClick={() => setActiveFilter('SUBMITTED')}
-              className={`px-3 py-1 rounded-lg transition-all ${activeFilter === 'SUBMITTED' ? 'bg-white text-slate-900 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'}`}
-            >
-              Submitted Reports ({submittedCases.length})
-            </button>
-          </div>
-        </div>
-
-        {filteredCases.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 text-center text-slate-400 border border-slate-200">
-            <span className="material-symbols-outlined text-4xl mb-2 text-slate-300 block">science</span>
-            No laboratory testing cases match the selected filter.
-          </div>
-        ) : (
-          filteredCases.map((c) => {
-            const isSubmitted = ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'].includes(c.application_status);
-            const isInProgress = c.application_status === 'IN_PROGRESS';
-
-            return (
-              <div
-                key={c.application_id}
-                className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs hover:border-cyan-500/40 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+            <div className="flex items-center gap-2">
+              <select
+                value={outcomeFilter}
+                onChange={(e) => setOutcomeFilter(e.target.value)}
+                className="px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-600/20"
               >
-                <div className="space-y-2 text-xs flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-bold text-cyan-800 bg-cyan-50 border border-cyan-200 px-2 py-0.5 rounded">
-                      {c.application_no}
-                    </span>
-                    <StatusBadge status={c.application_status} />
-                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                      Laboratory Specimen Presentation
-                    </span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-mono text-slate-500 bg-slate-50">
-                      Standard: OIML R76 / Class III
-                    </span>
-                  </div>
+                <option value="ALL">All Outcomes</option>
+                <option value="PASS">Pass Only</option>
+                <option value="FAIL">Tolerance Failures Only</option>
+                <option value="IN_PROGRESS">In Progress</option>
+              </select>
 
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">
-                      {c.manufacturer} {c.model}
-                    </h3>
-                    <p className="text-slate-500 text-[11px] mt-0.5">
-                      Serial Number: <strong className="font-mono text-slate-700">{c.serial_number}</strong> • Max Capacity: <strong>{c.max_capacity}</strong>
-                    </p>
-                  </div>
+              {(searchQuery || outcomeFilter !== 'ALL') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setOutcomeFilter('ALL');
+                  }}
+                  className="px-3 py-2 text-xs text-slate-500 hover:text-slate-800 font-semibold hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
 
-                  <div className="text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 pt-1 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Applicant Establishment</span>
-                      <span className="font-semibold text-slate-800">{c.trader_name}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Testing Premises</span>
-                      <span className="text-slate-700 truncate block">{c.location || 'Central Metrology Testing Lab'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="self-end md:self-center shrink-0">
-                  <button
-                    onClick={() => onOpenCase(c.application_id)}
-                    className={`px-4 py-2.5 font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-1.5 ${
-                      isSubmitted
-                        ? 'bg-slate-100 hover:bg-slate-200 text-slate-800'
-                        : isInProgress
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                        : 'bg-primary hover:bg-primary-container text-white'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">
-                      {isSubmitted ? 'fact_check' : isInProgress ? 'edit_note' : 'biotech'}
-                    </span>
-                    {isSubmitted
-                      ? 'Review Technical Report'
-                      : isInProgress
-                      ? 'Resume Lab Testing'
-                      : 'Open Technical Workspace'}
-                  </button>
-                </div>
+          {/* Worked Instruments History Table / List */}
+          <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            {filteredHistory.length === 0 ? (
+              <div className="p-8 text-center text-slate-400">
+                <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">search_off</span>
+                No lab-tested instrument records match the selected criteria.
               </div>
-            );
-          })
-        )}
-      </div>
+            ) : (
+              filteredHistory.map((item) => {
+                const isPassed = item.verification_result === 'PASS' || item.application_status === 'APPROVED';
+                const isFailed = item.verification_result === 'FAIL' || item.application_status === 'VERIFICATION_FAILED';
+                const isInProgress = item.application_status === 'IN_PROGRESS';
+
+                return (
+                  <div
+                    key={item.application_id}
+                    className="p-4 hover:bg-slate-50/70 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs"
+                  >
+                    {/* Left: Instrument & Trader particulars */}
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-bold text-[#0c2340] bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">
+                          {item.serial_number || item.instrument_id}
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200">
+                          {item.category_name}
+                        </span>
+                        {item.certificate_no && (
+                          <span className="font-mono text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs">verified</span>
+                            <span>{item.certificate_no}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="font-bold text-slate-900 text-sm">
+                        {item.manufacturer} {item.model}
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-600 text-[11px]">
+                        <span>
+                          <strong className="text-slate-700">Trader:</strong> {item.trader_name}
+                        </span>
+                        <span>
+                          <strong className="text-slate-700">Location:</strong> {item.location}
+                        </span>
+                        <span>
+                          <strong className="text-slate-700">Test Date:</strong>{' '}
+                          {item.tested_at ? new Date(item.tested_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                        </span>
+                        {item.certificate_valid_until && (
+                          <span className="text-emerald-700 font-bold">
+                            Valid Until: {new Date(item.certificate_valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Determination Badge & Action Button */}
+                    <div className="flex items-center gap-3 self-end md:self-center shrink-0">
+                      {isPassed && (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">check_circle</span>
+                          PASS MPE
+                        </span>
+                      )}
+                      {isFailed && (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">cancel</span>
+                          FAIL MPE
+                        </span>
+                      )}
+                      {isInProgress && (
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">pending</span>
+                          TESTING
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => onOpenCase(item.application_id)}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg transition-colors flex items-center gap-1 border border-slate-200 cursor-pointer shadow-2xs"
+                      >
+                        <span className="material-symbols-outlined text-xs">visibility</span>
+                        <span>View Lab Record</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

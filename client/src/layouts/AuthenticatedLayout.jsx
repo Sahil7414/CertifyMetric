@@ -14,6 +14,7 @@ export default function AuthenticatedLayout({
   onVerifyPublicToken,
   onLogout,
   onGoHome,
+  onNavigateToApplication,
   children
 }) {
   // Initialize collapsed preference from localStorage
@@ -77,6 +78,7 @@ export default function AuthenticatedLayout({
         isSidebarCollapsed={isCollapsed}
         onGoHome={onGoHome}
         onLogout={onLogout}
+        onNavigateToApplication={onNavigateToApplication}
       />
 
       {/* 2. Responsive Application Body: Sidebar + Dynamic Main Content */}

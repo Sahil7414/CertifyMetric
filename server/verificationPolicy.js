@@ -151,3 +151,110 @@ export function checkCompetence(candidate, org, requirement) {
 export function isValidDesignation(code) {
   return DESIGNATION_BY_CODE.has(code);
 }
+
+/**
+ * Calculates Maximum Permissible Error (MPE) for a test point reading.
+ * Implements Schedule IX of Legal Metrology (General) Rules, 2011 & OIML R76.
+ */
+export function calculateMPE(referenceLoad, scaleIntervalE, accuracyClass = 'III', verificationType = 'ORIGINAL', customMpeRules = []) {
+  let eInUnit = 0.005; // default 5g = 0.005kg
+  if (typeof scaleIntervalE === 'number') {
+    eInUnit = scaleIntervalE;
+  } else if (typeof scaleIntervalE === 'string') {
+    const match = scaleIntervalE.match(/([\d.]+)\s*(kg|g|mg|t)?/i);
+    if (match) {
+      const val = parseFloat(match[1]);
+      const unit = (match[2] || 'kg').toLowerCase();
+      if (unit === 'g') eInUnit = val / 1000;
+      else if (unit === 'mg') eInUnit = val / 1000000;
+      else if (unit === 't') eInUnit = val * 1000;
+      else eInUnit = val;
+    }
+  }
+
+  const loadInUnit = Number(referenceLoad) || 0;
+  if (eInUnit <= 0) eInUnit = 0.005;
+
+  const n = Math.abs(loadInUnit) / eInUnit;
+  const isInitial = verificationType === 'ORIGINAL' || verificationType === 'INITIAL_VERIFICATION';
+
+  // Use configured RuleSet MPE rules if defined
+  if (Array.isArray(customMpeRules) && customMpeRules.length > 0) {
+    const sorted = [...customMpeRules].sort((a, b) => a.max_e - b.max_e);
+    for (const rule of sorted) {
+      if (n <= rule.max_e) {
+        const mpeFactor = isInitial ? (rule.initial_mpe_e || 0.5) : (rule.subsequent_mpe_e || 1.0);
+        return {
+          permissibleError: Number((mpeFactor * eInUnit).toFixed(6)),
+          mpeFactor,
+          eInUnit
+        };
+      }
+    }
+    const lastRule = sorted[sorted.length - 1];
+    const mpeFactor = isInitial ? (lastRule.initial_mpe_e || 1.5) : (lastRule.subsequent_mpe_e || 3.0);
+    return {
+      permissibleError: Number((mpeFactor * eInUnit).toFixed(6)),
+      mpeFactor,
+      eInUnit
+    };
+  }
+
+  // Statutory Schedule IX Class III defaults
+  let mpeFactor = 0.5;
+  if (n <= 500) {
+    mpeFactor = isInitial ? 0.5 : 1.0;
+  } else if (n <= 2000) {
+    mpeFactor = isInitial ? 1.0 : 2.0;
+  } else {
+    mpeFactor = isInitial ? 1.5 : 3.0;
+  }
+
+  const permissibleError = Number((mpeFactor * eInUnit).toFixed(6));
+  return {
+    permissibleError,
+    mpeFactor,
+    eInUnit
+  };
+}
+
+/**
+ * Validates and calculates errors for verification readings server-side.
+ */
+export function evaluateReadingsAgainstMPE(readings, instrument, ruleSet, verificationType = 'ORIGINAL') {
+  const eStr = instrument?.verification_scale_interval_e || instrument?.specs?.verification_scale_interval_e || '5 g';
+  const accuracyClass = instrument?.specs?.accuracy_class || 'III';
+  const customRules = ruleSet?.mpe_rules || [];
+
+  let allPass = true;
+
+  const evaluatedReadings = (readings || []).map((r) => {
+    const refVal = Number(parseFloat(r.reference_value !== undefined ? r.reference_value : (r.standard_weight || 0))) || 0;
+    const obsVal = Number(parseFloat(r.observed_value !== undefined && r.observed_value !== null ? r.observed_value : refVal)) || 0;
+    const errorVal = Number((obsVal - refVal).toFixed(6));
+
+    const { permissibleError } = calculateMPE(refVal, eStr, accuracyClass, verificationType, customRules);
+    const isPass = Math.abs(errorVal) <= (permissibleError + 0.000001);
+
+    if (!isPass) {
+      allPass = false;
+    }
+
+    return {
+      test_point: r.test_point || 'Test Point',
+      reference_value: refVal,
+      observed_value: obsVal,
+      unit: r.unit || 'kg',
+      error_value: errorVal,
+      permissible_error: permissibleError,
+      calculated_result: isPass ? 'PASS' : 'FAIL',
+      reading_result: isPass ? 'PASS' : 'FAIL'
+    };
+  });
+
+  return {
+    readings: evaluatedReadings,
+    allPass,
+    calculatedOutcome: allPass ? 'PASS' : 'FAIL'
+  };
+}

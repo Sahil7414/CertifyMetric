@@ -29,6 +29,8 @@ export default function OfficialCertificate({
         })
         .catch(console.error)
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, [certificateId]);
 
@@ -84,7 +86,7 @@ export default function OfficialCertificate({
       </div>
 
       {/* Official Government Certificate Sheet (Printable) */}
-      <div className="bg-white rounded-2xl border-4 border-double border-[#002046]/40 p-8 md:p-12 shadow-lg relative print:border-2 print:shadow-none print:p-6 print:m-0">
+      <div className="printable-certificate bg-white rounded-2xl border-4 border-double border-[#002046]/40 p-8 md:p-12 shadow-lg relative print:border-2 print:shadow-none print:p-6 print:m-0">
         {/* Watermark */}
         <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
           <span className="material-symbols-outlined text-[450px]">balance</span>

@@ -43,7 +43,7 @@ export const DEMO_ACCOUNTS = [
     full_name: 'Demo Trader (Ramesh Sharma)',
     organization_id: 'ORG_TRADER_01',
     phone: '+91 98110 23456',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+    avatar: null,
     description: 'Commercial trader who registers instruments, requests verifications, and receives digital Form 6 certificates.'
   },
   {
@@ -54,7 +54,7 @@ export const DEMO_ACCOUNTS = [
     full_name: 'Demo Authority Officer (Dr. S. K. Verma)',
     organization_id: 'ORG_GOV_DOCA',
     phone: '+91 94120 78901',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+    avatar: null,
     description: 'Statutory metrology officer who evaluates verification requests, reviews workloads, and assigns verifiers/GATCs.'
   },
   {
@@ -65,7 +65,7 @@ export const DEMO_ACCOUNTS = [
     full_name: 'Demo Field Verifier (Vikram Singh LMO)',
     organization_id: 'ORG_GOV_DOCA',
     phone: '+91 98230 45678',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+    avatar: null,
     description: 'Field inspection officer who conducts physical testing in the workspace, takes error readings, records evidence, and issues certificates.'
   },
   {
@@ -76,7 +76,7 @@ export const DEMO_ACCOUNTS = [
     full_name: 'Demo GATC Testing Lab (MetroLab)',
     organization_id: 'ORG_GATC_01',
     phone: '+91 99340 11223',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    avatar: null,
     description: 'Government Approved Test Centre that performs laboratory verification for complex instruments.'
   },
   {
@@ -87,7 +87,7 @@ export const DEMO_ACCOUNTS = [
     full_name: 'Demo Field Verifier (Anjali Deshmukh LMO)',
     organization_id: 'ORG_GOV_MUMBAI',
     phone: '+91 98220 11009',
-    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150',
+    avatar: null,
     description: 'Seed-only illustration account: an LMO notified for Mumbai Suburban District only, used to demonstrate that the allocation engine correctly excludes out-of-jurisdiction officers from Delhi-based applications, even when idle.'
   },
   {
@@ -98,7 +98,7 @@ export const DEMO_ACCOUNTS = [
     full_name: 'Demo Platform Admin (Rajesh Nair)',
     organization_id: 'ORG_GOV_DOCA',
     phone: '+91 98990 00112',
-    avatar: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
+    avatar: null,
     description: 'System administrator with oversight across audit trails, category definitions, and platform health.'
   }
 ];
@@ -192,9 +192,8 @@ export async function seedDemoUsers() {
   console.log('✔ Successfully seeded demo accounts with scrypt hashed passwords in MongoDB.');
 }
 
-export async function seedDemoData() {
+export async function seedCategoriesAndRules() {
   const now = new Date().toISOString();
-  const validUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   // 1. Categories
   // NOTE ON DATA PROVENANCE: NAWI's accuracy classes, weighbridge/dispenser/water-meter/
@@ -560,9 +559,7 @@ export async function seedDemoData() {
 
   // Per-category presentation metadata for the registration form. Kept out of
   // the category objects above so the statutory data stays readable, and kept in
-  // the database (not hardcoded in the React component) so a new category is a
-  // pure data change — consistent with the 'configurable rather than hard-coded'
-  // principle in SIH26036_MASTER_CONTEXT.md.
+  // principle in project architecture documentation.
   //   icon               Material Symbols glyph shown in the drawer header.
   //   spec_section       Heading for the category-specific field group.
   //   capacity_fields    Show Max/Min/Interval(e) — the three dedicated top-level
@@ -955,6 +952,13 @@ export async function seedDemoData() {
   for (const rs of ruleSets) {
     await RuleSet.findOneAndUpdate({ id: rs.id }, { $set: rs }, { upsert: true });
   }
+
+  console.log('✔ Successfully seeded master categories and rulesets in MongoDB.');
+}
+
+export async function seedDemoBusinessData() {
+  const now = new Date().toISOString();
+  const validUntil = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   // 3. Instruments
   const instruments = [
@@ -1416,6 +1420,13 @@ export async function seedDemoData() {
   }
 
   console.log('✔ Successfully seeded demo business data (instruments, applications, verifications, certificates) in MongoDB.');
+}
+
+export async function seedDemoData() {
+  await seedCategoriesAndRules();
+  if (process.env.SEED_DEMO_BUSINESS_DATA === 'true') {
+    await seedDemoBusinessData();
+  }
 }
 
 export async function seedAllDemoData() {

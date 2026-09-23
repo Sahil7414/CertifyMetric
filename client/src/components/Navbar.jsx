@@ -23,7 +23,7 @@ export default function Navbar({
           <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
         </div>
         <div className="flex items-center gap-3 text-[11px] text-slate-300">
-          <span className="hidden sm:inline">Online Management System (SIH 26036)</span>
+          <span className="hidden sm:inline">Online Legal Metrology Verification System</span>
           {onVerifyPublicToken && (
             <button
               onClick={() => onVerifyPublicToken('e1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b')}
@@ -41,7 +41,7 @@ export default function Navbar({
           {/* Logo & Portal Branding */}
           <div
             className="flex items-center gap-3 cursor-pointer"
-            onClick={() => onSelectTab(currentRole === 'TRADER' ? 'dashboard' : currentRole === 'AUTHORITY' ? 'authority-dashboard' : 'verifier-dashboard')}
+            onClick={() => onSelectTab(currentRole === 'TRADER' ? 'dashboard' : currentRole === 'AUTHORITY' ? 'authority-dashboard' : currentRole === 'PLATFORM_ADMIN' ? 'admin-dashboard' : 'verifier-dashboard')}
           >
             <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white shadow-sm">
               <span className="material-symbols-outlined text-2xl">gavel</span>
@@ -100,7 +100,7 @@ export default function Navbar({
               </>
             )}
 
-            {(currentRole === 'AUTHORITY' || currentRole === 'PLATFORM_ADMIN') && (
+            {currentRole === 'AUTHORITY' && (
               <>
                 <button
                   onClick={() => onSelectTab('authority-dashboard')}
@@ -137,6 +137,65 @@ export default function Navbar({
                 >
                   <span className="material-symbols-outlined text-[18px]">history_edu</span>
                   Audit Ledger
+                </button>
+              </>
+            )}
+
+            {currentRole === 'PLATFORM_ADMIN' && (
+              <>
+                <button
+                  onClick={() => onSelectTab('admin-dashboard')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'admin-dashboard' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">dashboard</span>
+                  Dashboard
+                </button>
+                <button
+                  onClick={() => onSelectTab('admin-users')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'admin-users' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">group</span>
+                  Users & Roles
+                </button>
+                <button
+                  onClick={() => onSelectTab('admin-orgs')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'admin-orgs' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">apartment</span>
+                  Offices & Labs
+                </button>
+                <button
+                  onClick={() => onSelectTab('admin-master')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'admin-master' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">tune</span>
+                  Master Data
+                </button>
+                <button
+                  onClick={() => onSelectTab('audit-logs')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'audit-logs' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">history_edu</span>
+                  Audit Ledger
+                </button>
+                <button
+                  onClick={() => onSelectTab('system-health')}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                    activeTab === 'system-health' ? 'bg-primary/10 text-primary' : 'text-slate-600 hover:text-primary hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">health_and_safety</span>
+                  System Health
                 </button>
               </>
             )}
@@ -189,11 +248,9 @@ export default function Navbar({
 
             <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 border-l border-slate-200">
               <div className="flex items-center gap-2">
-                <img
-                  src={currentUser?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                  alt={currentUser?.full_name}
-                  className="w-9 h-9 rounded-full object-cover border border-slate-300"
-                />
+                <div className="w-9 h-9 rounded-full bg-[#002046] text-amber-400 border border-slate-300 flex items-center justify-center font-black text-xs uppercase shadow-2xs shrink-0">
+                  {currentUser?.full_name ? currentUser.full_name.charAt(0) : 'U'}
+                </div>
                 <div className="hidden lg:block text-left">
                   <p className="text-xs font-bold text-slate-800 leading-tight">{currentUser?.full_name}</p>
                   <p className="text-[10px] text-slate-500 font-medium">{currentUser?.role}</p>
@@ -267,7 +324,7 @@ export default function Navbar({
           </>
         )}
 
-        {(currentRole === 'AUTHORITY' || currentRole === 'PLATFORM_ADMIN') && (
+        {currentRole === 'AUTHORITY' && (
           <>
             <button
               onClick={() => onSelectTab('authority-dashboard')}
@@ -304,6 +361,65 @@ export default function Navbar({
             >
               <span className="material-symbols-outlined text-[15px]">history_edu</span>
               Audit
+            </button>
+          </>
+        )}
+
+        {currentRole === 'PLATFORM_ADMIN' && (
+          <>
+            <button
+              onClick={() => onSelectTab('admin-dashboard')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'admin-dashboard' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">dashboard</span>
+              Dashboard
+            </button>
+            <button
+              onClick={() => onSelectTab('admin-users')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'admin-users' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">group</span>
+              Users
+            </button>
+            <button
+              onClick={() => onSelectTab('admin-orgs')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'admin-orgs' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">apartment</span>
+              Offices & Labs
+            </button>
+            <button
+              onClick={() => onSelectTab('admin-master')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'admin-master' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">tune</span>
+              Master Data
+            </button>
+            <button
+              onClick={() => onSelectTab('audit-logs')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'audit-logs' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">history_edu</span>
+              Audit
+            </button>
+            <button
+              onClick={() => onSelectTab('system-health')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1 shrink-0 ${
+                activeTab === 'system-health' ? 'bg-primary text-white' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">health_and_safety</span>
+              Health
             </button>
           </>
         )}

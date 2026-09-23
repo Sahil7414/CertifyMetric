@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import StatusBadge from './StatusBadge';
+import AcknowledgementSlipModal from './AcknowledgementSlipModal';
+import DocumentPreviewModal from './DocumentPreviewModal';
 
 export default function ApplicationDetailsModal({
   application,
   isOpen,
+  currentRole,
   onClose,
+  onAssignApplication,
+  onReviewApplication,
   onResubmitApplication,
   onPayApplication,
   onSelectCertificate,
   onViewTimeline
 }) {
   const [isClosing, setIsClosing] = useState(false);
+  const [showSlipModal, setShowSlipModal] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const handleClose = () => {
     if (isClosing) return;
@@ -43,10 +50,11 @@ export default function ApplicationDetailsModal({
 
   if (!isOpen || !application) return null;
 
-  const isReturned = application.status === 'RETURNED';
-  const isPaymentPending = application.status === 'PAYMENT_PENDING' || application.fee_status === 'PENDING' || application.payment?.payment_status === 'PENDING';
-  const isPaid = application.fee_status === 'PAID' || application.payment?.payment_status === 'PAID' || application.payment?.payment_status === 'PAYMENT_VERIFIED';
+  const isTrader = currentRole === 'TRADER';
   const isApproved = ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED', 'APPROVED'].includes(application.status);
+  const isReturned = application.status === 'RETURNED';
+  const isPaid = application.fee_status === 'PAID' || application.payment?.payment_status === 'PAID' || application.payment?.payment_status === 'PAYMENT_VERIFIED' || application.status === 'PAYMENT_VERIFIED' || isApproved;
+  const isPaymentPending = !isPaid && (application.status === 'PAYMENT_PENDING' || application.fee_status === 'PENDING' || application.payment?.payment_status === 'PENDING');
   const isFailed = application.status === 'VERIFICATION_FAILED' || application.status === 'REJECTED';
 
   const totalFee = application.fee_breakdown?.total_fee || application.payment?.amount || application.amount || 300;
@@ -319,20 +327,44 @@ export default function ApplicationDetailsModal({
                         <span className="text-[10px] text-slate-400">{doc.category} {doc.file_size ? `• ${doc.file_size}` : ''}</span>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 shrink-0">
-                      Uploaded
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc({
+                        file_name: doc.file_name,
+                        file_path: doc.file_path,
+                        category: doc.category || 'Supporting Document',
+                        uploaded_at: doc.created_at
+                      })}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-primary/10 hover:bg-primary/20 text-primary transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-xs">visibility</span>
+                      <span>Preview</span>
+                    </button>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
+          {previewDoc && (
+            <DocumentPreviewModal
+              document={previewDoc}
+              onClose={() => setPreviewDoc(null)}
+            />
+          )}
+
         </div>
 
         {/* Modal Footer Actions */}
         <div className="bg-slate-100 px-6 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setShowSlipModal(true)}
+              className="px-3.5 py-2 bg-white hover:bg-slate-50 text-[#002046] border border-slate-300 font-bold rounded-xl text-xs transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-base text-primary">receipt_long</span>
+              Acknowledgement Slip
+            </button>
             {onViewTimeline && (
               <button
                 onClick={() => {
@@ -359,7 +391,33 @@ export default function ApplicationDetailsModal({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {currentRole === 'AUTHORITY' && onAssignApplication && (!application.assigned_id || ['SUBMITTED', 'UNDER_REVIEW', 'PAYMENT_VERIFIED', 'PENDING_VERIFICATION'].includes(application.status)) && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onAssignApplication(application.id);
+                }}
+                className="px-4 py-2 bg-[#002046] hover:bg-[#001733] text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer border border-[#002046]"
+              >
+                <span className="material-symbols-outlined text-base text-amber-400 font-bold">person_add</span>
+                Assign Field Officer / GATC Lab
+              </button>
+            )}
+
+            {currentRole === 'AUTHORITY' && onReviewApplication && ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED'].includes(application.status) && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onReviewApplication(application.id);
+                }}
+                className="px-4 py-2 bg-indigo-700 hover:bg-indigo-800 text-white font-bold rounded-xl text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base text-amber-300">rate_review</span>
+                Review Report & Issue Certificate
+              </button>
+            )}
+
             {isReturned && onResubmitApplication && (
               <button
                 onClick={() => {
@@ -372,7 +430,7 @@ export default function ApplicationDetailsModal({
                 Resubmit Application
               </button>
             )}
-            {isPaymentPending && onPayApplication && (
+            {isTrader && isPaymentPending && onPayApplication && (
               <button
                 onClick={() => {
                   onClose();
@@ -393,6 +451,14 @@ export default function ApplicationDetailsModal({
           </div>
         </div>
       </div>
+
+      {showSlipModal && (
+        <AcknowledgementSlipModal
+          application={application}
+          instrument={application.instrument}
+          onClose={() => setShowSlipModal(false)}
+        />
+      )}
     </div>
   );
 }

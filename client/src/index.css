@@ -1,15 +1,46 @@
+/* Google Fonts must precede @tailwind directives */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+
 @layer base {
-  html, body {
+  html {
     margin: 0;
     padding: 0;
-    font-family: 'Inter', sans-serif;
+    width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    overflow-x: hidden;
+    position: relative;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Consistent focus ring for accessibility */
+  *:focus-visible {
+    outline: 2px solid #f59e0b;
+    outline-offset: 2px;
   }
 }
 
+/* ===========================
+   MATERIAL SYMBOLS ICON STYLES
+   =========================== */
 .material-symbols-outlined {
   font-variation-settings:
     'FILL' 0,
@@ -17,6 +48,7 @@
     'GRAD' 0,
     'opsz' 24;
   vertical-align: middle;
+  line-height: 1;
 }
 
 .material-symbols-filled {
@@ -27,12 +59,15 @@
     'GRAD' 0,
     'opsz' 24;
   vertical-align: middle;
+  line-height: 1;
 }
 
-/* Custom scrollbars */
+/* ===========================
+   CUSTOM SCROLLBARS
+   =========================== */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -45,74 +80,189 @@
   background: #94a3b8;
 }
 
-/* Print Optimization for Official Statutory Certificates */
-@media print {
-  header, nav, .print\:hidden, button {
-    display: none !important;
+/* ===========================
+   COMPONENT UTILITY CLASSES
+   =========================== */
+@layer components {
+
+  /* --- Buttons --- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none outline-none;
   }
-  body, main {
-    background: #ffffff !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-shadow: none !important;
+  .btn:focus-visible {
+    @apply ring-2 ring-amber-400 ring-offset-1;
   }
-  @page {
-    size: A4 portrait;
-    margin: 1.2cm;
+  .btn-sm {
+    @apply px-3 py-1.5;
+  }
+  .btn-md {
+    @apply px-4 py-2;
+  }
+  .btn-lg {
+    @apply px-5 py-2.5;
+  }
+  .btn-primary {
+    @apply bg-[#002046] text-white hover:bg-[#1b365d] shadow-sm;
+  }
+  .btn-secondary {
+    @apply bg-slate-100 text-slate-700 border border-slate-300 hover:bg-slate-200 hover:border-slate-400;
+  }
+  .btn-success {
+    @apply bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm;
+  }
+  .btn-warning {
+    @apply bg-amber-500 text-slate-950 font-bold hover:bg-amber-600 shadow-sm;
+  }
+  .btn-danger {
+    @apply bg-rose-600 text-white hover:bg-rose-700 shadow-sm;
+  }
+  .btn-ghost {
+    @apply text-slate-600 hover:bg-slate-100 hover:text-slate-900;
+  }
+  .btn-outline-primary {
+    @apply border border-[#002046] text-[#002046] hover:bg-[#002046]/5;
+  }
+
+  /* --- Cards --- */
+  .card {
+    @apply bg-white rounded-2xl border border-slate-200 shadow-sm;
+  }
+  .card-sm {
+    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+  }
+  .card-header {
+    @apply px-5 py-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between gap-3;
+  }
+  .card-body {
+    @apply p-5;
+  }
+
+  /* --- KPI Stat Card --- */
+  .kpi-card {
+    @apply bg-white rounded-xl p-4 border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer;
+  }
+  .kpi-card-label {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-slate-500;
+  }
+  .kpi-card-value {
+    @apply text-2xl font-extrabold;
+  }
+  .kpi-card-sub {
+    @apply text-[11px] text-slate-500 mt-1;
+  }
+
+  /* --- Tables --- */
+  .data-table {
+    @apply w-full text-left text-xs;
+  }
+  .data-table thead tr {
+    @apply bg-slate-50 border-b border-slate-200;
+  }
+  .data-table thead th {
+    @apply px-5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500;
+  }
+  .data-table tbody tr {
+    @apply border-b border-slate-100 hover:bg-slate-50/70 transition-colors;
+  }
+  .data-table tbody tr:last-child {
+    @apply border-b-0;
+  }
+  .data-table td {
+    @apply px-5 py-3.5;
+  }
+
+  /* --- Form Inputs --- */
+  .form-input {
+    @apply w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl outline-none
+           focus:border-[#002046] focus:ring-2 focus:ring-[#002046]/10 transition-all
+           placeholder:text-slate-400 text-slate-900;
+  }
+  .form-label {
+    @apply block text-xs font-semibold text-slate-700 mb-1.5;
+  }
+  .form-select {
+    @apply w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-xl outline-none
+           focus:border-[#002046] focus:ring-2 focus:ring-[#002046]/10 transition-all cursor-pointer text-slate-900;
+  }
+  .form-section-title {
+    @apply text-xs font-bold text-slate-500 uppercase tracking-wider pb-2 border-b border-slate-200 mb-4;
+  }
+
+  /* --- Alert Banners --- */
+  .alert {
+    @apply flex items-start gap-3 p-4 rounded-xl border text-xs;
+  }
+  .alert-warning {
+    @apply bg-amber-50 border-amber-300 text-amber-900;
+  }
+  .alert-danger {
+    @apply bg-rose-50 border-rose-300 text-rose-900;
+  }
+  .alert-success {
+    @apply bg-emerald-50 border-emerald-300 text-emerald-900;
+  }
+  .alert-info {
+    @apply bg-blue-50 border-blue-200 text-blue-900;
+  }
+
+  /* --- Section Divider --- */
+  .section-divider {
+    @apply flex items-center gap-3 my-4;
+  }
+  .section-divider::before,
+  .section-divider::after {
+    content: '';
+    @apply flex-1 h-px bg-slate-200;
+  }
+  .section-divider span {
+    @apply text-[10px] font-bold uppercase tracking-widest text-slate-400;
+  }
+
+  /* --- Empty State --- */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-16 px-6 text-center;
+  }
+  .empty-state-icon {
+    @apply w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mb-4;
+  }
+
+  /* --- Loading Skeleton --- */
+  .skeleton {
+    @apply bg-slate-200 rounded-lg animate-pulse;
+  }
+
+  /* --- Tooltip --- */
+  .tooltip-content {
+    @apply bg-[#001733] text-white text-xs font-medium rounded-lg py-1.5 px-3 shadow-xl border border-[#1b365d] whitespace-nowrap;
   }
 }
 
-/* Payment receipt: hidden on screen; while printing (body.printing-receipt) it is
-   the only thing on the page. Scoped so certificate/timeline printing is unaffected. */
-#receipt-print-root {
-  display: none;
-}
-@media print {
-  body.printing-receipt > *:not(#receipt-print-root) {
-    display: none !important;
-  }
-  body.printing-receipt #receipt-print-root {
-    display: block !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
-
-/* Slide-over Drawer Animations */
+/* ===========================
+   ANIMATIONS
+   =========================== */
 @keyframes slideInFromRight {
-  0% {
-    transform: translateX(100%);
-  }
-  100% {
-    transform: translateX(0);
-  }
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(0); }
 }
 
 @keyframes slideOutToRight {
-  0% {
-    transform: translateX(0);
-  }
-  100% {
-    transform: translateX(100%);
-  }
+  0% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
 }
 
 @keyframes fadeInBackdrop {
-  0% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }
 
 @keyframes fadeOutBackdrop {
-  0% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
 }
 
 .animate-slide-in-right {
@@ -131,4 +281,87 @@
   animation: fadeOutBackdrop 0.25s ease-in forwards;
 }
 
+/* Shimmer skeleton effect */
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 1000px 100%;
+  animation: shimmer 1.5s infinite linear;
+}
 
+/* ===========================
+   PRINT STYLES
+   =========================== */
+@media print {
+  /* Hide all generic UI components */
+  header, nav, aside, footer, button,
+  .print\:hidden, .print-hidden,
+  #app-sidebar, .top-header, .modal-backdrop {
+    display: none !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm;
+  }
+
+  /* Printable Acknowledgement Document Sheet */
+  .printable-acknowledgement-slip {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Printable Official Certificate Sheet */
+  .printable-certificate {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    border: 3px double #002046 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Prevent awkward page break cuts inside structured tables */
+  table, tr, td, th {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* Payment receipt legacy scoped print */
+#receipt-print-root {
+  display: none;
+}
+@media print {
+  body.printing-receipt > *:not(#receipt-print-root) {
+    display: none !important;
+  }
+  body.printing-receipt #receipt-print-root {
+    display: block !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
