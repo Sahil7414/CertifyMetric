@@ -210,7 +210,10 @@ export default function AppSidebar({
   onOpenAddModal,
   onVerifyPublicToken,
   isCollapsed = false,
-  onToggleCollapse
+  onToggleCollapse,
+  mobileOpen = false,
+  onCloseMobile,
+  onLogout
 }) {
   const navItems = getNavigationConfig(currentRole, {
     onSelectTab,
@@ -219,123 +222,136 @@ export default function AppSidebar({
   });
 
   return (
-    <aside
-      className={`bg-[#001733] text-white flex flex-col justify-between shrink-0 transition-all duration-300 relative z-30 shadow-md ${
-        isCollapsed ? 'w-16' : 'w-64'
-      }`}
-    >
-      <div>
-        {/* Sidebar Header / Role Badge */}
-        <div className="p-4 border-b border-white/10 flex items-center justify-between">
-          {!isCollapsed && (
-            <div className="min-w-0">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block truncate">
-                Authenticated Portal
-              </span>
-              <span className="text-sm font-extrabold text-white tracking-tight truncate block">
-                {currentRole === 'TRADER'
-                  ? 'Trader Portal'
-                  : currentRole === 'AUTHORITY'
-                  ? 'Statutory Authority'
-                  : currentRole === 'VERIFIER'
-                  ? 'Field Verifier'
-                  : currentRole === 'GATC'
-                  ? 'GATC Testing Center'
-                  : 'Platform Admin'}
-              </span>
-            </div>
-          )}
-          {onToggleCollapse && (
-            <button
-              onClick={onToggleCollapse}
-              className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors ml-auto cursor-pointer"
-              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              <span className="material-symbols-outlined text-lg">
-                {isCollapsed ? 'chevron_right' : 'chevron_left'}
-              </span>
-            </button>
-          )}
-        </div>
+    <>
+      {/* Mobile Off-Canvas Backdrop */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40"
+          onClick={onCloseMobile}
+        />
+      )}
 
-        {/* Action Button (Trader Apply / Admin Add) */}
-        {!isCollapsed && currentRole === 'TRADER' && onOpenApplyModal && (
-          <div className="p-3">
-            <button
-              onClick={onOpenApplyModal}
-              className="w-full py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-base">add_circle</span>
-              <span>Apply for Verification</span>
-            </button>
-          </div>
-        )}
-
-        {!isCollapsed && currentRole === 'PLATFORM_ADMIN' && onOpenAddModal && (
-          <div className="p-3">
-            <button
-              onClick={onOpenAddModal}
-              className="w-full py-2.5 px-3 bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-base">person_add</span>
-              <span>+ Add User</span>
-            </button>
-          </div>
-        )}
-
-        {/* Navigation Items List */}
-        <nav className="px-2 py-3 space-y-1">
-          {navItems.map((item) => {
-            const isActive =
-              activeTab === item.tab ||
-              (item.matches && item.matches.includes(activeTab));
-
-            return (
-              <button
-                key={item.id}
-                onClick={item.onClick}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                  isActive
-                    ? 'bg-white/15 text-white shadow-inner border border-white/20'
-                    : 'text-slate-300 hover:text-white hover:bg-white/10'
-                } ${isCollapsed ? 'justify-center px-0' : ''}`}
-                title={isCollapsed ? item.label : undefined}
-              >
-                <span
-                  className={`material-symbols-outlined text-lg shrink-0 ${
-                    isActive ? 'text-amber-400' : 'text-slate-400'
-                  }`}
-                >
-                  {item.icon}
+      <aside
+        className={`bg-[#001733] text-white flex flex-col justify-between shrink-0 transition-all duration-300 z-30 shadow-md ${
+          isCollapsed ? 'w-16' : 'w-64'
+        } ${
+          mobileOpen
+            ? 'fixed inset-y-0 left-0 z-50 w-64 translate-x-0'
+            : 'hidden md:flex'
+        }`}
+      >
+        <div>
+          {/* Sidebar Header / Role Badge */}
+          <div className="p-4 border-b border-white/10 flex items-center justify-between">
+            {(!isCollapsed || mobileOpen) && (
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block truncate">
+                  Authenticated Portal
                 </span>
-                {!isCollapsed && (
-                  <span className="truncate flex-1">{item.label}</span>
-                )}
-                {!isCollapsed && item.isUtility && (
-                  <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-white/20 text-slate-200">
-                    Public
-                  </span>
-                )}
+                <span className="text-sm font-extrabold text-white tracking-tight truncate block">
+                  {currentRole === 'TRADER'
+                    ? 'Trader Portal'
+                    : currentRole === 'AUTHORITY'
+                    ? 'Statutory Authority'
+                    : currentRole === 'VERIFIER'
+                    ? 'Field Verifier'
+                    : currentRole === 'GATC'
+                    ? 'GATC Testing Center'
+                    : 'Platform Admin'}
+                </span>
+              </div>
+            )}
+            {onToggleCollapse && (
+              <button
+                onClick={onToggleCollapse}
+                className="hidden md:block p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors ml-auto cursor-pointer"
+                title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <span className="material-symbols-outlined text-lg">
+                  {isCollapsed ? 'chevron_right' : 'chevron_left'}
+                </span>
               </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* User Info Footer */}
-      <div className="p-3 border-t border-white/10 bg-[#001026]">
-        <div className={`flex items-center gap-2.5 ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center font-bold text-xs shrink-0 border border-slate-500">
-            {currentUser?.full_name?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+            )}
+            {onCloseMobile && (
+              <button
+                onClick={onCloseMobile}
+                className="md:hidden p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors ml-auto cursor-pointer"
+                title="Close menu"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            )}
           </div>
-          {!isCollapsed && (
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate">{currentUser?.full_name || 'User Account'}</p>
-              <p className="text-[10px] text-slate-400 truncate">{currentUser?.email || currentUser?.role}</p>
+
+          {/* Navigation Items List */}
+          <nav className="px-2 py-3 space-y-1">
+            {navItems.map((item) => {
+              const isActive =
+                activeTab === item.tab ||
+                (item.matches && item.matches.includes(activeTab));
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    if (item.onClick) item.onClick();
+                    if (onCloseMobile) onCloseMobile();
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                    isActive
+                      ? 'bg-white/15 text-white shadow-inner border border-white/20'
+                      : 'text-slate-300 hover:text-white hover:bg-white/10'
+                  } ${isCollapsed && !mobileOpen ? 'justify-center px-0' : ''}`}
+                  title={isCollapsed && !mobileOpen ? item.label : undefined}
+                >
+                  <span
+                    className={`material-symbols-outlined text-lg shrink-0 ${
+                      isActive ? 'text-amber-400' : 'text-slate-400'
+                    }`}
+                  >
+                    {item.icon}
+                  </span>
+                  {(!isCollapsed || mobileOpen) && (
+                    <span className="truncate flex-1">{item.label}</span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* User Info & Logout Footer */}
+        <div className="p-3 border-t border-white/10 bg-[#001026] space-y-2">
+          <div className={`flex items-center gap-2.5 ${isCollapsed && !mobileOpen ? 'justify-center' : ''}`}>
+            <div className="w-8 h-8 rounded-full bg-slate-700 text-white flex items-center justify-center font-bold text-xs shrink-0 border border-slate-500">
+              {currentUser?.full_name?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
             </div>
+            {(!isCollapsed || mobileOpen) && (
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-white truncate">{currentUser?.full_name || 'User Account'}</p>
+                <p className="text-[10px] text-slate-400 truncate">{currentUser?.email || currentUser?.role}</p>
+              </div>
+            )}
+          </div>
+
+          {onLogout && (
+            <button
+              type="button"
+              onClick={() => {
+                if (onLogout) onLogout();
+                if (onCloseMobile) onCloseMobile();
+              }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-300 hover:text-white hover:bg-rose-600/30 border border-rose-500/20 transition-all cursor-pointer ${
+                isCollapsed && !mobileOpen ? 'justify-center px-0' : ''
+              }`}
+              title="Sign Out / Logout"
+            >
+              <span className="material-symbols-outlined text-lg shrink-0 text-rose-400">logout</span>
+              {(!isCollapsed || mobileOpen) && <span>Logout</span>}
+            </button>
           )}
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
