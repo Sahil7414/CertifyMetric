@@ -1,19 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 
 export default function CertificatesList({
   certificates = [],
   onSelectCertificate,
-  onOpenQR,
-  onVerifyPublicToken
+  onOpenQR
 }) {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortOption, setSortOption] = useState('NEWEST');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const safeCertificates = Array.isArray(certificates) ? certificates : [];
 
@@ -48,10 +52,22 @@ export default function CertificatesList({
     });
   }, [safeCertificates, searchTerm, statusFilter, sortOption]);
 
+  // Reset to page 1 on search / filter / sort change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, sortOption]);
+
+  const totalPages = Math.ceil(filteredCertificates.length / pageSize) || 1;
+  const paginatedCertificates = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredCertificates.slice(startIndex, startIndex + pageSize);
+  }, [filteredCertificates, currentPage, pageSize]);
+
   const handleResetFilters = () => {
     setSearchTerm('');
     setStatusFilter('ALL');
     setSortOption('NEWEST');
+    setCurrentPage(1);
   };
 
   const validCount = safeCertificates.filter(c => c.status === 'VALID').length;
@@ -115,21 +131,21 @@ export default function CertificatesList({
       />
 
       {/* Certificates Table */}
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table min-w-[700px]">
+      <div className="card overflow-hidden w-full">
+        <div className="w-full overflow-x-auto">
+          <table className="data-table w-full min-w-[700px]">
             <thead>
               <tr>
-                <th>{t('certificate.certificateNumber', 'Certificate No')}</th>
-                <th>{t('dashboard.instrument', 'Verified Instrument')}</th>
-                <th>{t('certificate.issueDate', 'Issue Date')}</th>
-                <th>{t('certificate.validUntil', 'Valid Until')}</th>
-                <th>{t('common.status', 'Status')}</th>
-                <th className="text-right">{t('table.actions', 'Actions')}</th>
+                <th className="w-[20%] min-w-[140px]">{t('certificate.certificateNumber', 'Certificate No')}</th>
+                <th className="w-[26%] min-w-[170px]">{t('dashboard.instrument', 'Verified Instrument')}</th>
+                <th className="w-[16%] min-w-[110px]">{t('certificate.issueDate', 'Issue Date')}</th>
+                <th className="w-[16%] min-w-[110px]">{t('certificate.validUntil', 'Valid Until')}</th>
+                <th className="w-[12%] min-w-[100px]">{t('common.status', 'Status')}</th>
+                <th className="text-right min-w-[110px]">{t('table.actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
-              {filteredCertificates.length === 0 ? (
+              {paginatedCertificates.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-0">
                     <div className="empty-state">
@@ -146,7 +162,7 @@ export default function CertificatesList({
                   </td>
                 </tr>
               ) : (
-                filteredCertificates.map((cert) => {
+                paginatedCertificates.map((cert) => {
                   const isExpiringSoon = cert.status === 'EXPIRING';
                   const isExpired = cert.status === 'EXPIRED';
                   return (
@@ -183,17 +199,6 @@ export default function CertificatesList({
                             View
                           </button>
 
-                          {onVerifyPublicToken && (
-                            <button
-                              onClick={() => onVerifyPublicToken(cert.public_token)}
-                              className="btn btn-sm text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
-                              title="Open Public QR Verification"
-                            >
-                              <span className="material-symbols-outlined text-[13px] text-emerald-600">verified</span>
-                              Verify
-                            </button>
-                          )}
-
                           {onOpenQR && (
                             <button
                               onClick={() => onOpenQR({
@@ -217,6 +222,18 @@ export default function CertificatesList({
             </tbody>
           </table>
         </div>
+
+        {/* Responsive Pagination Component */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredCertificates.length}
+          itemsPerPage={pageSize}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setPageSize}
+          pageSizeOptions={[10, 20, 50]}
+          itemName="certificates"
+        />
       </div>
     </div>
   );

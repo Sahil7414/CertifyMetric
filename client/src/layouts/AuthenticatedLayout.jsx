@@ -11,7 +11,6 @@ export default function AuthenticatedLayout({
   onSelectTab,
   onOpenApplyModal,
   onOpenAddModal,
-  onVerifyPublicToken,
   onLogout,
   onGoHome,
   onNavigateToApplication,
@@ -91,7 +90,6 @@ export default function AuthenticatedLayout({
           onSelectTab={onSelectTab}
           onOpenApplyModal={onOpenApplyModal}
           onOpenAddModal={onOpenAddModal}
-          onVerifyPublicToken={onVerifyPublicToken}
           isCollapsed={isCollapsed}
           onToggleCollapse={handleToggleCollapse}
           mobileOpen={mobileOpen}
@@ -102,10 +100,10 @@ export default function AuthenticatedLayout({
         {/* Dynamic, Fluid Main Content Area */}
         <main
           id="main-content"
-          className="flex-1 overflow-y-auto min-w-0 p-3 sm:p-5 lg:p-6 bg-[#f4f6f9] transition-all duration-200"
+          className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 p-3 sm:p-5 lg:p-6 bg-[#f4f6f9] transition-all duration-200"
           tabIndex={-1}
         >
-          <div className="max-w-7xl mx-auto">
+          <div className="w-full max-w-[1600px] mx-auto min-w-0">
             {children}
           </div>
         </main>

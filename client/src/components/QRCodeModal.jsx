@@ -1,16 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
+import { getCertificateVerificationUrl } from '../api';
 
-export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }) {
+export default function QRCodeModal({ certificate, onClose }) {
   const [isClosing, setIsClosing] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [qrHighResUrl, setQrHighResUrl] = useState('');
 
-  const isInstrument = Boolean(certificate?.serial_number && !certificate?.certificate_no);
-  const token = certificate?.public_token || certificate?.serial_number || certificate?.certificate_no || 'demo-token';
-  const verifyUrl = isInstrument
-    ? `${window.location.origin}/public/instrument/${encodeURIComponent(token)}`
-    : `${window.location.origin}/verify/${encodeURIComponent(token)}`;
+  const token = certificate?.public_token || certificate?.certificate_no || 'demo-token';
+  const verifyUrl = getCertificateVerificationUrl(token);
 
   const handleClose = () => {
     if (isClosing) return;
@@ -65,10 +63,9 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
   const handlePrintQR = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    const isInst = isInstrument;
-    const titleText = isInst ? 'Legal Metrology Instrument QR Seal' : 'Statutory Verification Certificate QR';
-    const idLabel = isInst ? 'Serial / Token:' : 'Certificate No:';
-    const idValue = isInst ? (certificate.serial_number || certificate.public_token) : (certificate.certificate_no || certificate.public_token);
+    const titleText = 'Statutory Verification Certificate QR';
+    const idLabel = 'Certificate No:';
+    const idValue = certificate.certificate_no || certificate.public_token;
     const modelText = certificate.model || certificate.category || 'Statutory Equipment';
 
     printWindow.document.write(`
@@ -225,16 +222,14 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base md:text-lg font-bold text-primary tracking-tight">
-                  {isInstrument ? 'Instrument Validation QR' : 'Statutory Verification QR'}
+                  Statutory Verification QR
                 </h2>
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
-                  {isInstrument ? 'Physical Seal' : 'Digital Seal'}
+                  Digital Seal
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                {isInstrument
-                  ? 'Official QR code affixed to certified instrument'
-                  : 'Official anti-counterfeiting verification code'}
+                Official anti-counterfeiting verification code
               </p>
             </div>
           </div>
@@ -257,9 +252,7 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
         <div className="flex-1 overflow-y-auto p-6 md:p-8 flex flex-col items-center text-center space-y-6">
           <div className="w-full max-w-sm flex flex-col items-center">
             <p className="text-xs text-slate-600 mb-4 leading-relaxed">
-              {isInstrument
-                ? 'Scan with any mobile camera, Google Lens, or QR scanner app to inspect this instrument\'s current statutory verification status and validity date.'
-                : 'Scan with any mobile camera, Google Lens, or QR scanner app to verify certificate authenticity directly on the legal metrology portal.'}
+              Scan with any mobile camera, Google Lens, or QR scanner app to verify certificate authenticity directly on the legal metrology portal.
             </p>
 
             <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-md mb-4">
@@ -272,51 +265,30 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
               )}
             </div>
 
-            {/* Direct URL Box */}
+            {/* Direct Verification URL Box (Encodes Production HTTPS URL) */}
             <div className="w-full bg-slate-50 rounded-xl p-3 text-center border border-slate-200 mb-4">
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1">Direct Verification URL</span>
               <span className="font-mono text-[11px] text-slate-700 break-all select-all font-semibold">{verifyUrl}</span>
             </div>
 
             <div className="w-full bg-slate-50 rounded-xl p-4 text-left border border-slate-200/80 text-xs space-y-2">
-              {isInstrument ? (
-                <>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500 font-medium">Serial Number:</span>
-                    <span className="font-mono font-bold text-primary">{certificate.serial_number}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500 font-medium">Instrument Model:</span>
-                    <span className="font-bold text-slate-800">{certificate.model || certificate.category || 'Standard'}</span>
-                  </div>
-                  <div className="flex justify-between py-1 items-center">
-                    <span className="text-slate-500 font-medium">Public Token:</span>
-                    <span className="font-mono text-[11px] text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 truncate max-w-[170px]">
-                      {certificate.public_token || certificate.serial_number}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500 font-medium">Certificate No:</span>
-                    <span className="font-mono font-bold text-primary">{certificate.certificate_no}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500 font-medium">Statutory Status:</span>
-                    <span className="font-bold text-emerald-600 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                      {certificate.status}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-1 items-center">
-                    <span className="text-slate-500 font-medium">Public Token:</span>
-                    <span className="font-mono text-[11px] text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 truncate max-w-[170px]">
-                      {certificate.public_token}
-                    </span>
-                  </div>
-                </>
-              )}
+              <div className="flex justify-between py-1 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Certificate No:</span>
+                <span className="font-mono font-bold text-primary">{certificate.certificate_no}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Statutory Status:</span>
+                <span className="font-bold text-emerald-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  {certificate.status}
+                </span>
+              </div>
+              <div className="flex justify-between py-1 items-center">
+                <span className="text-slate-500 font-medium">Public Token:</span>
+                <span className="font-mono text-[11px] text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 truncate max-w-[170px]">
+                  {certificate.public_token}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -330,33 +302,14 @@ export default function QRCodeModal({ certificate, onClose, onNavigateToVerify }
           >
             Close
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrintQR}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-sm">print</span>
-              <span>Print QR Code</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                handleClose();
-                if (onNavigateToVerify) {
-                  if (isInstrument) {
-                    onNavigateToVerify(certificate.public_token || certificate.serial_number, 'INSTRUMENT');
-                  } else {
-                    onNavigateToVerify(certificate.public_token || certificate.certificate_no, 'CERTIFICATE');
-                  }
-                }
-              }}
-              className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary-container transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-sm">open_in_new</span>
-              <span>Open Verification Page</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handlePrintQR}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-sm">print</span>
+            <span>Print QR Code</span>
+          </button>
         </div>
       </div>
     </div>

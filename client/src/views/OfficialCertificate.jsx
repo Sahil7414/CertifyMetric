@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { api } from '../api';
+import { api, getCertificateVerificationUrl } from '../api';
 
 export default function OfficialCertificate({
   certificateId,
   onBack,
-  onOpenQR,
-  onVerifyPublicToken
+  onOpenQR
 }) {
   const [cert, setCert] = useState(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
@@ -19,7 +18,7 @@ export default function OfficialCertificate({
         .then((data) => {
           setCert(data);
           if (data?.public_token) {
-            const verifyUrl = `${window.location.origin}/verify/${data.public_token}`;
+            const verifyUrl = getCertificateVerificationUrl(data.public_token);
             QRCode.toDataURL(verifyUrl, {
               width: 140,
               margin: 1,
@@ -54,16 +53,7 @@ export default function OfficialCertificate({
           Back to Certificates
         </button>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
-          {onVerifyPublicToken && (
-            <button
-              onClick={() => onVerifyPublicToken(cert.public_token)}
-              className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 border border-emerald-300 shadow-xs"
-              title="Open the public verification page that QR scanners resolve to"
-            >
-              <span className="material-symbols-outlined text-[16px] text-emerald-600">verified</span>
-              Verify Public Record
-            </button>
-          )}
+
           <button
             onClick={() => onOpenQR({
               certificate_no: cert.certificate_no,
@@ -180,9 +170,16 @@ export default function OfficialCertificate({
         <div className="pt-8 mt-6 border-t-2 border-slate-900 flex items-end justify-between relative z-10 text-xs">
           {/* QR Box */}
           <div
-            onClick={() => onVerifyPublicToken && onVerifyPublicToken(cert.public_token)}
+            onClick={() => onOpenQR && onOpenQR({
+              certificate_no: cert.certificate_no,
+              public_token: cert.public_token,
+              status: cert.status,
+              model: cert.model,
+              serial_number: cert.serial_number,
+              valid_until: cert.valid_until
+            })}
             className="flex items-center gap-3 cursor-pointer group"
-            title="Click to view live public verification page"
+            title="Click to view statutory QR code details"
           >
             {qrDataUrl && (
               <div className="p-1.5 bg-white border border-slate-300 rounded shadow-xs group-hover:border-primary group-hover:shadow-md transition-all">

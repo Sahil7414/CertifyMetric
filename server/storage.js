@@ -18,19 +18,27 @@ export let STORAGE_DIR = process.env.STORAGE_DIR
   : path.join(__dirname, 'uploads');
 
 export let EVIDENCE_DIR = path.join(STORAGE_DIR, 'evidence');
+export let DOCUMENTS_DIR = path.join(STORAGE_DIR, 'documents');
 
 export function initStorage() {
   try {
     if (!fs.existsSync(EVIDENCE_DIR)) {
       fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
     }
+    if (!fs.existsSync(DOCUMENTS_DIR)) {
+      fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
+    }
   } catch (err) {
     console.warn(`[Storage Warning] Could not initialize configured STORAGE_DIR '${STORAGE_DIR}': ${err.message}. Falling back to application-local uploads directory.`);
     STORAGE_DIR = path.join(__dirname, 'uploads');
     EVIDENCE_DIR = path.join(STORAGE_DIR, 'evidence');
+    DOCUMENTS_DIR = path.join(STORAGE_DIR, 'documents');
     try {
       if (!fs.existsSync(EVIDENCE_DIR)) {
         fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+      }
+      if (!fs.existsSync(DOCUMENTS_DIR)) {
+        fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
       }
     } catch (fallbackErr) {
       console.error('[Storage Error] Failed to initialize fallback storage:', fallbackErr.message);
@@ -87,6 +95,30 @@ const fileFilter = (req, file, cb) => {
 
 export const upload = multer({
   storage: diskStorage,
+  limits: {
+    fileSize: MAX_FILE_SIZE,
+    files: 1
+  },
+  fileFilter
+});
+
+const documentDiskStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    initStorage();
+    cb(null, DOCUMENTS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const rawExt = path.extname(file.originalname).toLowerCase();
+    const safeExt = ALLOWED_EXTENSIONS.has(rawExt) ? rawExt : '.pdf';
+    const randomHex = crypto.randomBytes(8).toString('hex');
+    const baseClean = path.basename(file.originalname, rawExt).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+    const uniqueName = `doc_${Date.now()}_${baseClean}_${randomHex}${safeExt}`;
+    cb(null, uniqueName);
+  }
+});
+
+export const documentUpload = multer({
+  storage: documentDiskStorage,
   limits: {
     fileSize: MAX_FILE_SIZE,
     files: 1

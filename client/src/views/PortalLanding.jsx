@@ -88,8 +88,6 @@ const WORKFLOW_STEPS = [
 export default function PortalLanding({
   onGoToLogin,
   onGoToRegister,
-  onVerifyCertificate,
-  onValidateInstrument,
   onDirectDemoLogin
 }) {
   const { t } = useTranslation();
@@ -110,7 +108,11 @@ export default function PortalLanding({
       return;
     }
     setCertTokenError('');
-    onVerifyCertificate(cleanToken);
+    if (onVerifyCertificate) {
+      onVerifyCertificate(cleanToken);
+    } else {
+      onGoToLogin();
+    }
   };
 
   const handleValidateInstSubmit = (e) => {
@@ -123,8 +125,10 @@ export default function PortalLanding({
     setInstTokenError('');
     if (onValidateInstrument) {
       onValidateInstrument(cleanToken);
-    } else {
+    } else if (onVerifyCertificate) {
       onVerifyCertificate(cleanToken);
+    } else {
+      onGoToLogin();
     }
   };
 
@@ -132,16 +136,21 @@ export default function PortalLanding({
     setIsScannerOpen(false);
     if (!scannedToken) return;
     if (scannerTarget === 'CERTIFICATE') {
-      onVerifyCertificate(scannedToken);
+      if (onVerifyCertificate) {
+        onVerifyCertificate(scannedToken);
+      } else {
+        onGoToLogin();
+      }
     } else {
       if (onValidateInstrument) {
         onValidateInstrument(scannedToken);
-      } else {
+      } else if (onVerifyCertificate) {
         onVerifyCertificate(scannedToken);
+      } else {
+        onGoToLogin();
       }
     }
   };
-
   const handleRoleAction = (roleItem) => {
     if (onDirectDemoLogin && roleItem.demoUser) {
       onDirectDemoLogin(roleItem.demoUser);
@@ -374,12 +383,10 @@ export default function PortalLanding({
         </div>
       </section>
 
-      {/* ====================================================
-          5. PUBLIC VERIFICATION ENGINE — DARK BANNER ONLY
-         ==================================================== */}
-      <section id="verify-certificate" className="py-10 sm:py-14 px-3 sm:px-6 max-w-4xl mx-auto w-full overflow-hidden">
 
-        {/* Prominent Legal Metrology Status Banner */}
+
+      {/* Prominent Legal Metrology Status Banner */}
+      <section className="py-8 px-4 sm:px-6 max-w-6xl mx-auto w-full">
         <div className="bg-gradient-to-r from-[#002046] via-[#082a52] to-[#002046] rounded-2xl p-5 sm:p-7 text-white shadow-md border border-[#001733] flex flex-col md:flex-row items-center justify-between gap-5">
           <div className="space-y-1.5 text-center md:text-left">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[11px] font-bold border border-amber-400/30">

@@ -9,7 +9,6 @@ export default function Navbar({
   onSelectTab,
   onOpenAddModal,
   onOpenApplyModal,
-  onVerifyPublicToken,
   onLogout
 }) {
   const { t } = useTranslation();
