@@ -343,6 +343,11 @@ export default function ApplyVerificationView({
   const handleAddDocument = async (e) => {
     e.preventDefault();
     if (docFile) {
+      let localPreviewUrl = '';
+      try {
+        localPreviewUrl = URL.createObjectURL(docFile);
+      } catch (err) {}
+
       try {
         setUploadingDoc(true);
         const formData = new FormData();
@@ -351,10 +356,11 @@ export default function ApplyVerificationView({
         const newDoc = {
           id: uploaded.id || `DOC_${Date.now()}`,
           category: docCategory,
-          file_name: uploaded.file_name,
+          file_name: uploaded.file_name || docFile.name,
           file_path: uploaded.file_path,
-          file_type: uploaded.file_type,
-          file_size: uploaded.file_size,
+          preview_url: localPreviewUrl,
+          file_type: uploaded.file_type || docFile.type,
+          file_size: uploaded.file_size || `${Math.round(docFile.size / 1024) || 250} KB`,
           uploaded_at: uploaded.uploaded_at || new Date().toISOString()
         };
         setDocuments(prev => [...prev, newDoc]);
@@ -366,6 +372,7 @@ export default function ApplyVerificationView({
           category: docCategory,
           file_name: fakeFileName,
           file_path: `/api/documents/preview/${encodeURIComponent(fakeFileName)}`,
+          preview_url: localPreviewUrl,
           file_type: docFile.type || 'application/pdf',
           file_size: `${Math.round(docFile.size / 1024) || 250} KB`,
           uploaded_at: new Date().toISOString()

@@ -30,11 +30,17 @@ export default function DocumentPreviewModal({
   const file = targetFile;
 
   const fileName = file.file_name || file.name || 'Document File';
-  const rawPath = file.file_path || file.path || file.url || `/api/documents/preview/${encodeURIComponent(fileName)}`;
+  const rawPath = file.preview_url || file.file_path || file.path || file.url || `/api/documents/preview/${encodeURIComponent(fileName)}`;
   const fileUrl = getFileUrl(rawPath);
   const category = file.category || file.type || 'Statutory Attachment';
   const uploader = file.uploaded_by || file.uploader || 'Authorized System User';
   const dateStr = file.created_at || file.uploaded_at ? new Date(file.created_at || file.uploaded_at).toLocaleString() : null;
+
+  const [imgError, setImgError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [fileUrl]);
 
   const isImage = (file.file_type && file.file_type.startsWith('image/')) ||
                   /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(fileName || rawPath);
@@ -119,13 +125,39 @@ export default function DocumentPreviewModal({
 
         {/* Content Body with Internal Scrollbar */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-900/5 min-h-[300px] flex items-center justify-center">
-          {isImage && fileUrl ? (
+          {isImage && fileUrl && !imgError ? (
             <div className="max-w-full max-h-[70vh] flex items-center justify-center overflow-auto rounded-xl bg-slate-900/10 p-2 shadow-inner">
               <img
                 src={fileUrl}
                 alt={fileName}
+                onError={() => setImgError(true)}
                 className="max-w-full max-h-[65vh] object-contain rounded-lg shadow-md"
               />
+            </div>
+          ) : isImage && imgError ? (
+            <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 shadow-sm space-y-4 max-w-md mx-auto">
+              <div className="w-16 h-16 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                <span className="material-symbols-outlined text-3xl">photo_library</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm truncate" title={fileName}>{fileName}</h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Visual evidence document is registered under category <strong className="text-slate-700">{category}</strong>.
+                </p>
+              </div>
+              <div className="flex items-center justify-center gap-2 pt-2">
+                {fileUrl && (
+                  <a
+                    href={fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-[#002046] hover:bg-[#1b365d] text-white font-bold rounded-xl text-xs transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-base">open_in_new</span>
+                    Open in New Tab
+                  </a>
+                )}
+              </div>
             </div>
           ) : isPdf && fileUrl ? (
             <iframe

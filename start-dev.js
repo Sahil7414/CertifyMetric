@@ -28,7 +28,7 @@ async function start() {
     console.log('✔ Backend API server is active on http://localhost:4000');
   } else {
     console.log('▶ Starting Backend API server on http://localhost:4000...');
-    const serverProc = spawn('node', ['server.js'], {
+    const serverProc = spawn('node', ['--watch', 'server.js'], {
       cwd: path.join(__dirname, 'server'),
       env: { ...process.env, PORT: '4000' },
       stdio: 'inherit',

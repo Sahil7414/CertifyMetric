@@ -11,6 +11,9 @@ export const API_BASE = getApiBase();
 
 export const getFileUrl = (filePath) => {
   if (!filePath) return '';
+  if (filePath.startsWith('blob:') || filePath.startsWith('data:')) {
+    return filePath;
+  }
   let fullUrl = '';
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
     fullUrl = filePath;
