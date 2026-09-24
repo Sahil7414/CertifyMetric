@@ -1,4 +1,5 @@
 import React from 'react';
+import SmoothSelect from './SmoothSelect';
 
 /**
  * Reusable ListToolbar Component for CertifyMetric List and Table views.
@@ -37,7 +38,7 @@ export default function ListToolbar({
             value={searchTerm}
             onChange={(e) => onSearchChange && onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full pl-9 pr-9 py-2 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-sans text-slate-800 placeholder:text-slate-400"
+            className="w-full pl-9 pr-9 py-2 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-300 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all font-sans text-slate-800 placeholder:text-slate-400 shadow-2xs"
           />
           {searchTerm && (
             <button
@@ -54,37 +55,25 @@ export default function ListToolbar({
         <div className="flex flex-wrap items-center gap-2">
           {filters.map((filter) => (
             <div key={filter.id} className="flex items-center">
-              <select
+              <SmoothSelect
                 value={filter.value}
-                onChange={(e) => filter.onChange(e.target.value)}
-                className={`text-xs px-3 py-2 rounded-xl border font-semibold outline-none transition-all cursor-pointer ${
-                  filter.value && filter.value !== 'ALL' && filter.value !== ''
-                    ? 'bg-primary/10 text-primary border-primary/50 font-bold'
-                    : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-white focus:border-slate-400'
-                }`}
-              >
-                {filter.options.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label} {opt.badge !== undefined && opt.badge !== null ? `(${opt.badge})` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={filter.onChange}
+                options={filter.options}
+                placeholder={filter.label || 'Filter...'}
+              />
             </div>
           ))}
 
           {/* Sort Dropdown */}
           {sortOptions.length > 0 && onSortChange && (
-            <select
+            <SmoothSelect
               value={sortValue}
-              onChange={(e) => onSortChange(e.target.value)}
-              className="text-xs px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 hover:bg-white text-slate-700 font-semibold outline-none transition-all cursor-pointer"
-            >
-              {sortOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  Sort: {opt.label}
-                </option>
-              ))}
-            </select>
+              onChange={onSortChange}
+              options={sortOptions}
+              prefix="Sort: "
+              placeholder="Sort by..."
+              menuWidth="w-48"
+            />
           )}
 
           {/* Reset / Clear All Filters */}

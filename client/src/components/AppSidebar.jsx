@@ -25,7 +25,7 @@ const NAV_ITEM_TRANSLATION_KEYS = {
  * - matches: array of activeTab names that should highlight this navigation item
  * - onClick: custom click handler (e.g. for modals or utility actions)
  */
-export function getNavigationConfig(role, callbacks = {}) {
+function getNavigationConfig(role, callbacks = {}) {
   const {
     onSelectTab
   } = callbacks;

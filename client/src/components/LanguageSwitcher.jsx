@@ -93,58 +93,62 @@ export default function LanguageSwitcher({ currentUser, variant = 'light', class
         <span className="font-semibold tracking-tight">
           {currentLang.nativeName}
         </span>
-        <span className="material-symbols-outlined text-xs text-slate-400 shrink-0 transition-transform duration-150">
-          {isOpen ? 'expand_less' : 'expand_more'}
+        <span className={`material-symbols-outlined text-xs text-slate-400 shrink-0 transition-transform duration-200 ${
+          isOpen ? 'rotate-180 text-amber-500' : ''
+        }`}>
+          expand_more
         </span>
       </button>
 
-      {/* Dropdown Menu */}
-      {isOpen && (
-        <div
-          role="listbox"
-          className="absolute right-0 mt-2 w-60 rounded-xl bg-white shadow-2xl border border-slate-200 py-1.5 z-[100] animate-in fade-in-50 zoom-in-95 max-h-80 overflow-y-auto"
-          style={{ scrollbarWidth: 'thin' }}
-        >
-          <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold tracking-wider text-slate-400 uppercase flex items-center justify-between">
-            <span>Select Language</span>
-            <span className="text-[9px] font-normal text-slate-400">12 Indian Languages</span>
-          </div>
+      {/* Smooth Floating Dropdown Menu */}
+      <div
+        role="listbox"
+        className={`absolute right-0 mt-2 w-64 rounded-2xl bg-white/95 backdrop-blur-md shadow-2xl border border-slate-200/90 py-1.5 z-[100] max-h-80 overflow-y-auto transition-all duration-200 ease-out transform origin-top-right ${
+          isOpen
+            ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto visible'
+            : 'opacity-0 scale-95 -translate-y-2 pointer-events-none invisible'
+        }`}
+        style={{ scrollbarWidth: 'thin' }}
+      >
+        <div className="px-3.5 py-2 border-b border-slate-100 text-[10px] font-bold tracking-wider text-slate-400 uppercase flex items-center justify-between">
+          <span>Select Interface Language</span>
+          <span className="text-[9.5px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">12 Languages</span>
+        </div>
 
-          <div className="py-1">
-            {SUPPORTED_LANGUAGES.map((lang) => {
-              const isSelected = lang.code === currentLang.code;
-              return (
-                <button
-                  key={lang.code}
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  onClick={() => handleSelectLanguage(lang.code)}
-                  className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between transition-colors ${
-                    isSelected
-                      ? 'bg-blue-50 text-[#002046] font-bold'
-                      : 'text-slate-700 hover:bg-slate-50 font-normal'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-900">{lang.nativeName}</span>
-                    {lang.name !== lang.nativeName && (
-                      <span className="text-[11px] text-slate-400 font-normal">
-                        ({lang.name})
-                      </span>
-                    )}
-                  </div>
-                  {isSelected && (
-                    <span className="material-symbols-outlined text-sm text-blue-600 font-bold">
-                      check
+        <div className="p-1 space-y-0.5">
+          {SUPPORTED_LANGUAGES.map((lang) => {
+            const isSelected = lang.code === currentLang.code;
+            return (
+              <button
+                key={lang.code}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => handleSelectLanguage(lang.code)}
+                className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all duration-150 cursor-pointer ${
+                  isSelected
+                    ? 'bg-[#002046] text-white font-bold shadow-xs'
+                    : 'text-slate-700 hover:bg-slate-100/80 font-medium'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`font-semibold ${isSelected ? 'text-white' : 'text-slate-900'}`}>{lang.nativeName}</span>
+                  {lang.name !== lang.nativeName && (
+                    <span className={`text-[11px] font-normal ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
+                      ({lang.name})
                     </span>
                   )}
-                </button>
-              );
-            })}
-          </div>
+                </div>
+                {isSelected && (
+                  <span className="material-symbols-outlined text-sm text-amber-300 font-bold">
+                    check
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-      )}
+      </div>
     </div>
   );
 }

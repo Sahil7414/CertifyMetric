@@ -8,7 +8,7 @@
     <script>
       // Prevent third-party browser extensions or injected scripts from crashing page loading
       window.addEventListener('error', function(event) {
-        if (event && event.message && event.message.includes('isFeatureEnabled')) {
+        if (event && event.message && (event.message.includes('isFeatureEnabled') || event.message.includes('RefreshRuntime'))) {
           event.stopImmediatePropagation();
           event.preventDefault();
           return true;
@@ -16,7 +16,7 @@
       }, true);
 
       window.addEventListener('unhandledrejection', function(event) {
-        if (event && event.reason && String(event.reason).includes('isFeatureEnabled')) {
+        if (event && event.reason && (String(event.reason).includes('isFeatureEnabled') || String(event.reason).includes('RefreshRuntime'))) {
           event.preventDefault();
         }
       });
