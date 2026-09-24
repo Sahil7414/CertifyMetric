@@ -74,7 +74,8 @@
     "govIndia": "இந்திய அரசு",
     "deptTitle": "நுகர்வோர் விவகாரங்கள் துறை • சட்ட அளவியல் பிரிவு",
     "gatc": "அரசு அங்கீகரிக்கப்பட்ட சோதனை மையம் (GATC)",
-    "lmo": "சட்ட அளவியல் அலுவலர் (LMO)"
+    "lmo": "சட்ட அளவியல் அலுவலர் (LMO)",
+    "authenticatedPortal": "Authenticated Portal"
   },
   "status": {
     "DRAFT": "வரைவு",
@@ -101,7 +102,14 @@
     "PASS": "தேர்ச்சி (PASS)",
     "FAIL": "தோல்வி (FAIL)",
     "PENDING_FEE": "கட்டணம் செலுத்த நிலுவை",
-    "FEE_PAID": "கட்டணம் செலுத்தப்பட்டது"
+    "FEE_PAID": "கட்டணம் செலுத்தப்பட்டது",
+    "REPORT_SUBMITTED": "Report Submitted",
+    "GATC_REPORT_SUBMITTED": "Lab Report Submitted",
+    "RETURNED": "Returned for Action",
+    "APPROVED": "Approved",
+    "UNASSIGNED": "Unassigned",
+    "PAYMENT_PENDING": "Payment Pending",
+    "PAYMENT_VERIFIED": "Payment Verified"
   },
   "auth": {
     "signIn": "போர்ட்டல் உள்நுழைவு",
@@ -122,7 +130,21 @@
     "fullName": "முழுப் பெயர்",
     "phone": "தொலைபேசி எண்",
     "organizationName": "நிறுவனத்தின் பெயர்",
-    "jurisdiction": "அதிகார வரம்பு"
+    "jurisdiction": "அதிகார வரம்பு",
+    "createAccount": "Create Account",
+    "registerSubtitle": "Register for the CertifyMetric verification platform",
+    "registeringAs": "I am registering as a...",
+    "jurisdictionNotice": "Statutory roles only have authority within their government-notified jurisdiction. The allocation engine will only recommend you for cases whose instrument district matches what you declare below.",
+    "confirmPassword": "Confirm Password",
+    "designation": "Designation",
+    "businessName": "Business / Establishment Name",
+    "officeName": "Office Name",
+    "labName": "Laboratory / Test Centre Name",
+    "notifiedJurisdictions": "Notified Jurisdiction(s)",
+    "creatingAccount": "Creating Account...",
+    "createAccountBtn": "Create Account",
+    "alreadyHaveAccount": "Already have an account?",
+    "backToSignIn": "Back to Sign In"
   },
   "dashboard": {
     "totalInstruments": "மொத்த கருவிகள்",
@@ -167,7 +189,35 @@
     "activeDuty": "செயலில் உள்ள பணி",
     "assignedCases": "ஒதுக்கப்பட்ட சரிபார்ப்பு வழக்குகள் ({{count}})",
     "sortedSchedule": "நேர அட்டவணைப்படி வரிசைப்படுத்தப்பட்டது",
-    "noAssignedCases": "தற்போது சரிபார்ப்புப் பணிகள் எதுவும் ஒதுக்கப்படவில்லை."
+    "noAssignedCases": "தற்போது சரிபார்ப்புப் பணிகள் எதுவும் ஒதுக்கப்படவில்லை.",
+    "operationalDistribution": "Operational Application Lifecycle Distribution",
+    "operationalDistributionDesc": "Live breakdown of filed instruments across legal verification stages",
+    "totalRegisteredCases": "Total Registered Cases",
+    "priorityQueue": "Priority Operational Queue",
+    "priorityQueueDesc": "Top applications requiring scrutiny, assignment, or report determination",
+    "fullQueue": "Full Queue",
+    "upcomingSchedule": "Upcoming Inspection Schedule",
+    "upcomingScheduleDesc": "Assigned field inspections & laboratory test slots",
+    "noUpcomingInspections": "No upcoming inspections currently scheduled in this jurisdiction.",
+    "noPriorityItems": "No pending priority items requiring officer action.",
+    "reportDeterminations": "Report Determinations",
+    "reportDeterminationsDesc": "Legal approval / return suite",
+    "assignOfficer": "Assign Officer / GATC",
+    "reviewAndIssue": "Review & Issue",
+    "reviewCase": "Review Case",
+    "onSiteInspection": "On-Site Inspection",
+    "campPresentation": "Camp / Presentation",
+    "unassigned": "Unassigned",
+    "datePending": "Date Pending",
+    "findings": "Findings",
+    "determination": "Determination",
+    "compliantInstruments": "Compliant instruments",
+    "actionRequired": "Action required",
+    "needsAllocation": "Needs allocation",
+    "auditGovernance": "Audit & Governance",
+    "auditGovernanceDesc": "Statutory log & overrides",
+    "applicationsQueueDesc": "Scrutiny & Allocation Queue",
+    "issuedCertificatesDesc": "Compliance register & QR tokens"
   },
   "application": {
     "applyTitle": "சரிபார்ப்பு விண்ணப்பம்",
@@ -287,7 +337,16 @@
     "capacityInterval": "திறன் / இடைவெளி",
     "location": "இடம்",
     "complianceStatus": "இணக்க நிலை",
-    "viewAll": "அனைத்தையும் காண்க"
+    "viewAll": "அனைத்தையும் காண்க",
+    "traderEstablishment": "Trader & Establishment",
+    "assignedPersonnel": "Assigned Personnel",
+    "paymentStatus": "Payment Status",
+    "totalFee": "Total Fee",
+    "appliedDate": "Applied Date",
+    "assignedOffice": "Assigned Office / Verifier",
+    "verificationType": "Verification Type",
+    "instrumentSN": "Instrument & SN",
+    "noApplicationsFound": "No Applications Found"
   },
   "landing": {
     "title": "தேசிய சட்ட அளவியல் டிஜிட்டல் சரிபார்ப்பு தளம்",
@@ -347,5 +406,69 @@
     "footerDept": "Department of Consumer Affairs • Ministry of Consumer Affairs, Food & Public Distribution, Government of India",
     "footerLaw": "Administered under the Legal Metrology Act, 2009 & General Rules, 2011",
     "footerLmoms": "Reference Architecture inspired by State Legal Metrology Online Management Systems (LMOMS)"
+  },
+  "admin": {
+    "usersRoles": "Users & Roles",
+    "officesLabs": "Offices & Labs",
+    "categoriesRules": "Categories & Rulesets",
+    "systemHealth": "System Health"
+  },
+  "verifier": {
+    "assigned": "Assigned",
+    "totalCases": "Total cases",
+    "todays": "Today's",
+    "scheduledToday": "Scheduled today",
+    "draftTesting": "Draft testing",
+    "worked": "Worked",
+    "totalInspected": "Total inspected",
+    "form6Issued": "Form 6 issued",
+    "activeQueue": "Active Field Queue",
+    "workedHistory": "Worked Instruments History",
+    "priorityCases": "Priority & Upcoming Field Cases",
+    "priorityCasesDesc": "Assigned verification inspections requiring on-site MPE testing",
+    "fullWorkspace": "Full Workspace",
+    "refreshWorkload": "Refresh Workload",
+    "resumeInspection": "Resume Inspection",
+    "openInspection": "Open Inspection",
+    "viewRecord": "View Record",
+    "allDeterminations": "All Determinations",
+    "passOnly": "Pass Only",
+    "failOnly": "Failed MPE Only",
+    "noActiveCases": "No pending verification assignments in your active queue.",
+    "noHistoryCases": "No worked instrument records match the selected criteria."
+  },
+  "audit": {
+    "title": "Statutory Audit Trail & Governance Log",
+    "subtitle": "Immutable chronological record of administrative actions, overrides, and certifications",
+    "recordsBadge": "Records",
+    "searchPlaceholder": "Search audit events by Actor, Action, Entity ID, or Payload...",
+    "filterAction": "Action",
+    "allActions": "All Actions",
+    "filterRole": "Role",
+    "allRoles": "All Roles",
+    "sortAction": "Action Type (A-Z)",
+    "noEvents": "No Audit Events Found",
+    "noEventsDesc": "No audit events match your search/filter parameters.",
+    "entryParticulars": "Audit Entry Particulars",
+    "actor": "Actor",
+    "rawPayload": "Raw Details Payload (JSON)"
+  },
+  "roles": {
+    "traderOwner": "Trader / Owner",
+    "traderOwnerSub": "Register instruments & apply for verification",
+    "fieldVerifier": "Field Verifier (LMO)",
+    "fieldVerifierSub": "Legal Metrology Officer / Inspector",
+    "assistantAuthority": "Assistant Authority",
+    "assistantAuthoritySub": "Assistant Controller — reviews, assigns & signs off",
+    "gatcLab": "GATC Lab",
+    "gatcLabSub": "Government Approved Test Centre"
+  },
+  "notifications": {
+    "title": "Statutory Notifications",
+    "new": "new",
+    "markAllRead": "Mark all as read",
+    "noNotifications": "No Notifications",
+    "emptyDesc": "Workflow alerts and lifecycle updates will appear here.",
+    "footerNote": "MongoDB Persistent Workflow Ledger • Real-Time Sync"
   }
 }

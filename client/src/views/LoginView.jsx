@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api, setApiUser } from '../api';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const DEMO_ROLES = [
   {
     role: 'TRADER',
+    labelKey: 'auth.traderRole',
     label: 'Trader',
     sublabel: 'Commercial',
     icon: 'storefront',
@@ -14,6 +17,7 @@ const DEMO_ROLES = [
   },
   {
     role: 'AUTHORITY',
+    labelKey: 'auth.authorityRole',
     label: 'Authority',
     sublabel: 'LMO Officer',
     icon: 'admin_panel_settings',
@@ -24,6 +28,7 @@ const DEMO_ROLES = [
   },
   {
     role: 'VERIFIER',
+    labelKey: 'auth.verifierRole',
     label: 'Verifier',
     sublabel: 'Field Inspector',
     icon: 'shield_person',
@@ -34,6 +39,7 @@ const DEMO_ROLES = [
   },
   {
     role: 'GATC',
+    labelKey: 'auth.gatcRole',
     label: 'GATC',
     sublabel: 'Testing Lab',
     icon: 'science',
@@ -44,6 +50,7 @@ const DEMO_ROLES = [
   },
   {
     role: 'PLATFORM_ADMIN',
+    labelKey: 'auth.adminRole',
     label: 'Admin',
     sublabel: 'SysAdmin',
     icon: 'settings_suggest',
@@ -55,6 +62,7 @@ const DEMO_ROLES = [
 ];
 
 export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegister }) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -115,19 +123,19 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
         <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-amber-400 text-base">balance</span>
-            <span className="font-semibold tracking-wide">Legal Metrology Verification Framework</span>
+            <span className="font-semibold tracking-wide">{t('common.statutoryFramework', 'Legal Metrology Verification Framework')}</span>
             <span className="hidden md:inline text-slate-400">|</span>
-            <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009</span>
+            <span className="hidden md:inline text-slate-300">{t('common.statutoryStandards', 'Statutory Standards under Legal Metrology Act, 2009')}</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-slate-300 hidden sm:inline">National Compliance Registry</span>
+            <LanguageSwitcher variant="dark" />
             {onBackToLanding && (
               <button
                 onClick={onBackToLanding}
                 className="text-xs text-amber-300 hover:text-amber-200 font-semibold flex items-center gap-1 transition-colors"
               >
                 <span className="material-symbols-outlined text-sm">home</span>
-                Portal Home
+                {t('common.home', 'Portal Home')}
               </button>
             )}
           </div>
@@ -143,7 +151,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
               className="absolute top-5 left-5 text-slate-400 hover:text-primary text-xs font-semibold flex items-center gap-1 transition-colors"
             >
               <span className="material-symbols-outlined text-sm">arrow_back</span>
-              Portal
+              {t('common.back', 'Portal')}
             </button>
           )}
 
@@ -154,13 +162,13 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
             </div>
             <div>
               <h1 className="text-xl font-extrabold text-primary tracking-tight">CertifyMetric</h1>
-              <p className="text-xs text-slate-500 font-medium">Online Verification & Compliance Platform</p>
+              <p className="text-xs text-slate-500 font-medium">{t('common.portalSubtitle', 'Online Verification & Compliance Platform')}</p>
             </div>
           </div>
 
           <div className="text-center pb-1">
-            <h2 className="text-sm font-bold text-slate-900">Account Authentication</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">Select a demo role for 1-click login or enter your credentials</p>
+            <h2 className="text-sm font-bold text-slate-900">{t('auth.signIn', 'Account Authentication')}</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">{t('auth.demoRolesSubtitle', 'Select a demo role for 1-click login or enter your credentials')}</p>
           </div>
 
           {/* 3. 1-Click Direct Demo Login Selector */}
@@ -168,9 +176,9 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1">
                 <span className="material-symbols-outlined text-[15px] text-primary">bolt</span>
-                1-Click Demo Login
+                {t('landing.quickAccessTitle', '1-Click Demo Login')}
               </span>
-              <span className="text-[10px] text-slate-400">Select role to login directly</span>
+              <span className="text-[10px] text-slate-400">{t('auth.demoRolesSubtitle', 'Select role to login directly')}</span>
             </div>
 
             <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
@@ -184,7 +192,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
                     disabled={loading}
                     onClick={() => handleDirectDemoLogin(demo)}
                     className={`p-2 rounded-lg border border-slate-200 bg-white transition-all text-center flex flex-col items-center justify-center gap-1 shadow-2xs group disabled:opacity-50 ${demo.border}`}
-                    title={`Direct login as ${demo.label} (${demo.email})`}
+                    title={`Direct login as ${t(demo.labelKey, demo.label)} (${demo.email})`}
                   >
                     {isLoggingThis ? (
                       <span className="material-symbols-outlined text-[20px] text-primary animate-spin">
@@ -195,7 +203,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
                         {demo.icon}
                       </span>
                     )}
-                    <span className="text-[11px] font-bold text-slate-800 leading-none">{demo.label}</span>
+                    <span className="text-[11px] font-bold text-slate-800 leading-none">{t(demo.labelKey, demo.label)}</span>
                     <span className="text-[9px] text-slate-400 hidden sm:block leading-none mt-0.5">{demo.sublabel}</span>
                   </button>
                 );
@@ -207,7 +215,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
           <div className="relative flex items-center justify-center">
             <div className="border-t border-slate-200 w-full"></div>
             <span className="bg-white px-3 text-[11px] text-slate-400 uppercase tracking-wider font-semibold whitespace-nowrap">
-              or sign in with credentials
+              {t('auth.signInSubtitle', 'or sign in with credentials')}
             </span>
             <div className="border-t border-slate-200 w-full"></div>
           </div>
@@ -224,7 +232,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="email">
-                Registered Email Address
+                {t('auth.email', 'Registered Email Address')}
               </label>
               <div className="relative flex items-center">
                 <span className="material-symbols-outlined absolute left-3 text-slate-400 text-lg pointer-events-none flex items-center">
@@ -245,7 +253,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="password">
-                Password
+                {t('auth.password', 'Password')}
               </label>
               <div className="relative flex items-center">
                 <span className="material-symbols-outlined absolute left-3 text-slate-400 text-lg pointer-events-none flex items-center">
@@ -283,12 +291,12 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
               {loading && !loadingRole ? (
                 <>
                   <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
-                  <span>Authenticating...</span>
+                  <span>{t('auth.loggingIn', 'Authenticating...')}</span>
                 </>
               ) : (
                 <>
                   <span className="material-symbols-outlined text-base">login</span>
-                  <span>Sign In to Portal</span>
+                  <span>{t('auth.loginButton', 'Sign In to Portal')}</span>
                 </>
               )}
             </button>
@@ -298,7 +306,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
             <p className="text-center text-[11px] text-slate-500">
               New to CertifyMetric?{' '}
               <button onClick={onGoToRegister} className="font-bold text-primary hover:underline">
-                Create an account
+                {t('auth.register', 'Create an account')}
               </button>
             </p>
           )}
@@ -314,7 +322,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
 
       {/* 3. Regulatory Legal Metrology Footer */}
       <footer className="text-center py-3.5 text-[11px] text-slate-500 border-t border-slate-200 bg-white">
-        Legal Metrology Portal • Authorized Under Section 24 of the Legal Metrology Act, 2009
+        CertifyMetric • {t('common.statutoryStandards', 'Legal Metrology Portal • Authorized Under Section 24 of the Legal Metrology Act, 2009')}
       </footer>
     </div>
   );

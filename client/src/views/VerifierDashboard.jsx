@@ -103,20 +103,20 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg sm:text-xl font-bold text-white">{currentUser?.full_name}</h1>
               <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-white/20 text-white border border-white/20">
-                {currentUser?.role === 'GATC' ? t('nav.gatc', 'GATC Lab') : 'Authorized Field Verifier'}
+                {currentUser?.role === 'GATC' ? t('nav.gatc', 'GATC Lab') : t('auth.verifierRole', 'Authorized Field Verifier')}
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              Legal Metrology Field Operations • <strong className="text-white font-bold">{workedInstruments.length} Instruments Worked</strong> ({safeCases.length} total assignments)
+              {t('common.statutoryFramework', 'Legal Metrology Field Operations')} • <strong className="text-white font-bold">{workedInstruments.length} {t('verifier.worked', 'Instruments Worked')}</strong> ({safeCases.length} {t('dashboard.pendingApplications', 'total assignments')})
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-4 self-end sm:self-center">
           <div className="hidden sm:block text-right">
-            <span className="text-[11px] text-slate-300 block font-medium">{t('dashboard.dutyStatus', { defaultValue: 'Duty Status' })}</span>
+            <span className="text-[11px] text-slate-300 block font-medium">{t('dashboard.dutyStatus', 'Duty Status')}</span>
             <span className="text-xs font-bold text-emerald-300 flex items-center gap-1 justify-end">
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span> {t('dashboard.activeDuty', { defaultValue: 'Active Operational Duty' })}
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span> {t('dashboard.activeDuty', 'Active Operational Duty')}
             </span>
           </div>
           <button
@@ -125,7 +125,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
             className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl border border-white/20 flex items-center gap-1.5 cursor-pointer transition-all shadow-2xs"
           >
             <span className="material-symbols-outlined text-sm">sync</span>
-            <span>Refresh Workload</span>
+            <span>{t('verifier.refreshWorkload', 'Refresh Workload')}</span>
           </button>
         </div>
       </div>
@@ -136,47 +136,47 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4">
         <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs min-w-0">
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Assigned</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('verifier.assigned', 'Assigned')}</span>
             <span className="material-symbols-outlined text-[#002046] text-lg sm:text-xl shrink-0">assignment</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-[#002046]">{safeCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-0.5 truncate">Total cases</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t('verifier.totalCases', 'Total cases')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs min-w-0">
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Today's</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('verifier.todays', "Today's")}</span>
             <span className="material-symbols-outlined text-amber-600 text-lg sm:text-xl shrink-0">today</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-amber-600">{todaysCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-0.5 truncate">Scheduled today</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t('verifier.scheduledToday', 'Scheduled today')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs min-w-0">
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">In Progress</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.IN_PROGRESS', 'In Progress')}</span>
             <span className="material-symbols-outlined text-purple-600 text-lg sm:text-xl shrink-0">edit_note</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-purple-600">{inProgressCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-0.5 truncate">Draft testing</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t('verifier.draftTesting', 'Draft testing')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs min-w-0">
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Worked</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('verifier.worked', 'Worked')}</span>
             <span className="material-symbols-outlined text-blue-600 text-lg sm:text-xl shrink-0">history</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-blue-600">{workedInstruments.length}</div>
-          <p className="text-[10px] text-slate-500 mt-0.5 truncate">Total inspected</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t('verifier.totalInspected', 'Total inspected')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs col-span-2 sm:col-span-1 min-w-0">
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Certified</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.VERIFIED', 'Certified')}</span>
             <span className="material-symbols-outlined text-emerald-600 text-lg sm:text-xl shrink-0">verified</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-emerald-600">{certifiedCount}</div>
-          <p className="text-[10px] text-slate-500 mt-0.5 truncate">Form 6 issued</p>
+          <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t('verifier.form6Issued', 'Form 6 issued')}</p>
         </div>
       </div>
 
@@ -194,7 +194,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
           }`}
         >
           <span className="material-symbols-outlined text-base">checklist</span>
-          <span>Active Field Queue ({priorityCases.length})</span>
+          <span>{t('verifier.activeQueue', 'Active Field Queue')} ({priorityCases.length})</span>
         </button>
 
         <button
@@ -207,7 +207,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
           }`}
         >
           <span className="material-symbols-outlined text-base text-blue-600">history_edu</span>
-          <span>Worked Instruments History ({workedInstruments.length})</span>
+          <span>{t('verifier.workedHistory', 'Worked Instruments History')} ({workedInstruments.length})</span>
         </button>
       </div>
 
@@ -218,8 +218,8 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/50">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Priority & Upcoming Field Cases</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Assigned verification inspections requiring on-site MPE testing</p>
+              <h2 className="text-sm font-bold text-slate-900">{t('verifier.priorityCases', 'Priority & Upcoming Field Cases')}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{t('verifier.priorityCasesDesc', 'Assigned verification inspections requiring on-site MPE testing')}</p>
             </div>
             {onViewAllCases && (
               <button
@@ -227,7 +227,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                 onClick={onViewAllCases}
                 className="text-xs font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
               >
-                <span>Full Workspace ({safeCases.length})</span>
+                <span>{t('verifier.fullWorkspace', 'Full Workspace')} ({safeCases.length})</span>
                 <span className="material-symbols-outlined text-sm">arrow_forward</span>
               </button>
             )}
@@ -237,7 +237,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
             {priorityCases.length === 0 ? (
               <div className="p-8 text-center text-slate-400">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">checklist</span>
-                No pending verification assignments in your active queue.
+                {t('verifier.noActiveCases', 'No pending verification assignments in your active queue.')}
               </div>
             ) : (
               priorityCases.map((c) => {
@@ -293,7 +293,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                           <span className="material-symbols-outlined text-[15px]">
                             {isInProgress ? 'edit_note' : 'play_circle'}
                           </span>
-                          <span>{isInProgress ? 'Resume Inspection' : 'Open Inspection'}</span>
+                          <span>{isInProgress ? t('verifier.resumeInspection', 'Resume Inspection') : t('verifier.openInspection', 'Open Inspection')}</span>
                         </button>
                       </div>
                     </div>
@@ -332,23 +332,23 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
             <div>
               <h2 className="text-base font-bold text-[#002046] flex items-center gap-2">
                 <span className="material-symbols-outlined text-blue-600">history_edu</span>
-                <span>Worked Instruments Record</span>
+                <span>{t('verifier.workedHistory', 'Worked Instruments Record')}</span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Statutory history of instruments inspected, calibrated, and evaluated by this officer
+                {t('common.statutoryStandards', 'Statutory history of instruments inspected, calibrated, and evaluated by this officer')}
               </p>
             </div>
 
             {/* Quick Metrics */}
             <div className="flex items-center gap-3 text-xs">
               <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
-                <strong>{passedCount}</strong> Passed
+                <strong>{passedCount}</strong> {t('status.PASS', 'Passed')}
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-800 border border-rose-200 font-semibold">
-                <strong>{failedCount}</strong> Failed MPE
+                <strong>{failedCount}</strong> {t('verifier.failOnly', 'Failed MPE')}
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-semibold">
-                <strong>{certifiedCount}</strong> Certified
+                <strong>{certifiedCount}</strong> {t('status.VERIFIED', 'Certified')}
               </span>
             </div>
           </div>
@@ -361,7 +361,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
               </span>
               <input
                 type="text"
-                placeholder="Search worked instruments by serial number, model, trader, or certificate..."
+                placeholder={t('common.searchPlaceholder', 'Search worked instruments by serial number, model, trader, or certificate...')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
@@ -374,10 +374,10 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                 onChange={(e) => setOutcomeFilter(e.target.value)}
                 className="px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <option value="ALL">All Determinations</option>
-                <option value="PASS">Pass Only</option>
-                <option value="FAIL">Failed MPE Only</option>
-                <option value="IN_PROGRESS">In Progress</option>
+                <option value="ALL">{t('verifier.allDeterminations', 'All Determinations')}</option>
+                <option value="PASS">{t('verifier.passOnly', 'Pass Only')}</option>
+                <option value="FAIL">{t('verifier.failOnly', 'Failed MPE Only')}</option>
+                <option value="IN_PROGRESS">{t('status.IN_PROGRESS', 'In Progress')}</option>
               </select>
 
               {(searchQuery || outcomeFilter !== 'ALL') && (
@@ -389,7 +389,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                   }}
                   className="px-3 py-2 text-xs text-slate-500 hover:text-slate-800 font-semibold hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
                 >
-                  Clear
+                  {t('common.cancel', 'Clear')}
                 </button>
               )}
             </div>
@@ -400,7 +400,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
             {filteredHistory.length === 0 ? (
               <div className="p-8 text-center text-slate-400">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">search_off</span>
-                No worked instrument records match the selected criteria.
+                {t('verifier.noHistoryCases', 'No worked instrument records match the selected criteria.')}
               </div>
             ) : (
               filteredHistory.map((item) => {
@@ -436,18 +436,18 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
 
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-600 text-[11px]">
                         <span>
-                          <strong className="text-slate-700">Trader:</strong> {item.trader_name}
+                          <strong className="text-slate-700">{t('application.traderName', 'Trader')}:</strong> {item.trader_name}
                         </span>
                         <span>
-                          <strong className="text-slate-700">Premises:</strong> {item.location}
+                          <strong className="text-slate-700">{t('table.location', 'Premises')}:</strong> {item.location}
                         </span>
                         <span>
-                          <strong className="text-slate-700">Inspected:</strong>{' '}
+                          <strong className="text-slate-700">{t('common.date', 'Inspected')}:</strong>{' '}
                           {item.tested_at ? new Date(item.tested_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                         </span>
                         {item.certificate_valid_until && (
                           <span className="text-emerald-700 font-bold">
-                            Valid Until: {new Date(item.certificate_valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {t('certificate.validUntil', 'Valid Until')}: {new Date(item.certificate_valid_until).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </span>
                         )}
                       </div>
@@ -458,19 +458,19 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                       {isPassed && (
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 flex items-center gap-1">
                           <span className="material-symbols-outlined text-xs">check_circle</span>
-                          PASS
+                          {t('status.PASS', 'PASS')}
                         </span>
                       )}
                       {isFailed && (
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-rose-100 text-rose-800 flex items-center gap-1">
                           <span className="material-symbols-outlined text-xs">cancel</span>
-                          FAIL MPE
+                          {t('verifier.failOnly', 'FAIL MPE')}
                         </span>
                       )}
                       {isInProgress && (
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 flex items-center gap-1">
                           <span className="material-symbols-outlined text-xs">pending</span>
-                          IN PROGRESS
+                          {t('status.IN_PROGRESS', 'IN PROGRESS')}
                         </span>
                       )}
 
@@ -480,7 +480,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                         className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-lg transition-colors flex items-center gap-1 border border-slate-200 cursor-pointer shadow-2xs"
                       >
                         <span className="material-symbols-outlined text-xs">visibility</span>
-                        <span>View Record</span>
+                        <span>{t('verifier.viewRecord', 'View Record')}</span>
                       </button>
                     </div>
                   </div>

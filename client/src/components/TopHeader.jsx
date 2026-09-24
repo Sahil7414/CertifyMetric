@@ -265,10 +265,10 @@ export default function TopHeader({
                   <div className="px-4 py-3 bg-gradient-to-r from-[#002046] to-[#1b365d] text-white flex items-center justify-between border-b border-[#001733]">
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-amber-400 text-lg">notifications_active</span>
-                      <span className="font-bold text-xs">Statutory Notifications</span>
+                      <span className="font-bold text-xs">{t('notifications.title', 'Statutory Notifications')}</span>
                       {unreadCount > 0 && (
                         <span className="px-1.5 py-0.2 rounded-full text-[9.5px] font-bold bg-amber-400 text-[#002046]">
-                          {unreadCount} new
+                          {unreadCount} {t('notifications.new', 'new')}
                         </span>
                       )}
                     </div>
@@ -278,7 +278,7 @@ export default function TopHeader({
                         onClick={(e) => handleMarkAllRead(e)}
                         className="text-[11px] font-semibold text-amber-300 hover:text-white underline cursor-pointer transition-colors"
                       >
-                        Mark all as read
+                        {t('notifications.markAllRead', 'Mark all as read')}
                       </button>
                     )}
                   </div>
@@ -288,8 +288,8 @@ export default function TopHeader({
                     {notifications.length === 0 ? (
                       <div className="py-10 px-4 text-center text-slate-400">
                         <span className="material-symbols-outlined text-4xl text-slate-300 block mb-2">notifications_off</span>
-                        <p className="text-xs font-semibold text-slate-600">No Notifications</p>
-                        <p className="text-[11px] text-slate-400 mt-0.5">Workflow alerts and lifecycle updates will appear here.</p>
+                        <p className="text-xs font-semibold text-slate-600">{t('notifications.noNotifications', 'No Notifications')}</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">{t('notifications.emptyDesc', 'Workflow alerts and lifecycle updates will appear here.')}</p>
                       </div>
                     ) : (
                       notifications.map((notif) => {
@@ -337,7 +337,7 @@ export default function TopHeader({
                   {/* Dropdown Footer */}
                   <div className="p-2 bg-slate-50 border-t border-slate-100 text-center">
                     <span className="text-[10px] text-slate-400 font-medium">
-                      MongoDB Persistent Workflow Ledger • Real-Time Sync
+                      {t('notifications.footerNote', 'MongoDB Persistent Workflow Ledger • Real-Time Sync')}
                     </span>
                   </div>
                 </div>
@@ -366,7 +366,7 @@ export default function TopHeader({
                   {t('nav.welcome', 'Welcome')}, {displayName}
                 </span>
                 <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                  {currentRole || 'TRADER'}
+                  {t(`roles.${currentRole}`, currentRole || 'TRADER')}
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 font-medium leading-none mt-0.5">
@@ -391,7 +391,7 @@ export default function TopHeader({
                   <p className="text-xs font-bold text-[#002046] truncate">{displayName}</p>
                   <p className="text-[11px] text-slate-500 truncate mt-0.5">{currentUser?.email || 'user@certifymetric.gov.in'}</p>
                   <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[#002046] text-white">
-                    {currentRole || 'TRADER'}
+                    {t(`roles.${currentRole}`, currentRole || 'TRADER')}
                   </div>
                 </div>
 

@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 
 export default function AuthorityDashboard({
@@ -11,6 +12,7 @@ export default function AuthorityDashboard({
   onViewCertificates,
   onViewAuditLogs
 }) {
+  const { t } = useTranslation();
   const safeApplications = Array.isArray(applications) ? applications : [];
 
   // 8 Canonical Authority KPIs from MongoDB-backed applications
@@ -65,14 +67,14 @@ export default function AuthorityDashboard({
   const statusDistribution = useMemo(() => {
     if (totalApps === 0) return [];
     return [
-      { label: 'Scrutiny', count: awaitingScrutiny.length, color: 'bg-amber-500', textColor: 'text-amber-700' },
-      { label: 'Allocation', count: pendingAssignment.length, color: 'bg-blue-500', textColor: 'text-blue-700' },
-      { label: 'In Inspection', count: scheduledVerifications.length, color: 'bg-purple-500', textColor: 'text-purple-700' },
-      { label: 'Report Review', count: reportsAwaitingReview.length, color: 'bg-indigo-500', textColor: 'text-indigo-700' },
-      { label: 'Certified', count: recentlyCompleted.length, color: 'bg-emerald-500', textColor: 'text-emerald-700' },
-      { label: 'Returned', count: returnedApplications.length, color: 'bg-rose-500', textColor: 'text-rose-700' }
+      { label: t('status.UNDER_REVIEW', 'Scrutiny'), count: awaitingScrutiny.length, color: 'bg-amber-500', textColor: 'text-amber-700' },
+      { label: t('status.ASSIGNED', 'Allocation'), count: pendingAssignment.length, color: 'bg-blue-500', textColor: 'text-blue-700' },
+      { label: t('status.UNDER_VERIFICATION', 'In Inspection'), count: scheduledVerifications.length, color: 'bg-purple-500', textColor: 'text-purple-700' },
+      { label: t('status.REPORT_SUBMITTED', 'Report Review'), count: reportsAwaitingReview.length, color: 'bg-indigo-500', textColor: 'text-indigo-700' },
+      { label: t('status.VERIFIED', 'Certified'), count: recentlyCompleted.length, color: 'bg-emerald-500', textColor: 'text-emerald-700' },
+      { label: t('status.RETURNED', 'Returned'), count: returnedApplications.length, color: 'bg-rose-500', textColor: 'text-rose-700' }
     ].filter(s => s.count > 0);
-  }, [totalApps, awaitingScrutiny, pendingAssignment, scheduledVerifications, reportsAwaitingReview, recentlyCompleted, returnedApplications]);
+  }, [totalApps, awaitingScrutiny, pendingAssignment, scheduledVerifications, reportsAwaitingReview, recentlyCompleted, returnedApplications, t]);
 
   // Top 5 priority applications needing officer attention
   const priorityApplications = useMemo(() => {
@@ -97,18 +99,18 @@ export default function AuthorityDashboard({
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-              Legal Metrology Administration Console
+              {t('common.divisionName', 'Legal Metrology Administration Console')}
             </span>
           </div>
-          <h1 className="text-xl font-bold text-slate-900">Jurisdiction Operations Summary</h1>
+          <h1 className="text-xl font-bold text-slate-900">{t('nav.operationsDashboard', 'Jurisdiction Operations Summary')}</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Presiding Officer: <strong className="text-slate-800">{currentUser?.full_name || 'Designated Authority'}</strong> · Statutory Authority
+            {t('nav.lmo', 'Presiding Officer')}: <strong className="text-slate-800">{currentUser?.full_name || 'Designated Authority'}</strong> · {t('auth.authorityRole', 'Statutory Authority')}
           </p>
         </div>
 
         <div className="flex items-center gap-4 shrink-0 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
           <div className="text-right">
-            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">Total Applications</span>
+            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">{t('dashboard.pendingApplications', 'Total Applications')}</span>
             <span className="text-xl font-extrabold text-[#002046]">{totalApps}</span>
           </div>
           <div className="h-8 w-px bg-slate-200"></div>
@@ -117,7 +119,7 @@ export default function AuthorityDashboard({
             onClick={onViewCertificates}
             title="View all issued statutory certificates"
           >
-            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">Issued Credentials</span>
+            <span className="text-[10px] text-slate-400 block font-semibold uppercase tracking-wider">{t('nav.issuedCertificates', 'Issued Credentials')}</span>
             <span className="text-xl font-extrabold text-emerald-600">{recentlyCompleted.length}</span>
           </div>
         </div>
@@ -131,11 +133,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-amber-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Scrutiny</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.UNDER_REVIEW', 'Scrutiny')}</span>
             <span className="material-symbols-outlined text-amber-600 text-base group-hover:scale-110 transition-transform shrink-0">find_in_page</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-amber-600">{awaitingScrutiny.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">New filings</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('status.SUBMITTED', 'New filings')}</p>
         </div>
 
         {/* KPI 2: Pending Assignment */}
@@ -144,11 +146,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-blue-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Assignment</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.ASSIGNED', 'Assignment')}</span>
             <span className="material-symbols-outlined text-blue-600 text-base group-hover:scale-110 transition-transform shrink-0">person_add</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-blue-600">{pendingAssignment.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Needs allocation</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('dashboard.underReviewDesc', 'Needs allocation')}</p>
         </div>
 
         {/* KPI 3: Scheduled Verifications */}
@@ -157,11 +159,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-purple-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">In Testing</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.UNDER_VERIFICATION', 'In Testing')}</span>
             <span className="material-symbols-outlined text-purple-600 text-base group-hover:scale-110 transition-transform shrink-0">hourglass_top</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-purple-600">{scheduledVerifications.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Field & GATC</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('dashboard.underReviewDesc', 'Field & GATC')}</p>
         </div>
 
         {/* KPI 4: Reports Awaiting Review */}
@@ -170,11 +172,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-indigo-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Reports</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.REPORT_SUBMITTED', 'Reports')}</span>
             <span className="material-symbols-outlined text-indigo-600 text-base group-hover:scale-110 transition-transform shrink-0">rate_review</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-indigo-600">{reportsAwaitingReview.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Submitted findings</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('dashboard.findings', 'Findings')}</p>
         </div>
 
         {/* KPI 5: Returned Applications */}
@@ -183,11 +185,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-rose-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Returned</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.RETURNED', 'Returned')}</span>
             <span className="material-symbols-outlined text-rose-600 text-base group-hover:scale-110 transition-transform shrink-0">assignment_return</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-rose-600">{returnedApplications.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Deficiencies cited</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('dashboard.actionRequired', 'Action required')}</p>
         </div>
 
         {/* KPI 6: Pending Decisions */}
@@ -196,11 +198,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-teal-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Decisions</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('verification.decision', 'Decisions')}</span>
             <span className="material-symbols-outlined text-teal-600 text-base group-hover:scale-110 transition-transform shrink-0">gavel</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-teal-600">{pendingDecisions.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Legal determinations</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('dashboard.determination', 'Determination')}</p>
         </div>
 
         {/* KPI 7: Certificates Pending Issuance */}
@@ -209,11 +211,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-emerald-400 cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Pending Cert</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('certificate.certificateNumber', 'Pending Cert')}</span>
             <span className="material-symbols-outlined text-emerald-600 text-base group-hover:scale-110 transition-transform shrink-0">workspace_premium</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-emerald-600">{certificatesPending.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Approved cases</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('status.APPROVED', 'Approved cases')}</p>
         </div>
 
         {/* KPI 8: Recently Completed */}
@@ -222,11 +224,11 @@ export default function AuthorityDashboard({
           className="bg-white rounded-xl p-3 border border-slate-200 shadow-xs hover:border-[#002046] cursor-pointer transition-all group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider truncate">Certified</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider truncate">{t('status.VERIFIED', 'Certified')}</span>
             <span className="material-symbols-outlined text-[#002046] text-base group-hover:scale-110 transition-transform shrink-0">verified</span>
           </div>
           <div className="text-lg sm:text-xl font-extrabold text-[#002046]">{recentlyCompleted.length}</div>
-          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">Compliant instruments</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5 truncate">{t('dashboard.compliantInstruments', 'Compliant instruments')}</p>
         </div>
       </div>
 
@@ -236,18 +238,18 @@ export default function AuthorityDashboard({
           <div>
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
               <span className="material-symbols-outlined text-primary text-base">donut_large</span>
-              Operational Application Lifecycle Distribution
+              {t('dashboard.operationalDistribution', 'Operational Application Lifecycle Distribution')}
             </h3>
-            <p className="text-[11px] text-slate-500">Live breakdown of filed instruments across legal verification stages</p>
+            <p className="text-[11px] text-slate-500">{t('dashboard.operationalDistributionDesc', 'Live breakdown of filed instruments across legal verification stages')}</p>
           </div>
           <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg">
-            {totalApps} Total Registered Cases
+            {totalApps} {t('dashboard.totalRegisteredCases', 'Total Registered Cases')}
           </span>
         </div>
 
         {totalApps === 0 ? (
           <div className="py-6 text-center text-slate-400 text-xs">
-            No application data available yet in MongoDB.
+            {t('dashboard.noApplications', 'No application data available yet in MongoDB.')}
           </div>
         ) : (
           <>
@@ -294,8 +296,8 @@ export default function AuthorityDashboard({
             <span className="material-symbols-outlined text-xl">assignment</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-primary transition-colors">Applications Queue</h4>
-            <p className="text-[11px] text-slate-500">Scrutiny & Allocation Queue</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-primary transition-colors">{t('nav.applicationsQueue', 'Applications Queue')}</h4>
+            <p className="text-[11px] text-slate-500">{t('dashboard.applicationsQueueDesc', 'Scrutiny & Allocation Queue')}</p>
           </div>
         </button>
 
@@ -307,8 +309,8 @@ export default function AuthorityDashboard({
             <span className="material-symbols-outlined text-xl">workspace_premium</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-emerald-800 transition-colors">Issued Certificates</h4>
-            <p className="text-[11px] text-slate-500">Compliance register & QR tokens</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-emerald-800 transition-colors">{t('nav.issuedCertificates', 'Issued Certificates')}</h4>
+            <p className="text-[11px] text-slate-500">{t('dashboard.issuedCertificatesDesc', 'Compliance register & QR tokens')}</p>
           </div>
         </button>
 
@@ -320,8 +322,8 @@ export default function AuthorityDashboard({
             <span className="material-symbols-outlined text-xl">history_edu</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-purple-800 transition-colors">Audit & Governance</h4>
-            <p className="text-[11px] text-slate-500">Statutory log & overrides</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-purple-800 transition-colors">{t('dashboard.auditGovernance', 'Audit & Governance')}</h4>
+            <p className="text-[11px] text-slate-500">{t('dashboard.auditGovernanceDesc', 'Statutory log & overrides')}</p>
           </div>
         </button>
 
@@ -333,8 +335,8 @@ export default function AuthorityDashboard({
             <span className="material-symbols-outlined text-xl">rate_review</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-amber-800 transition-colors">Report Determinations</h4>
-            <p className="text-[11px] text-slate-500">Legal approval / return suite</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-amber-800 transition-colors">{t('dashboard.reportDeterminations', 'Report Determinations')}</h4>
+            <p className="text-[11px] text-slate-500">{t('dashboard.reportDeterminationsDesc', 'Legal approval / return suite')}</p>
           </div>
         </button>
       </div>
@@ -345,14 +347,14 @@ export default function AuthorityDashboard({
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/50">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Priority Operational Queue</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Top applications requiring scrutiny, assignment, or report determination</p>
+              <h2 className="text-sm font-bold text-slate-900">{t('dashboard.priorityQueue', 'Priority Operational Queue')}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{t('dashboard.priorityQueueDesc', 'Top applications requiring scrutiny, assignment, or report determination')}</p>
             </div>
             <button
               onClick={onViewQueue}
               className="text-xs font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
             >
-              <span>Full Queue ({safeApplications.length})</span>
+              <span>{t('dashboard.fullQueue', 'Full Queue')} ({safeApplications.length})</span>
               <span className="material-symbols-outlined text-sm">arrow_forward</span>
             </button>
           </div>
@@ -361,12 +363,12 @@ export default function AuthorityDashboard({
             <table className="w-full text-left text-xs min-w-[640px]">
               <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="px-5 py-3">Application No</th>
-                  <th className="px-5 py-3">Trader & Establishment</th>
-                  <th className="px-5 py-3">Instrument</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Assigned Personnel</th>
-                  <th className="px-5 py-3 text-right">Action</th>
+                  <th className="px-5 py-3">{t('table.applicationNo', 'Application No')}</th>
+                  <th className="px-5 py-3">{t('table.traderEstablishment', 'Trader & Establishment')}</th>
+                  <th className="px-5 py-3">{t('dashboard.instrument', 'Instrument')}</th>
+                  <th className="px-5 py-3">{t('table.status', 'Status')}</th>
+                  <th className="px-5 py-3">{t('table.assignedPersonnel', 'Assigned Personnel')}</th>
+                  <th className="px-5 py-3 text-right">{t('table.actions', 'Action')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-700">
@@ -374,7 +376,7 @@ export default function AuthorityDashboard({
                   <tr>
                     <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
                       <span className="material-symbols-outlined text-2xl mb-1 text-slate-300 block">task_alt</span>
-                      No pending priority items requiring officer action.
+                      {t('dashboard.noPriorityItems', 'No pending priority items requiring officer action.')}
                     </td>
                   </tr>
                 ) : (
@@ -398,7 +400,7 @@ export default function AuthorityDashboard({
                         {app.assigned_to_name ? (
                           <span className="font-medium text-slate-900">{app.assigned_to_name}</span>
                         ) : (
-                          <span className="text-amber-600 italic">Unassigned</span>
+                          <span className="text-amber-600 italic">{t('dashboard.unassigned', 'Unassigned')}</span>
                         )}
                       </td>
                       <td className="px-5 py-3 text-right space-x-1.5 whitespace-nowrap">
@@ -408,7 +410,7 @@ export default function AuthorityDashboard({
                             className="px-3 py-1.5 bg-[#002046] hover:bg-[#001733] text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-2xs border border-[#002046]"
                           >
                             <span className="material-symbols-outlined text-xs text-amber-400 font-bold">person_add</span>
-                            <span>Assign Officer / GATC</span>
+                            <span>{t('dashboard.assignOfficer', 'Assign Officer / GATC')}</span>
                           </button>
                         ) : ['REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'GATC_REPORT_SUBMITTED'].includes(app.status) ? (
                           <button
@@ -416,7 +418,7 @@ export default function AuthorityDashboard({
                             className="px-3 py-1.5 bg-indigo-700 hover:bg-indigo-800 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
                           >
                             <span className="material-symbols-outlined text-xs text-amber-300">rate_review</span>
-                            <span>Review & Issue</span>
+                            <span>{t('dashboard.reviewAndIssue', 'Review & Issue')}</span>
                           </button>
                         ) : (
                           <button
@@ -424,7 +426,7 @@ export default function AuthorityDashboard({
                             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-xs">visibility</span>
-                            <span>Review Case</span>
+                            <span>{t('dashboard.reviewCase', 'Review Case')}</span>
                           </button>
                         )}
                       </td>
@@ -441,16 +443,16 @@ export default function AuthorityDashboard({
           <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/50">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
               <span className="material-symbols-outlined text-purple-700 text-base">calendar_month</span>
-              Upcoming Inspection Schedule
+              {t('dashboard.upcomingSchedule', 'Upcoming Inspection Schedule')}
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">Assigned field inspections & laboratory test slots</p>
+            <p className="text-xs text-slate-500 mt-0.5">{t('dashboard.upcomingScheduleDesc', 'Assigned field inspections & laboratory test slots')}</p>
           </div>
 
           <div className="p-4 flex-1 space-y-3">
             {upcomingInspections.length === 0 ? (
               <div className="py-10 text-center text-slate-400 text-xs">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">event_busy</span>
-                No upcoming inspections currently scheduled in this jurisdiction.
+                {t('dashboard.noUpcomingInspections', 'No upcoming inspections currently scheduled in this jurisdiction.')}
               </div>
             ) : (
               upcomingInspections.map((app) => (
@@ -462,15 +464,15 @@ export default function AuthorityDashboard({
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-[#002046] text-[11px]">{app.application_no}</span>
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
-                      {app.verification_mode === 'IN_SITU' ? 'On-Site Inspection' : 'Camp / Presentation'}
+                      {app.verification_mode === 'IN_SITU' ? t('dashboard.onSiteInspection', 'On-Site Inspection') : t('dashboard.campPresentation', 'Camp / Presentation')}
                     </span>
                   </div>
                   <div className="font-semibold text-slate-900 text-xs">
                     {app.manufacturer} {app.model}
                   </div>
                   <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                    <span>Officer: <strong className="text-slate-800">{app.assigned_to_name || 'Designated Verifier'}</strong></span>
-                    <span className="text-slate-600 font-medium">{app.scheduled_date || app.preferred_date || 'Date Pending'}</span>
+                    <span>{t('certificate.verifyingOfficer', 'Officer')}: <strong className="text-slate-800">{app.assigned_to_name || t('auth.verifierRole', 'Designated Verifier')}</strong></span>
+                    <span className="text-slate-600 font-medium">{app.scheduled_date || app.preferred_date || t('dashboard.datePending', 'Date Pending')}</span>
                   </div>
                 </div>
               ))

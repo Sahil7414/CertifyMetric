@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import QrScannerModal from '../components/QrScannerModal';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const ROLES_DATA = [
   {
@@ -90,6 +92,7 @@ export default function PortalLanding({
   onValidateInstrument,
   onDirectDemoLogin
 }) {
+  const { t } = useTranslation();
   const [certToken, setCertToken] = useState('');
   const [certTokenError, setCertTokenError] = useState('');
   const [instToken, setInstToken] = useState('');
@@ -153,16 +156,16 @@ export default function PortalLanding({
       {/* ====================================================
           1. HEADER
          ==================================================== */}
-      <header className="bg-[#002046] text-white sticky top-0 z-40 shadow-md border-b border-[#001733] w-full overflow-hidden">
+      <header className="bg-[#002046] text-white sticky top-0 z-40 shadow-md border-b border-[#001733] w-full">
         {/* Statutory context stripe */}
         <div className="bg-[#001733] text-slate-300 px-3 sm:px-4 py-1 flex items-center justify-between text-[11px] border-b border-[#1b365d]/50 overflow-hidden w-full">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 truncate">
             <span className="material-symbols-outlined text-[14px] text-amber-400 shrink-0">balance</span>
             <span className="font-semibold text-white tracking-wide truncate text-[10.5px] sm:text-[11px]">
-              Govt. of India • Ministry of Consumer Affairs
+              {t('common.governmentOfIndia', 'Govt. of India')} • {t('common.ministryName', 'Ministry of Consumer Affairs')}
             </span>
             <span className="hidden md:inline text-slate-500">|</span>
-            <span className="hidden md:inline text-slate-400">Legal Metrology Division</span>
+            <span className="hidden md:inline text-slate-400">{t('common.divisionName', 'Legal Metrology Division')}</span>
           </div>
           <div className="text-[10px] text-slate-400 font-mono hidden sm:block shrink-0">
             CertifyMetric LMOMS
@@ -184,19 +187,20 @@ export default function PortalLanding({
                 </span>
               </div>
               <p className="text-[10px] text-slate-300 leading-none hidden sm:block truncate">
-                Weights & Measures Verification System
+                {t('common.portalSubtitle', 'Weights & Measures Verification System')}
               </p>
             </div>
           </div>
 
-          {/* Login & Register CTAs */}
+          {/* Multilingual Switcher & Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            <LanguageSwitcher variant="dark" />
             <a
               href="#verify-certificate"
               className="hidden md:flex items-center gap-1 text-xs font-semibold text-slate-300 hover:text-amber-300 px-3 py-1.5 rounded-lg transition-colors"
             >
               <span className="material-symbols-outlined text-sm">qr_code_scanner</span>
-              <span>Verify Certificate</span>
+              <span>{t('landing.publicVerify', 'Verify Certificate')}</span>
             </a>
             <button
               type="button"
@@ -204,7 +208,7 @@ export default function PortalLanding({
               className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl transition-all flex items-center gap-1 cursor-pointer shadow-2xs shrink-0"
             >
               <span className="material-symbols-outlined text-sm">login</span>
-              <span>Login</span>
+              <span>{t('auth.loginButton', 'Login')}</span>
             </button>
             <button
               type="button"
@@ -212,7 +216,7 @@ export default function PortalLanding({
               className="px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs font-bold text-[#002046] bg-amber-400 hover:bg-amber-300 rounded-xl transition-all flex items-center gap-1 shadow-sm hover:shadow cursor-pointer shrink-0"
             >
               <span className="material-symbols-outlined text-sm">person_add</span>
-              <span>Register</span>
+              <span>{t('auth.register', 'Register')}</span>
             </button>
           </div>
         </div>
@@ -225,15 +229,15 @@ export default function PortalLanding({
         <div className="max-w-3xl mx-auto space-y-3 sm:space-y-4 px-1 min-w-0">
           <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 border border-white/15 text-amber-300 text-[10.5px] sm:text-xs font-semibold max-w-full">
             <span className="material-symbols-outlined text-xs sm:text-sm shrink-0">verified</span>
-            <span className="truncate">Statutory Compliance under Legal Metrology Act, 2009</span>
+            <span className="truncate">{t('common.statutoryStandards', 'Statutory Compliance under Legal Metrology Act, 2009')}</span>
           </div>
 
           <h1 className="text-xl sm:text-4xl font-extrabold tracking-tight leading-snug sm:leading-tight text-white break-words">
-            Online Verification of Weights & Measures
+            {t('landing.heroTitle', 'Online Verification of Weights & Measures')}
           </h1>
 
           <p className="text-xs sm:text-base text-slate-200 font-normal max-w-2xl mx-auto leading-relaxed px-1">
-            Apply, track verification, complete payment, and access digitally issued certificates.
+            {t('landing.heroSubtitle', 'Apply, track verification, complete payment, and access digitally issued certificates.')}
           </p>
 
           <div className="pt-2 sm:pt-3 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3">
@@ -243,14 +247,14 @@ export default function PortalLanding({
               className="w-full sm:w-auto px-5 sm:px-6 py-2.5 sm:py-3 bg-amber-400 hover:bg-amber-300 text-[#002046] font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-base sm:text-lg">post_add</span>
-              <span>Apply for Verification</span>
+              <span>{t('dashboard.applyVerification', 'Apply for Verification')}</span>
             </button>
             <a
               href="#how-it-works"
               className="w-full sm:w-auto px-4 sm:px-5 py-2.5 sm:py-3 bg-white/10 hover:bg-white/20 text-white font-semibold text-xs sm:text-sm rounded-xl border border-white/20 transition-all flex items-center justify-center gap-1.5"
             >
               <span className="material-symbols-outlined text-base sm:text-lg">help_outline</span>
-              <span>How It Works</span>
+              <span>{t('landing.stepProcedure', 'How It Works')}</span>
             </a>
           </div>
         </div>
@@ -262,32 +266,37 @@ export default function PortalLanding({
       <section id="how-it-works" className="py-10 sm:py-12 px-4 sm:px-6 max-w-6xl mx-auto w-full overflow-hidden">
         <div className="text-center mb-6 sm:mb-8 px-2">
           <h2 className="text-lg sm:text-2xl font-extrabold text-[#002046] tracking-tight">
-            How It Works
+            {t('landing.processTitle', 'How It Works')}
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 px-1">
-            6 simple statutory stages from instrument registration to official certification
+            {t('landing.servicesSubtitle', '6 simple statutory stages from instrument registration to official certification')}
           </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
-          {WORKFLOW_STEPS.map((s) => (
-            <div
-              key={s.step}
-              className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs hover:shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between text-left relative"
-            >
-              <div>
-                <div className="w-8 h-8 rounded-lg bg-[#002046] text-amber-400 font-extrabold text-xs flex items-center justify-center mb-2.5 shadow-2xs">
-                  {s.step}
+          {WORKFLOW_STEPS.map((s, idx) => {
+            const stepNum = idx + 1;
+            const title = t(`landing.step${stepNum}Title`, s.title);
+            const desc = t(`landing.step${stepNum}Desc`, s.desc);
+            return (
+              <div
+                key={s.step}
+                className="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs hover:shadow-sm hover:border-blue-300 transition-all flex flex-col justify-between text-left relative"
+              >
+                <div>
+                  <div className="w-8 h-8 rounded-lg bg-[#002046] text-amber-400 font-extrabold text-xs flex items-center justify-center mb-2.5 shadow-2xs">
+                    {s.step}
+                  </div>
+                  <h3 className="font-bold text-xs sm:text-[13px] text-slate-900 leading-snug">
+                    {title}
+                  </h3>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                    {desc}
+                  </p>
                 </div>
-                <h3 className="font-bold text-xs sm:text-[13px] text-slate-900 leading-snug">
-                  {s.title}
-                </h3>
-                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                  {s.desc}
-                </p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -298,49 +307,69 @@ export default function PortalLanding({
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
             <h2 className="text-lg sm:text-2xl font-extrabold text-[#002046] tracking-tight">
-              Select Your Portal Role
+              {t('landing.servicesTitle', 'Select Your Portal Role')}
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Access the dedicated operational workspace for your statutory responsibility
+              {t('landing.servicesSubtitle', 'Access the dedicated operational workspace for your statutory responsibility')}
             </p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            {ROLES_DATA.map((r) => (
-              <div
-                key={r.role}
-                className={`bg-white rounded-2xl p-5 border shadow-2xs hover:shadow-md transition-all flex flex-col justify-between ${r.accent}`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-[#002046] text-amber-400 flex items-center justify-center shadow-xs">
-                      <span className="material-symbols-outlined text-2xl">{r.icon}</span>
+            {ROLES_DATA.map((r) => {
+              const roleTitleMap = {
+                TRADER: t('auth.traderRole', 'Trader / Owner'),
+                AUTHORITY: t('auth.authorityRole', 'Authority Officer'),
+                VERIFIER: t('auth.verifierRole', 'Field Verifier'),
+                GATC: t('auth.gatcRole', 'GATC Lab'),
+                PLATFORM_ADMIN: t('auth.adminRole', 'Portal Admin')
+              };
+              const roleDescMap = {
+                TRADER: t('landing.traderDesc', r.description),
+                AUTHORITY: t('landing.authorityDesc', r.description),
+                VERIFIER: t('landing.verifierDesc', r.description),
+                GATC: t('nav.gatc', r.description),
+                PLATFORM_ADMIN: t('nav.adminDashboard', r.description)
+              };
+              const displayTitle = roleTitleMap[r.role] || r.title;
+              const displayDesc = roleDescMap[r.role] || r.description;
+              const actionText = `${displayTitle} ${t('auth.loginButton', 'Login')}`;
+
+              return (
+                <div
+                  key={r.role}
+                  className={`bg-white rounded-2xl p-5 border shadow-2xs hover:shadow-md transition-all flex flex-col justify-between ${r.accent}`}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-[#002046] text-amber-400 flex items-center justify-center shadow-xs">
+                        <span className="material-symbols-outlined text-2xl">{r.icon}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                        {r.badge}
+                      </span>
                     </div>
-                    <span className="px-2 py-0.5 rounded text-[9.5px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                      {r.badge}
-                    </span>
+
+                    <div>
+                      <h3 className="font-extrabold text-sm text-slate-900">{displayTitle}</h3>
+                      <p className="text-[11px] text-slate-600 mt-1.5 leading-relaxed">
+                        {displayDesc}
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <h3 className="font-extrabold text-sm text-slate-900">{r.title}</h3>
-                    <p className="text-[11px] text-slate-600 mt-1.5 leading-relaxed">
-                      {r.description}
-                    </p>
+                  <div className="pt-4 mt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => handleRoleAction(r)}
+                      className="w-full py-2 px-3 bg-[#002046] hover:bg-[#1b365d] text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer group"
+                    >
+                      <span className="truncate">{actionText}</span>
+                      <span className="material-symbols-outlined text-sm group-hover:translate-x-0.5 transition-transform shrink-0">arrow_forward</span>
+                    </button>
                   </div>
                 </div>
-
-                <div className="pt-4 mt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => handleRoleAction(r)}
-                    className="w-full py-2 px-3 bg-[#002046] hover:bg-[#1b365d] text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer group"
-                  >
-                    <span>{r.actionLabel}</span>
-                    <span className="material-symbols-outlined text-sm group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -355,13 +384,13 @@ export default function PortalLanding({
           <div className="space-y-1.5 text-center md:text-left">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[11px] font-bold border border-amber-400/30">
               <span className="material-symbols-outlined text-xs">shield</span>
-              <span>Open Public Registry</span>
+              <span>{t('landing.publicVerify', 'Open Public Registry')}</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Verify Legal Metrology Status
+              {t('certificate.verifyPublicTitle', 'Verify Legal Metrology Status')}
             </h2>
             <p className="text-xs sm:text-sm text-slate-200 max-w-md leading-relaxed">
-              Check a certificate or scan an instrument QR to verify its current status.
+              {t('certificate.qrScanNotice', 'Check a certificate or scan an instrument QR to verify its current status.')}
             </p>
           </div>
 
@@ -377,7 +406,7 @@ export default function PortalLanding({
               className="w-full sm:w-auto px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-lg">qr_code_scanner</span>
-              <span>Scan Instrument QR</span>
+              <span>{t('nav.publicQrVerify', 'Scan Instrument QR')}</span>
             </button>
             {/* Verify Certificate → opens popup */}
             <button
@@ -390,7 +419,7 @@ export default function PortalLanding({
               className="w-full sm:w-auto px-5 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/25 font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-lg">verified</span>
-              <span>Verify Certificate</span>
+              <span>{t('certificate.verifyButton', 'Verify Certificate')}</span>
             </button>
           </div>
         </div>
@@ -410,8 +439,12 @@ export default function PortalLanding({
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-emerald-600 text-xl">verified_user</span>
                 <div>
-                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">Public Verification Engine</div>
-                  <div className="text-sm font-extrabold text-[#002046] leading-tight">Verify Certificate Authenticity</div>
+                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">
+                    {t('landing.publicVerify', 'Public Verification Engine')}
+                  </div>
+                  <div className="text-sm font-extrabold text-[#002046] leading-tight">
+                    {t('certificate.verifyPublicTitle', 'Verify Certificate Authenticity')}
+                  </div>
                 </div>
               </div>
               <button
@@ -426,7 +459,7 @@ export default function PortalLanding({
             {/* Modal Body */}
             <div className="px-6 py-5 space-y-4">
               <p className="text-xs text-slate-600 leading-relaxed">
-                Any citizen, trader, or enforcement officer can verify a digital certificate's statutory validity in real time. Enter the unique public token or scan the QR code printed on the certificate.
+                {t('certificate.qrScanNotice', "Any citizen, trader, or enforcement officer can verify a digital certificate's statutory validity in real time.")}
               </p>
 
               {/* Scan QR option inside modal */}
@@ -440,12 +473,12 @@ export default function PortalLanding({
                 className="w-full px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
               >
                 <span className="material-symbols-outlined text-base text-emerald-600">qr_code_scanner</span>
-                <span>Scan Certificate QR</span>
+                <span>{t('certificate.qrScanNotice', 'Scan Certificate QR')}</span>
               </button>
 
               <div className="flex items-center gap-2 text-[11px] text-slate-400 font-semibold">
                 <div className="flex-1 h-px bg-slate-200" />
-                <span>or enter manually</span>
+                <span>{t('common.or', 'or enter manually')}</span>
                 <div className="flex-1 h-px bg-slate-200" />
               </div>
 
@@ -453,7 +486,7 @@ export default function PortalLanding({
               <form onSubmit={handleVerifyCertSubmit} className="space-y-3">
                 <div>
                   <label htmlFor="modal-cert-token-input" className="block text-xs font-bold text-slate-700 mb-1">
-                    Public Certificate Token / UUID
+                    {t('certificate.certificateNumber', 'Public Certificate Token / UUID')}
                   </label>
                   <div className="relative">
                     <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-base">vpn_key</span>
@@ -481,7 +514,7 @@ export default function PortalLanding({
                   className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-base">verified</span>
-                  <span>Verify Certificate</span>
+                  <span>{t('certificate.verifyButton', 'Verify Certificate')}</span>
                 </button>
               </form>
             </div>
@@ -489,7 +522,7 @@ export default function PortalLanding({
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
               <div className="text-[10px] text-slate-400 text-center">
-                Powered by National Legal Metrology Registry · Legal Metrology Act, 2009
+                {t('common.statutoryStandards', 'Powered by National Legal Metrology Registry · Legal Metrology Act, 2009')}
               </div>
             </div>
           </div>
@@ -499,11 +532,11 @@ export default function PortalLanding({
       {/* Live Camera QR Scanner Modal */}
       <QrScannerModal
         isOpen={isScannerOpen}
-        title={scannerTarget === 'CERTIFICATE' ? 'Scan Certificate QR' : 'Scan Instrument QR'}
+        title={scannerTarget === 'CERTIFICATE' ? t('certificate.qrScanNotice', 'Scan Certificate QR') : t('nav.publicQrVerify', 'Scan Instrument QR')}
         description={
           scannerTarget === 'CERTIFICATE'
-            ? 'Point your camera at the QR code printed on the Legal Metrology Certificate.'
-            : 'Point your camera at the QR code printed on the weighing or measuring instrument.'
+            ? t('certificate.qrScanNotice', 'Point your camera at the QR code printed on the Legal Metrology Certificate.')
+            : t('certificate.qrScanNotice', 'Point your camera at the QR code printed on the weighing or measuring instrument.')
         }
         onClose={() => setIsScannerOpen(false)}
         onScan={handleQrScanned}
@@ -516,9 +549,9 @@ export default function PortalLanding({
       <footer className="mt-auto bg-[#001733] text-slate-400 py-6 px-4 sm:px-6 border-t border-[#1b365d]/50 text-xs">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
           <div>
-            <span className="font-semibold text-white">CertifyMetric • Legal Metrology Platform</span>
+            <span className="font-semibold text-white">CertifyMetric • {t('common.statutoryFramework', 'Legal Metrology Platform')}</span>
             <span className="mx-2 text-slate-600">|</span>
-            <span>Standards under Legal Metrology Act, 2009 & General Rules, 2011</span>
+            <span>{t('common.statutoryStandards', 'Standards under Legal Metrology Act, 2009 & General Rules, 2011')}</span>
           </div>
 
           <div className="flex items-center gap-4 text-[11px]">
@@ -527,20 +560,20 @@ export default function PortalLanding({
               onClick={onGoToLogin}
               className="hover:text-amber-300 transition-colors cursor-pointer"
             >
-              Sign In
+              {t('auth.loginButton', 'Sign In')}
             </button>
             <button
               type="button"
               onClick={onGoToRegister || onGoToLogin}
               className="hover:text-amber-300 transition-colors cursor-pointer"
             >
-              Register
+              {t('auth.register', 'Register')}
             </button>
             <a
               href="#verify-certificate"
               className="hover:text-amber-300 transition-colors"
             >
-              Public Verify
+              {t('nav.publicQrVerify', 'Public Verify')}
             </a>
           </div>
         </div>

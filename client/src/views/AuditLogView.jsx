@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
 import { api } from '../api';
 
 export default function AuditLogView() {
+  const { t } = useTranslation();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,10 +31,10 @@ export default function AuditLogView() {
   const uniqueActions = useMemo(() => {
     const actions = Array.from(new Set(safeLogs.map(l => l.action).filter(Boolean)));
     return [
-      { label: 'All Actions', value: 'ALL' },
+      { label: t('audit.allActions', 'All Actions'), value: 'ALL' },
       ...actions.map(a => ({ label: a, value: a }))
     ];
-  }, [safeLogs]);
+  }, [safeLogs, t]);
 
   const filteredLogs = useMemo(() => {
     return safeLogs.filter((log) => {
@@ -83,16 +85,16 @@ export default function AuditLogView() {
       {/* Page Header */}
       <PageHeader
         icon="manage_search"
-        title="Statutory Audit Trail & Governance Log"
-        subtitle="Immutable chronological record of administrative actions, overrides, and certifications"
-        badge={{ text: `${safeLogs.length} Records`, variant: 'primary' }}
+        title={t('audit.title', 'Statutory Audit Trail & Governance Log')}
+        subtitle={t('audit.subtitle', 'Immutable chronological record of administrative actions, overrides, and certifications')}
+        badge={{ text: `${safeLogs.length} ${t('audit.recordsBadge', 'Records')}`, variant: 'primary' }}
         actions={
           <button
             onClick={loadLogs}
             className="btn btn-secondary btn-sm"
           >
             <span className="material-symbols-outlined text-[15px]">sync</span>
-            Refresh
+            {t('common.refresh', 'Refresh')}
           </button>
         }
       />
@@ -101,34 +103,34 @@ export default function AuditLogView() {
       <ListToolbar
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        searchPlaceholder="Search audit events by Actor, Action, Entity ID, or Payload..."
+        searchPlaceholder={t('audit.searchPlaceholder', 'Search audit events by Actor, Action, Entity ID, or Payload...')}
         filters={[
           {
             id: 'action',
-            label: 'Action',
+            label: t('audit.filterAction', 'Action'),
             value: actionFilter,
             onChange: setActionFilter,
             options: uniqueActions
           },
           {
             id: 'role',
-            label: 'Role',
+            label: t('audit.filterRole', 'Role'),
             value: roleFilter,
             onChange: setRoleFilter,
             options: [
-              { label: 'All Roles', value: 'ALL' },
-              { label: 'Trader', value: 'TRADER' },
-              { label: 'Authority', value: 'AUTHORITY' },
-              { label: 'Verifier', value: 'VERIFIER' },
-              { label: 'GATC Lab', value: 'GATC' },
-              { label: 'Platform Admin', value: 'PLATFORM_ADMIN' }
+              { label: t('audit.allRoles', 'All Roles'), value: 'ALL' },
+              { label: t('roles.TRADER', 'Trader'), value: 'TRADER' },
+              { label: t('roles.AUTHORITY', 'Authority'), value: 'AUTHORITY' },
+              { label: t('roles.VERIFIER', 'Verifier'), value: 'VERIFIER' },
+              { label: t('roles.GATC', 'GATC Lab'), value: 'GATC' },
+              { label: t('roles.PLATFORM_ADMIN', 'Platform Admin'), value: 'PLATFORM_ADMIN' }
             ]
           }
         ]}
         sortOptions={[
-          { label: 'Newest First', value: 'NEWEST' },
-          { label: 'Oldest First', value: 'OLDEST' },
-          { label: 'Action Type (A-Z)', value: 'ACTION' }
+          { label: t('sort.newestFirst', 'Newest First'), value: 'NEWEST' },
+          { label: t('sort.oldestFirst', 'Oldest First'), value: 'OLDEST' },
+          { label: t('audit.sortAction', 'Action Type (A-Z)'), value: 'ACTION' }
         ]}
         sortValue={sortOption}
         onSortChange={setSortOption}
@@ -148,20 +150,20 @@ export default function AuditLogView() {
             <div className="empty-state-icon">
               <span className="material-symbols-outlined text-3xl text-slate-400">manage_search</span>
             </div>
-            <p className="text-sm font-semibold text-slate-600 mb-1">No Audit Events Found</p>
-            <p className="text-xs text-slate-400">No audit events match your search/filter parameters.</p>
+            <p className="text-sm font-semibold text-slate-600 mb-1">{t('audit.noEvents', 'No Audit Events Found')}</p>
+            <p className="text-xs text-slate-400">{t('audit.noEventsDesc', 'No audit events match your search/filter parameters.')}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="data-table min-w-[750px]">
               <thead>
                 <tr>
-                  <th>Timestamp</th>
-                  <th>Action</th>
-                  <th>Target Entity</th>
-                  <th>Actor Particulars</th>
-                  <th>Audit Payload</th>
-                  <th className="text-right">Inspect</th>
+                  <th>{t('table.timestamp', 'Timestamp')}</th>
+                  <th>{t('table.action', 'Action')}</th>
+                  <th>{t('table.targetEntity', 'Target Entity')}</th>
+                  <th>{t('table.actorParticulars', 'Actor Particulars')}</th>
+                  <th>{t('table.auditPayload', 'Audit Payload')}</th>
+                  <th className="text-right">{t('table.inspect', 'Inspect')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -215,7 +217,7 @@ export default function AuditLogView() {
                           onClick={() => setSelectedLog(log)}
                           className="px-2.5 py-1 text-slate-700 hover:text-primary bg-slate-100 hover:bg-slate-200 rounded font-semibold text-xs transition-colors cursor-pointer"
                         >
-                          View
+                          {t('common.view', 'View')}
                         </button>
                       </td>
                     </tr>
@@ -234,7 +236,7 @@ export default function AuditLogView() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary">history_edu</span>
-                <h3 className="font-bold text-slate-900 text-base">Audit Entry Particulars</h3>
+                <h3 className="font-bold text-slate-900 text-base">{t('audit.entryParticulars', 'Audit Entry Particulars')}</h3>
               </div>
               <button
                 onClick={() => setSelectedLog(null)}
@@ -247,25 +249,25 @@ export default function AuditLogView() {
             <div className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Action</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">{t('table.action', 'Action')}</span>
                   <span className="font-mono font-bold text-slate-900">{selectedLog.action}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Timestamp</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">{t('table.timestamp', 'Timestamp')}</span>
                   <span className="font-mono text-slate-700">{new Date(selectedLog.created_at).toLocaleString()}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Actor</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">{t('audit.actor', 'Actor')}</span>
                   <span className="font-bold text-slate-900">{selectedLog.actor_id} ({selectedLog.actor_role})</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Target Entity</span>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">{t('table.targetEntity', 'Target Entity')}</span>
                   <span className="font-mono text-slate-700">{selectedLog.entity_name} : {selectedLog.entity_id}</span>
                 </div>
               </div>
 
               <div>
-                <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">Raw Details Payload (JSON)</span>
+                <span className="text-slate-500 block text-[10px] uppercase font-bold mb-1">{t('audit.rawPayload', 'Raw Details Payload (JSON)')}</span>
                 <pre className="p-3 bg-slate-900 text-emerald-400 rounded-xl font-mono text-[11px] overflow-x-auto">
                   {(() => {
                     if (selectedLog.details && typeof selectedLog.details === 'object') {
@@ -289,7 +291,7 @@ export default function AuditLogView() {
                 onClick={() => setSelectedLog(null)}
                 className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-900 cursor-pointer"
               >
-                Close Particulars
+                {t('common.close', 'Close')}
               </button>
             </div>
           </div>

@@ -1,4 +1,6 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import { api, setApiUser } from '../api';
 import { INDIA_STATES_DISTRICTS } from '../data/indiaDistricts';
 
@@ -20,9 +22,12 @@ const LMO_DESIGNATIONS = [
 const ROLE_OPTIONS = [
   {
     role: 'TRADER',
+    labelKey: 'roles.traderOwner',
     label: 'Trader / Owner',
+    sublabelKey: 'roles.traderOwnerSub',
     sublabel: 'Register instruments & apply for verification',
     icon: 'storefront',
+    orgLabelKey: 'auth.businessName',
     orgLabel: 'Business / Establishment Name',
     orgPlaceholder: 'e.g. Apex Retail Traders Pvt Ltd',
     needsJurisdiction: false,
@@ -32,9 +37,12 @@ const ROLE_OPTIONS = [
   },
   {
     role: 'VERIFIER',
+    labelKey: 'roles.fieldVerifier',
     label: 'Field Verifier (LMO)',
+    sublabelKey: 'roles.fieldVerifierSub',
     sublabel: 'Legal Metrology Officer / Inspector',
     icon: 'shield_person',
+    orgLabelKey: 'auth.officeName',
     orgLabel: 'Office Name',
     orgPlaceholder: 'e.g. Dept. of Legal Metrology, District Office',
     needsJurisdiction: true,
@@ -44,9 +52,12 @@ const ROLE_OPTIONS = [
   },
   {
     role: 'AUTHORITY',
+    labelKey: 'roles.assistantAuthority',
     label: 'Assistant Authority',
+    sublabelKey: 'roles.assistantAuthoritySub',
     sublabel: 'Assistant Controller — reviews, assigns & signs off',
     icon: 'admin_panel_settings',
+    orgLabelKey: 'auth.officeName',
     orgLabel: 'Office Name',
     orgPlaceholder: 'e.g. Dept. of Consumer Affairs, Legal Metrology Division',
     needsJurisdiction: true,
@@ -56,9 +67,12 @@ const ROLE_OPTIONS = [
   },
   {
     role: 'GATC',
+    labelKey: 'roles.gatcLab',
     label: 'GATC Lab',
+    sublabelKey: 'roles.gatcLabSub',
     sublabel: 'Government Approved Test Centre',
     icon: 'science',
+    orgLabelKey: 'auth.labName',
     orgLabel: 'Laboratory / Test Centre Name',
     orgPlaceholder: 'e.g. National Metrology Testing Centre',
     needsJurisdiction: true,
@@ -69,6 +83,7 @@ const ROLE_OPTIONS = [
 ];
 
 export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
+  const { t } = useTranslation();
   const [selectedRole, setSelectedRole] = useState('TRADER');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -146,19 +161,22 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
         <div className="max-w-7xl mx-auto flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-amber-400 text-base">balance</span>
-            <span className="font-semibold tracking-wide">Legal Metrology Verification Framework</span>
+            <span className="font-semibold tracking-wide">{t('common.statutoryFramework', 'Legal Metrology Verification Framework')}</span>
             <span className="hidden md:inline text-slate-400">|</span>
-            <span className="hidden md:inline text-slate-300">Statutory Standards under Legal Metrology Act, 2009</span>
+            <span className="hidden md:inline text-slate-300">{t('common.statutoryStandards', 'Statutory Standards under Legal Metrology Act, 2009')}</span>
           </div>
-          {onBackToLogin && (
-            <button
-              onClick={onBackToLogin}
-              className="text-xs text-amber-300 hover:text-amber-200 font-semibold flex items-center gap-1 transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">login</span>
-              Back to Sign In
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher />
+            {onBackToLogin && (
+              <button
+                onClick={onBackToLogin}
+                className="text-xs text-amber-300 hover:text-amber-200 font-semibold flex items-center gap-1 transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm">login</span>
+                {t('auth.backToSignIn', 'Back to Sign In')}
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -169,14 +187,14 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
               <span className="material-symbols-outlined text-2xl">gavel</span>
             </div>
             <div>
-              <h1 className="text-xl font-extrabold text-primary tracking-tight">Create Account</h1>
-              <p className="text-xs text-slate-500 font-medium">Register for the CertifyMetric verification platform</p>
+              <h1 className="text-xl font-extrabold text-primary tracking-tight">{t('auth.createAccount', 'Create Account')}</h1>
+              <p className="text-xs text-slate-500 font-medium">{t('auth.registerSubtitle', 'Register for the CertifyMetric verification platform')}</p>
             </div>
           </div>
 
           {/* Role Selector */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-2">I am registering as a...</label>
+            <label className="block text-xs font-bold text-slate-700 mb-2">{t('auth.registeringAs', 'I am registering as a...')}</label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {ROLE_OPTIONS.map((opt) => (
                 <button
@@ -188,19 +206,18 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
                   }`}
                 >
                   <span className={`material-symbols-outlined text-[20px] ${opt.iconColor}`}>{opt.icon}</span>
-                  <span className="text-[10px] font-bold text-slate-800 leading-tight">{opt.label}</span>
+                  <span className="text-[10px] font-bold text-slate-800 leading-tight">{t(opt.labelKey, opt.label)}</span>
                 </button>
               ))}
             </div>
-            <p className="text-[11px] text-slate-500 mt-2 leading-snug">{roleConfig.sublabel}</p>
+            <p className="text-[11px] text-slate-500 mt-2 leading-snug">{t(roleConfig.sublabelKey, roleConfig.sublabel)}</p>
           </div>
 
           {roleConfig.needsJurisdiction && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex items-start gap-2">
               <span className="material-symbols-outlined text-base text-amber-600 shrink-0">gavel</span>
               <span>
-                Statutory roles only have authority within their government-notified jurisdiction. The allocation engine
-                will only recommend you for cases whose instrument district matches what you declare below.
+                {t('auth.jurisdictionNotice', 'Statutory roles only have authority within their government-notified jurisdiction. The allocation engine will only recommend you for cases whose instrument district matches what you declare below.')}
               </span>
             </div>
           )}
@@ -215,7 +232,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
           <form onSubmit={handleSubmit} className="space-y-3.5">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Full Name</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('auth.fullName', 'Full Name')}</label>
                 <input
                   type="text"
                   value={fullName}
@@ -225,7 +242,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Phone</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('auth.phone', 'Phone')}</label>
                 <input
                   type="tel"
                   value={phone}
@@ -237,7 +254,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">Email Address</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('auth.email', 'Email Address')}</label>
               <input
                 type="email"
                 value={email}
@@ -250,7 +267,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Password</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('auth.password', 'Password')}</label>
                 <input
                   type="password"
                   value={password}
@@ -263,7 +280,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Confirm Password</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('auth.confirmPassword', 'Confirm Password')}</label>
                 <input
                   type="password"
                   value={confirmPassword}
@@ -277,7 +294,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
 
             {selectedRole === 'VERIFIER' && (
               <div>
-                <label htmlFor="lmo-designation" className="block text-xs font-bold text-slate-700 mb-1.5">Designation</label>
+                <label htmlFor="lmo-designation" className="block text-xs font-bold text-slate-700 mb-1.5">{t('auth.designation', 'Designation')}</label>
                 <select
                   id="lmo-designation"
                   value={designation}
@@ -293,7 +310,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
             )}
 
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">{roleConfig.orgLabel}</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">{t(roleConfig.orgLabelKey, roleConfig.orgLabel)}</label>
               <input
                 type="text"
                 value={organizationName}
@@ -307,7 +324,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
             {roleConfig.needsJurisdiction && (
               <div className="relative">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Notified Jurisdiction(s)
+                  {t('auth.notifiedJurisdictions', 'Notified Jurisdiction(s)')}
                 </label>
 
                 {jurisdictions.length > 0 && (
@@ -381,12 +398,12 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
               {loading ? (
                 <>
                   <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
-                  <span>Creating Account...</span>
+                  <span>{t('auth.creatingAccount', 'Creating Account...')}</span>
                 </>
               ) : (
                 <>
                   <span className="material-symbols-outlined text-base">person_add</span>
-                  <span>Create Account</span>
+                  <span>{t('auth.createAccountBtn', 'Create Account')}</span>
                 </>
               )}
             </button>
@@ -394,9 +411,9 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
 
           {onBackToLogin && (
             <p className="text-center text-[11px] text-slate-500">
-              Already have an account?{' '}
+              {t('auth.alreadyHaveAccount', 'Already have an account?')}{' '}
               <button onClick={onBackToLogin} className="font-bold text-primary hover:underline">
-                Sign in
+                {t('auth.signIn', 'Sign In')}
               </button>
             </p>
           )}
@@ -404,7 +421,7 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
       </main>
 
       <footer className="text-center py-3.5 text-[11px] text-slate-500 border-t border-slate-200 bg-white">
-        Legal Metrology Portal • Authorized Under Section 24 of the Legal Metrology Act, 2009
+        {t('common.portalFooter', 'Legal Metrology Portal • Authorized Under Section 24 of the Legal Metrology Act, 2009')}
       </footer>
     </div>
   );

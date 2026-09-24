@@ -7,8 +7,22 @@ export default function LanguageSwitcher({ currentUser, variant = 'light', class
   const { i18n } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const [activeLangCode, setActiveLangCode] = useState(i18n.language || 'en');
 
-  const currentLang = SUPPORTED_LANGUAGES.find(l => l.code === i18n.language) || SUPPORTED_LANGUAGES[0];
+  useEffect(() => {
+    const handleLng = (lng) => {
+      setActiveLangCode(lng);
+    };
+    i18n.on('languageChanged', handleLng);
+    return () => {
+      i18n.off('languageChanged', handleLng);
+    };
+  }, [i18n]);
+
+  const currentLang =
+    SUPPORTED_LANGUAGES.find(
+      (l) => l.code === activeLangCode || l.code === (activeLangCode || '').split('-')[0]
+    ) || SUPPORTED_LANGUAGES[0];
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -32,10 +46,12 @@ export default function LanguageSwitcher({ currentUser, variant = 'light', class
   const handleSelectLanguage = async (code) => {
     try {
       await i18n.changeLanguage(code);
+      setActiveLangCode(code);
       localStorage.setItem('certifymetric_language', code);
       if (typeof document !== 'undefined') {
         document.documentElement.lang = code;
       }
+      window.dispatchEvent(new CustomEvent('certifymetric:language', { detail: code }));
 
       // If user is logged in, sync with database
       const effectiveUser = currentUser || getStoredAuth().user;
@@ -86,7 +102,7 @@ export default function LanguageSwitcher({ currentUser, variant = 'light', class
       {isOpen && (
         <div
           role="listbox"
-          className="absolute right-0 mt-1.5 w-56 rounded-xl bg-white shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in-50 zoom-in-95 max-h-80 overflow-y-auto"
+          className="absolute right-0 mt-2 w-60 rounded-xl bg-white shadow-2xl border border-slate-200 py-1.5 z-[100] animate-in fade-in-50 zoom-in-95 max-h-80 overflow-y-auto"
           style={{ scrollbarWidth: 'thin' }}
         >
           <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold tracking-wider text-slate-400 uppercase flex items-center justify-between">

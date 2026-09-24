@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 import { api } from '../api';
 
 export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases, onSelectCertificate }) {
+  const { t } = useTranslation();
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('QUEUE'); // 'QUEUE' | 'HISTORY'
@@ -99,14 +101,14 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg sm:text-xl font-bold text-white">
-                {currentUser?.organization_name || currentUser?.full_name || 'GATC Laboratory Testing Unit'}
+                {currentUser?.organization_name || currentUser?.full_name || t('nav.gatc', 'GATC Laboratory Testing Unit')}
               </h1>
               <span className="text-[10px] uppercase font-bold px-2.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-200 border border-cyan-400/30">
-                Government Approved Test Centre
+                {t('nav.gatc', 'Government Approved Test Centre')}
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-0.5">
-              Legal Metrology Calibration & Testing • <strong className="text-white font-bold">{workedInstruments.length} Instruments Tested</strong> ({safeCases.length} total lab requests)
+              {t('common.statutoryFramework', 'Legal Metrology Calibration & Testing')} • <strong className="text-white font-bold">{workedInstruments.length} {t('nav.myInstruments', 'Instruments')}</strong> ({safeCases.length} {t('dashboard.pendingApplications', 'requests')})
             </p>
           </div>
         </div>
@@ -117,7 +119,7 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
           className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl border border-white/20 flex items-center gap-1.5 cursor-pointer transition-all self-end md:self-center shadow-2xs"
         >
           <span className="material-symbols-outlined text-sm">sync</span>
-          <span>Refresh Queue</span>
+          <span>{t('common.refresh', 'Refresh Queue')}</span>
         </button>
       </div>
 
@@ -127,47 +129,47 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Assigned Lab Cases</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">{t('nav.applicationsQueue', 'Assigned Lab Cases')}</span>
             <span className="material-symbols-outlined text-[#0c2340] text-xl">science</span>
           </div>
           <div className="text-2xl font-extrabold text-[#0c2340]">{safeCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-1">Total lab assignments</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('dashboard.assignedCases', { count: safeCases.length, defaultValue: 'Total lab assignments' })}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Pending Tests</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">{t('status.VERIFICATION_PENDING', 'Pending Tests')}</span>
             <span className="material-symbols-outlined text-amber-600 text-xl">hourglass_empty</span>
           </div>
           <div className="text-2xl font-extrabold text-amber-600">{pendingCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-1">Awaiting testing</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('dashboard.underReviewDesc', 'Awaiting testing')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Tests In Progress</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">{t('status.UNDER_VERIFICATION', 'Tests In Progress')}</span>
             <span className="material-symbols-outlined text-purple-600 text-xl">biotech</span>
           </div>
           <div className="text-2xl font-extrabold text-purple-600">{inProgressCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-1">Active lab evaluations</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('verification.accuracyTests', 'Active lab evaluations')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between text-slate-500 mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Worked Instruments</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">{t('nav.myInstruments', 'Worked Instruments')}</span>
             <span className="material-symbols-outlined text-blue-600 text-xl">history</span>
           </div>
           <div className="text-2xl font-extrabold text-blue-600">{workedInstruments.length}</div>
-          <p className="text-[10px] text-slate-500 mt-1">Total lab evaluated</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('dashboard.registeredInstrumentsDesc', 'Total lab evaluated')}</p>
         </div>
 
         <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-xs col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between text-slate-500 mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Submitted Reports</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">{t('status.REPORT_SUBMITTED', 'Submitted Reports')}</span>
             <span className="material-symbols-outlined text-emerald-600 text-xl">verified</span>
           </div>
           <div className="text-2xl font-extrabold text-emerald-600">{submittedCases.length}</div>
-          <p className="text-[10px] text-slate-500 mt-1">Completed lab reports</p>
+          <p className="text-[10px] text-slate-500 mt-1">{t('status.COMPLETED', 'Completed lab reports')}</p>
         </div>
       </div>
 

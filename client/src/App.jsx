@@ -27,6 +27,7 @@ import AdminUsersView from './views/AdminUsersView';
 import AdminOrgsView from './views/AdminOrgsView';
 import AdminMasterDataView from './views/AdminMasterDataView';
 import AdminSystemHealthView from './views/AdminSystemHealthView';
+import { useTranslation } from 'react-i18next';
 import { api, setApiUser, getStoredAuth } from './api';
 
 const ROLE_ALLOWED_TABS = {
@@ -283,6 +284,22 @@ const getInitialPublicVerifyState = () => {
 };
 
 export default function App() {
+  const { i18n } = useTranslation();
+  const [appLang, setAppLang] = useState(i18n.language || 'en');
+
+  useEffect(() => {
+    const onLanguageChange = (lng) => {
+      setAppLang(lng);
+    };
+    i18n.on('languageChanged', onLanguageChange);
+    const onCustomLangChange = (e) => setAppLang(e.detail);
+    window.addEventListener('certifymetric:language', onCustomLangChange);
+    return () => {
+      i18n.off('languageChanged', onLanguageChange);
+      window.removeEventListener('certifymetric:language', onCustomLangChange);
+    };
+  }, [i18n]);
+
   // Tracks how many history entries this session has pushed internally.
   // Used by navigateBack to decide whether window.history.back() is safe.
   const navDepthRef = React.useRef(0);
@@ -529,6 +546,21 @@ export default function App() {
     setShowLanding(false);
     setShowRegister(false);
 
+    // Keep and preserve user's chosen language across logins/roles
+    const chosenLang = localStorage.getItem('certifymetric_language') || (i18n.language || 'en').split('-')[0];
+    if (chosenLang) {
+      if (i18n.language !== chosenLang) {
+        i18n.changeLanguage(chosenLang);
+      }
+      setAppLang(chosenLang);
+      if (typeof document !== 'undefined') {
+        document.documentElement.lang = chosenLang;
+      }
+      if (user?.id) {
+        api.updateLanguagePreference(chosenLang).catch(() => {});
+      }
+    }
+
     // Determine portal / dashboard strictly based on database role.
     // Use replaceState so the user cannot press Back to return to the
     // login/landing screen after a successful authentication.
@@ -641,6 +673,7 @@ export default function App() {
     if (showLanding) {
       return (
         <PortalLanding
+          key={appLang}
           onGoToLogin={goToLogin}
           onGoToRegister={goToRegister}
           onTrackApplication={(appNo) => {
@@ -656,6 +689,7 @@ export default function App() {
     if (showRegister) {
       return (
         <RegisterView
+          key={appLang}
           onRegisterSuccess={handleLoginSuccess}
           onBackToLogin={backToLoginFromRegister}
         />
@@ -664,6 +698,7 @@ export default function App() {
 
     return (
       <LoginView
+        key={appLang}
         onLoginSuccess={handleLoginSuccess}
         onBackToLanding={goToLanding}
         onGoToRegister={goToRegister}
@@ -714,6 +749,7 @@ export default function App() {
   return (
     <>
       <AuthenticatedLayout
+        key={appLang}
         currentUser={currentUser}
         currentRole={currentRole}
         activeTab={activeTab}

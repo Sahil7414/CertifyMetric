@@ -36,6 +36,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'dashboard',
           label: 'Dashboard',
+          translationKey: 'nav.dashboard',
           icon: 'speed',
           tab: 'dashboard',
           matches: ['dashboard'],
@@ -44,6 +45,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'instruments',
           label: 'My Instruments',
+          translationKey: 'nav.myInstruments',
           icon: 'scale',
           tab: 'instruments',
           matches: ['instruments', 'instrument-detail'],
@@ -52,6 +54,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'apply-verification',
           label: 'Apply for Verification',
+          translationKey: 'nav.applyVerification',
           icon: 'post_add',
           tab: 'apply-verification',
           matches: ['apply-verification', 'vendor-apply-tank'],
@@ -60,6 +63,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'applications',
           label: 'My Applications',
+          translationKey: 'nav.myApplications',
           icon: 'receipt_long',
           tab: 'applications',
           matches: ['applications', 'application-timeline', 'applications-rejected'],
@@ -68,6 +72,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'certificates',
           label: 'Certificates',
+          translationKey: 'nav.certificates',
           icon: 'workspace_premium',
           tab: 'certificates',
           matches: ['certificates', 'official-certificate'],
@@ -80,6 +85,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'authority-dashboard',
           label: 'Operations Dashboard',
+          translationKey: 'nav.operationsDashboard',
           icon: 'monitoring',
           tab: 'authority-dashboard',
           matches: ['authority-dashboard'],
@@ -88,6 +94,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'applications',
           label: 'Applications Queue',
+          translationKey: 'nav.applicationsQueue',
           icon: 'assignment',
           tab: 'applications',
           matches: ['applications', 'application-review', 'assignment-decision', 'application-timeline'],
@@ -96,6 +103,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'certificates',
           label: 'Issued Certificates',
+          translationKey: 'nav.issuedCertificates',
           icon: 'workspace_premium',
           tab: 'certificates',
           matches: ['certificates', 'official-certificate'],
@@ -104,6 +112,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'audit-logs',
           label: 'Audit & Governance',
+          translationKey: 'nav.auditLogs',
           icon: 'history_edu',
           tab: 'audit-logs',
           matches: ['audit-logs'],
@@ -116,6 +125,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'verifier-dashboard',
           label: 'Assigned Work',
+          translationKey: 'nav.verifierDashboard',
           icon: 'assignment_turned_in',
           tab: 'verifier-dashboard',
           matches: ['verifier-dashboard'],
@@ -124,6 +134,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'verification-workspace',
           label: 'Inspection Workspace',
+          translationKey: 'nav.verificationWorkspace',
           icon: 'fact_check',
           tab: 'verification-workspace',
           matches: ['verification-workspace'],
@@ -136,6 +147,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'gatc-dashboard',
           label: 'Lab Requests',
+          translationKey: 'nav.gatcDashboard',
           icon: 'biotech',
           tab: 'gatc-dashboard',
           matches: ['gatc-dashboard'],
@@ -144,6 +156,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'verification-workspace',
           label: 'Technical Testing',
+          translationKey: 'nav.verificationWorkspace',
           icon: 'science',
           tab: 'verification-workspace',
           matches: ['verification-workspace'],
@@ -156,6 +169,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'admin-dashboard',
           label: 'Platform Dashboard',
+          translationKey: 'nav.adminDashboard',
           icon: 'dashboard',
           tab: 'admin-dashboard',
           matches: ['admin-dashboard'],
@@ -164,6 +178,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'admin-users',
           label: 'Users & Roles',
+          translationKey: 'admin.usersRoles',
           icon: 'group',
           tab: 'admin-users',
           matches: ['admin-users'],
@@ -172,6 +187,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'admin-orgs',
           label: 'Offices & Labs',
+          translationKey: 'admin.officesLabs',
           icon: 'apartment',
           tab: 'admin-orgs',
           matches: ['admin-orgs'],
@@ -180,6 +196,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'admin-master',
           label: 'Categories & Rulesets',
+          translationKey: 'admin.categoriesRules',
           icon: 'tune',
           tab: 'admin-master',
           matches: ['admin-master'],
@@ -188,6 +205,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'audit-logs',
           label: 'Audit & Governance',
+          translationKey: 'nav.auditLogs',
           icon: 'history_edu',
           tab: 'audit-logs',
           matches: ['audit-logs'],
@@ -196,6 +214,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'system-health',
           label: 'System Health',
+          translationKey: 'admin.systemHealth',
           icon: 'health_and_safety',
           tab: 'system-health',
           matches: ['system-health'],
@@ -208,6 +227,7 @@ export function getNavigationConfig(role, callbacks = {}) {
         {
           id: 'dashboard',
           label: 'Dashboard',
+          translationKey: 'nav.dashboard',
           icon: 'dashboard',
           tab: 'dashboard',
           matches: ['dashboard'],
@@ -263,18 +283,18 @@ export default function AppSidebar({
             {(!isCollapsed || mobileOpen) && (
               <div className="min-w-0">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block truncate">
-                  Authenticated Portal
+                  {t('nav.authenticatedPortal', 'Authenticated Portal')}
                 </span>
                 <span className="text-sm font-extrabold text-white tracking-tight truncate block">
                   {currentRole === 'TRADER'
-                    ? 'Trader Portal'
+                    ? t('landing.traderPortal', 'Trader Portal')
                     : currentRole === 'AUTHORITY'
-                    ? 'Statutory Authority'
+                    ? t('auth.authorityRole', 'Statutory Authority')
                     : currentRole === 'VERIFIER'
-                    ? 'Field Verifier'
+                    ? t('auth.verifierRole', 'Field Verifier')
                     : currentRole === 'GATC'
-                    ? 'GATC Testing Center'
-                    : 'Platform Admin'}
+                    ? t('nav.gatc', 'GATC Testing Center')
+                    : t('auth.adminRole', 'Platform Admin')}
                 </span>
               </div>
             )}
@@ -330,7 +350,7 @@ export default function AppSidebar({
                   </span>
                   {(!isCollapsed || mobileOpen) && (
                     <span className="truncate flex-1">
-                      {t(NAV_ITEM_TRANSLATION_KEYS[item.id] || `nav.${item.id}`, item.label)}
+                      {t(item.translationKey || NAV_ITEM_TRANSLATION_KEYS[item.id] || `nav.${item.id}`, item.label)}
                     </span>
                   )}
                 </button>

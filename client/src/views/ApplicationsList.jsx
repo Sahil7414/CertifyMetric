@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 import ApplicationDetailsModal from '../components/ApplicationDetailsModal';
 import ListToolbar from '../components/ListToolbar';
@@ -15,6 +16,7 @@ export default function ApplicationsList({
   onResubmitApplication,
   onPayApplication
 }) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [modeFilter, setModeFilter] = useState('ALL');
@@ -110,13 +112,13 @@ export default function ApplicationsList({
       {/* Page Header */}
       <PageHeader
         icon={isAuthority ? "assignment" : "receipt_long"}
-        title={isAuthority ? "Statutory Applications & Allocation Queue" : "Verification Applications & Tracking"}
+        title={isAuthority ? t('nav.applicationsQueue', 'Statutory Applications & Allocation Queue') : t('nav.myApplications', 'Verification Applications & Tracking')}
         subtitle={
           isAuthority
-            ? "Review filed verification applications, scrutinize compliance, and assign Field Officers or GATC Testing Laboratories"
-            : "Monitor filed applications, statutory fee remittance, return clarifications, and verification decisions"
+            ? t('dashboard.applicationsQueueDesc', 'Review filed verification applications, scrutinize compliance, and assign Field Officers or GATC Testing Laboratories')
+            : t('dashboard.recentApplicationsDesc', 'Monitor filed applications, statutory fee remittance, return clarifications, and verification decisions')
         }
-        badge={{ text: `${safeApplications.length} Total`, variant: 'primary' }}
+        badge={{ text: `${safeApplications.length} ${t('common.total', 'Total')}`, variant: 'primary' }}
         actions={
           !isAuthority && onOpenApplyModal && (
             <button
@@ -124,7 +126,7 @@ export default function ApplicationsList({
               className="btn btn-primary btn-sm"
             >
               <span className="material-symbols-outlined text-[15px]">add_circle</span>
-              Apply for Verification
+              {t('common.apply', 'Apply for Verification')}
             </button>
           )
         }
@@ -134,62 +136,62 @@ export default function ApplicationsList({
       <ListToolbar
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        searchPlaceholder="Search by APP No, Model, SN, Trader..."
+        searchPlaceholder={t('common.searchPlaceholder', 'Search by APP No, Model, SN, Trader...')}
         filters={[
           {
             id: 'status',
-            label: 'Status',
+            label: t('common.status', 'Status'),
             value: statusFilter,
             onChange: setStatusFilter,
             options: [
-              { label: 'All Applications', value: 'ALL' },
-              { label: 'Under Review', value: 'PENDING' },
-              { label: 'Payment Pending', value: 'PAYMENT_PENDING', badge: paymentPendingCount > 0 ? paymentPendingCount : null },
-              { label: 'Returned for Clarification', value: 'RETURNED', badge: returnedCount > 0 ? returnedCount : null },
-              { label: 'Approved / Certified', value: 'COMPLETED' },
-              { label: 'Rejected', value: 'REJECTED' }
+              { label: t('common.all', 'All Applications'), value: 'ALL' },
+              { label: t('status.UNDER_REVIEW', 'Under Review'), value: 'PENDING' },
+              { label: t('status.PAYMENT_PENDING', 'Payment Pending'), value: 'PAYMENT_PENDING', badge: paymentPendingCount > 0 ? paymentPendingCount : null },
+              { label: t('status.RETURNED', 'Returned for Clarification'), value: 'RETURNED', badge: returnedCount > 0 ? returnedCount : null },
+              { label: t('status.APPROVED', 'Approved / Certified'), value: 'COMPLETED' },
+              { label: t('status.REJECTED', 'Rejected'), value: 'REJECTED' }
             ]
           },
           {
             id: 'type',
-            label: 'Type',
+            label: t('table.verificationType', 'Type'),
             value: typeFilter,
             onChange: setTypeFilter,
             options: [
-              { label: 'All Verification Types', value: 'ALL' },
-              { label: 'Original Verification', value: 'ORIGINAL' },
-              { label: 'Re-Verification', value: 'RE_VERIFICATION' }
+              { label: t('common.all', 'All Verification Types'), value: 'ALL' },
+              { label: t('application.initialVerification', 'Original Verification'), value: 'ORIGINAL' },
+              { label: t('application.reverification', 'Re-Verification'), value: 'RE_VERIFICATION' }
             ]
           },
           {
             id: 'mode',
-            label: 'Mode',
+            label: t('table.typeMode', 'Mode'),
             value: modeFilter,
             onChange: setModeFilter,
             options: [
-              { label: 'All Modes', value: 'ALL' },
-              { label: 'In-Situ (On-Site)', value: 'IN_SITU' },
-              { label: 'Camp / Presentation', value: 'CAMP' },
-              { label: 'GATC Lab Testing', value: 'GATC_LAB' }
+              { label: t('common.all', 'All Modes'), value: 'ALL' },
+              { label: t('application.inSitu', 'In-Situ (On-Site)'), value: 'IN_SITU' },
+              { label: t('application.campCentre', 'Camp / Presentation'), value: 'CAMP' },
+              { label: t('nav.gatc', 'GATC Lab Testing'), value: 'GATC_LAB' }
             ]
           },
           ...(isAuthority ? [{
             id: 'allocation',
-            label: 'Allocation',
+            label: t('status.ASSIGNED', 'Allocation'),
             value: allocationFilter,
             onChange: setAllocationFilter,
             options: [
-              { label: 'All Allocation', value: 'ALL' },
-              { label: 'Needs Allocation (Unassigned)', value: 'UNASSIGNED' },
-              { label: 'Assigned to Officer / Lab', value: 'ASSIGNED' }
+              { label: t('common.all', 'All Allocation'), value: 'ALL' },
+              { label: t('dashboard.needsAllocation', 'Needs Allocation (Unassigned)'), value: 'UNASSIGNED' },
+              { label: t('status.ASSIGNED', 'Assigned to Officer / Lab'), value: 'ASSIGNED' }
             ]
           }] : [])
         ]}
         sortOptions={[
-          { label: 'Newest Applied', value: 'NEWEST' },
-          { label: 'Oldest Applied', value: 'OLDEST' },
-          { label: 'Fee: High to Low', value: 'FEE_DESC' },
-          { label: 'Application ID', value: 'APP_NO' }
+          { label: t('table.filedDate', 'Newest Applied'), value: 'NEWEST' },
+          { label: t('table.filedDate', 'Oldest Applied'), value: 'OLDEST' },
+          { label: t('table.totalFee', 'Fee: High to Low'), value: 'FEE_DESC' },
+          { label: t('table.applicationNo', 'Application ID'), value: 'APP_NO' }
         ]}
         sortValue={sortOption}
         onSortChange={setSortOption}
@@ -204,15 +206,15 @@ export default function ApplicationsList({
           <table className="data-table min-w-[1000px]">
             <thead>
               <tr>
-                <th>Application ID</th>
-                <th>Instrument & SN</th>
-                <th>Verification Type</th>
-                <th>Applied Date</th>
-                <th>Total Fee</th>
-                <th>Payment Status</th>
-                <th>Application Status</th>
-                <th>Assigned Office / Verifier</th>
-                <th className="text-right">Actions</th>
+                <th>{t('table.applicationNo', 'Application ID')}</th>
+                <th>{t('table.instrumentSN', 'Instrument & SN')}</th>
+                <th>{t('table.verificationType', 'Verification Type')}</th>
+                <th>{t('table.appliedDate', 'Applied Date')}</th>
+                <th>{t('table.totalFee', 'Total Fee')}</th>
+                <th>{t('table.paymentStatus', 'Payment Status')}</th>
+                <th>{t('table.status', 'Application Status')}</th>
+                <th>{t('table.assignedOffice', 'Assigned Office / Verifier')}</th>
+                <th className="text-right">{t('table.actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>

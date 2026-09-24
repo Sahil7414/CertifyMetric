@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 import ApplicationDetailsModal from '../components/ApplicationDetailsModal';
 
@@ -20,6 +21,7 @@ export default function TraderDashboard({
   onViewAllApplications,
   onViewAllCertificates
 }) {
+  const { t } = useTranslation();
   const [selectedDetailApp, setSelectedDetailApp] = useState(null);
 
   const safeInstruments = Array.isArray(instruments) ? instruments : [];
@@ -76,19 +78,19 @@ export default function TraderDashboard({
           <div className="flex items-center gap-2 flex-wrap mb-3">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 text-amber-300 text-xs font-semibold backdrop-blur-xs">
               <span className="material-symbols-outlined text-[14px]">storefront</span>
-              Trader & Owner Dashboard
+              {t('auth.traderRole', 'Trader & Owner Dashboard')}
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30">
               <span className="material-symbols-outlined text-[14px]">verified_user</span>
-              Legal Metrology Compliance
+              {t('common.statutoryFramework', 'Legal Metrology Compliance')}
             </span>
           </div>
 
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
-            Welcome back, {currentUser?.full_name}
+            {t('dashboard.welcome', { name: currentUser?.full_name || 'Trader', defaultValue: `Welcome back, ${currentUser?.full_name || 'Trader'}` })}
           </h1>
           <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-            Overview of your registered commercial instruments, active verification applications, statutory fee payments, and compliance credentials.
+            {t('dashboard.traderSubtitle', 'Overview of your registered commercial instruments, active verification applications, statutory fee payments, and compliance credentials.')}
           </p>
 
           {/* Quick Actions in Header */}
@@ -98,14 +100,14 @@ export default function TraderDashboard({
               className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded-xl text-xs tracking-wide uppercase transition-all shadow-sm flex items-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-sm font-bold">post_add</span>
-              Apply for Verification
+              {t('dashboard.applyVerification', 'Apply for Verification')}
             </button>
             <button
               onClick={onOpenAddModal}
               className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs transition-all border border-white/20 flex items-center gap-2 cursor-pointer"
             >
               <span className="material-symbols-outlined text-sm">add_circle</span>
-              Register Instrument
+              {t('dashboard.registerInstrument', 'Register Instrument')}
             </button>
             {onViewAllApplications && (
               <button
@@ -113,7 +115,7 @@ export default function TraderDashboard({
                 className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl text-xs transition-all border border-white/20 flex items-center gap-2 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-sm">receipt_long</span>
-                View All Applications
+                {t('dashboard.trackApplications', 'View All Applications')}
               </button>
             )}
           </div>
@@ -129,8 +131,8 @@ export default function TraderDashboard({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-rose-950">Application Returned for Action</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-200 text-rose-900 uppercase">Action Required</span>
+                <h3 className="text-sm font-bold text-rose-950">{t('dashboard.returnedApplications', 'Application Returned for Action')}</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-200 text-rose-900 uppercase">{t('dashboard.actionRequiredDesc', 'Action Required')}</span>
               </div>
               <p className="text-xs text-rose-900/90 mt-1">
                 Application <strong className="font-mono">{returnedApps[0].application_no}</strong> ({returnedApps[0].manufacturer} {returnedApps[0].model}) requires resubmission with requested modifications.
@@ -148,14 +150,14 @@ export default function TraderDashboard({
               className="px-3.5 py-2 bg-white hover:bg-rose-100 text-rose-900 border border-rose-300 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1"
             >
               <span className="material-symbols-outlined text-sm">visibility</span>
-              View Details
+              {t('common.details', 'View Details')}
             </button>
             <button
               onClick={() => (onResubmitApplication ? onResubmitApplication(returnedApps[0]) : onSelectApplication(returnedApps[0].id))}
               className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">replay</span>
-              Resubmit Now
+              {t('common.resubmit', 'Resubmit Now')}
             </button>
           </div>
         </div>
@@ -169,8 +171,8 @@ export default function TraderDashboard({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-amber-950">Statutory Re-Verification Notice</h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 uppercase">Action Required</span>
+                <h3 className="text-sm font-bold text-amber-950">{t('status.REVERIFICATION_REQUIRED', 'Statutory Re-Verification Notice')}</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 text-amber-900 uppercase">{t('dashboard.actionRequiredDesc', 'Action Required')}</span>
               </div>
               <p className="text-xs text-amber-900/90 mt-1">
                 Instrument <strong className="font-semibold">{expiring[0].manufacturer} {expiring[0].model} (SN: {expiring[0].serial_number})</strong> verification requires renewal under Section 24.
@@ -182,7 +184,7 @@ export default function TraderDashboard({
             className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-bold shrink-0 transition-all shadow-xs flex items-center gap-1.5 self-end md:self-center cursor-pointer"
           >
             <span className="material-symbols-outlined text-[16px]">published_with_changes</span>
-            Apply for Re-verification
+            {t('application.reverification', 'Apply for Re-verification')}
           </button>
         </div>
       )}
@@ -195,11 +197,11 @@ export default function TraderDashboard({
           className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs hover:border-[#002046]/50 cursor-pointer transition-all hover:shadow-sm group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">Instruments</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">{t('nav.myInstruments', 'Instruments')}</span>
             <span className="material-symbols-outlined text-[#002046] text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform">scale</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-[#002046]">{safeInstruments.length}</div>
-          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">Registered units</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">{t('dashboard.registeredInstrumentsDesc', 'Registered units')}</p>
         </div>
 
         {/* KPI 2: Active Applications */}
@@ -208,11 +210,11 @@ export default function TraderDashboard({
           className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs hover:border-purple-300 cursor-pointer transition-all hover:shadow-sm group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">Active Apps</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">{t('dashboard.pendingApplications', 'Active Apps')}</span>
             <span className="material-symbols-outlined text-purple-600 text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform">hourglass_top</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-purple-600">{activeApps.length}</div>
-          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">Under review</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">{t('dashboard.underReviewDesc', 'Under review')}</p>
         </div>
 
         {/* KPI 3: Pending Payments */}
@@ -221,11 +223,11 @@ export default function TraderDashboard({
           className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs hover:border-amber-300 cursor-pointer transition-all hover:shadow-sm group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">Payments</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">{t('dashboard.pendingPayments', 'Payments')}</span>
             <span className="material-symbols-outlined text-amber-600 text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform">payments</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-amber-600">{pendingPaymentApps.length}</div>
-          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">Fee pending</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">{t('dashboard.feePendingDesc', 'Fee pending')}</p>
         </div>
 
         {/* KPI 4: Under Verification */}
@@ -234,11 +236,11 @@ export default function TraderDashboard({
           className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs hover:border-blue-300 cursor-pointer transition-all hover:shadow-sm group min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">In Testing</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">{t('status.UNDER_VERIFICATION', 'In Testing')}</span>
             <span className="material-symbols-outlined text-blue-600 text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform">fact_check</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-blue-600">{underVerification.length}</div>
-          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">In inspection</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">{t('verification.accuracyTests', 'In inspection')}</p>
         </div>
 
         {/* KPI 5: Certificates Available */}
@@ -247,11 +249,11 @@ export default function TraderDashboard({
           className="bg-white rounded-xl p-3.5 sm:p-4 border border-slate-200 shadow-xs hover:border-emerald-300 cursor-pointer transition-all hover:shadow-sm group col-span-2 sm:col-span-1 min-w-0"
         >
           <div className="flex items-center justify-between text-slate-500 mb-1.5 min-w-0">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">Certificates</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider truncate">{t('nav.certificates', 'Certificates')}</span>
             <span className="material-symbols-outlined text-emerald-600 text-lg sm:text-xl shrink-0 group-hover:scale-110 transition-transform">workspace_premium</span>
           </div>
           <div className="text-xl sm:text-2xl font-extrabold text-emerald-600">{safeCertificates.length || approvedApps.length}</div>
-          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">Issued credentials</p>
+          <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">{t('nav.issuedCertificates', 'Issued credentials')}</p>
         </div>
       </div>
 
@@ -265,8 +267,8 @@ export default function TraderDashboard({
             <span className="material-symbols-outlined text-xl">add_circle</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-primary transition-colors">Register Instrument</h4>
-            <p className="text-[11px] text-slate-500">Add new equipment</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-primary transition-colors">{t('dashboard.registerInstrument', 'Register Instrument')}</h4>
+            <p className="text-[11px] text-slate-500">{t('dashboard.registeredInstrumentsSub', 'Add new equipment')}</p>
           </div>
         </button>
 
@@ -278,8 +280,8 @@ export default function TraderDashboard({
             <span className="material-symbols-outlined text-xl">post_add</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-amber-800 transition-colors">Apply for Verification</h4>
-            <p className="text-[11px] text-slate-500">Submit new application</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-amber-800 transition-colors">{t('dashboard.applyVerification', 'Apply for Verification')}</h4>
+            <p className="text-[11px] text-slate-500">{t('landing.card1Desc', 'Submit new application')}</p>
           </div>
         </button>
 
@@ -291,8 +293,8 @@ export default function TraderDashboard({
             <span className="material-symbols-outlined text-xl">receipt_long</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-purple-800 transition-colors">View Applications</h4>
-            <p className="text-[11px] text-slate-500">Track application status</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-purple-800 transition-colors">{t('nav.myApplications', 'View Applications')}</h4>
+            <p className="text-[11px] text-slate-500">{t('dashboard.recentApplicationsDesc', 'Track application status')}</p>
           </div>
         </button>
 
@@ -304,8 +306,8 @@ export default function TraderDashboard({
             <span className="material-symbols-outlined text-xl">workspace_premium</span>
           </div>
           <div>
-            <h4 className="text-xs font-bold text-slate-900 group-hover:text-emerald-800 transition-colors">View Certificates</h4>
-            <p className="text-[11px] text-slate-500">Download compliance QR</p>
+            <h4 className="text-xs font-bold text-slate-900 group-hover:text-emerald-800 transition-colors">{t('nav.certificates', 'View Certificates')}</h4>
+            <p className="text-[11px] text-slate-500">{t('certificate.qrScanNotice', 'Download compliance QR')}</p>
           </div>
         </button>
       </div>
@@ -314,15 +316,15 @@ export default function TraderDashboard({
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/50">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">Recent Applications</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Quick summary of your latest verification requests</p>
+            <h2 className="text-sm font-bold text-slate-900">{t('dashboard.recentApplications', 'Recent Applications')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{t('dashboard.recentApplicationsDesc', 'Quick summary of your latest verification requests')}</p>
           </div>
           {onViewAllApplications && (
             <button
               onClick={onViewAllApplications}
               className="text-xs font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer"
             >
-              <span>View All ({safeApplications.length})</span>
+              <span>{t('dashboard.viewAll', 'View All')} ({safeApplications.length})</span>
               <span className="material-symbols-outlined text-sm">arrow_forward</span>
             </button>
           )}
@@ -332,12 +334,12 @@ export default function TraderDashboard({
           <table className="w-full text-left text-xs min-w-[640px]">
             <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
-                <th className="px-5 py-3">Application No</th>
-                <th className="px-5 py-3">Instrument</th>
-                <th className="px-5 py-3">Mode</th>
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3 text-right">Action</th>
+                <th className="px-5 py-3">{t('table.applicationNo', 'Application No')}</th>
+                <th className="px-5 py-3">{t('table.instrumentDetails', 'Instrument')}</th>
+                <th className="px-5 py-3">{t('table.typeMode', 'Mode')}</th>
+                <th className="px-5 py-3">{t('table.filedDate', 'Date')}</th>
+                <th className="px-5 py-3">{t('table.status', 'Status')}</th>
+                <th className="px-5 py-3 text-right">{t('table.actions', 'Action')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-slate-700">
@@ -345,7 +347,7 @@ export default function TraderDashboard({
                 <tr>
                   <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
                     <span className="material-symbols-outlined text-2xl mb-1 text-slate-300 block">inbox</span>
-                    No applications submitted yet.
+                    {t('dashboard.noApplications', 'No applications submitted yet.')}
                   </td>
                 </tr>
               ) : (
@@ -359,10 +361,10 @@ export default function TraderDashboard({
                       <span className="font-mono text-[10px] text-slate-500">SN: {app.serial_number}</span>
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {app.verification_mode === 'IN_SITU' ? 'In-situ' : 'Centre'}
+                      {app.verification_mode === 'IN_SITU' ? t('application.inSitu', 'In-situ') : t('application.campCentre', 'Centre')}
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {app.created_at ? new Date(app.created_at).toLocaleDateString() : 'N/A'}
+                      {app.created_at ? new Date(app.created_at).toLocaleDateString() : t('common.na', 'N/A')}
                     </td>
                     <td className="px-5 py-3">
                       <StatusBadge status={app.status} />
@@ -379,7 +381,7 @@ export default function TraderDashboard({
                         className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1"
                       >
                         <span className="material-symbols-outlined text-xs">visibility</span>
-                        <span>Details</span>
+                        <span>{t('common.details', 'Details')}</span>
                       </button>
                     </td>
                   </tr>

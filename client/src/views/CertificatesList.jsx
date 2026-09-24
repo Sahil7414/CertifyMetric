@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
@@ -9,6 +10,7 @@ export default function CertificatesList({
   onOpenQR,
   onVerifyPublicToken
 }) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [sortOption, setSortOption] = useState('NEWEST');
@@ -60,9 +62,9 @@ export default function CertificatesList({
       {/* Page Header */}
       <PageHeader
         icon="workspace_premium"
-        title="Statutory Verification Certificates"
-        subtitle="Official compliance credentials issued under the Legal Metrology Act, 2009"
-        badge={{ text: `${safeCertificates.length} Total Issued`, variant: 'primary' }}
+        title={t('nav.issuedCertificates', 'Statutory Verification Certificates')}
+        subtitle={t('common.statutoryStandards', 'Official compliance credentials issued under the Legal Metrology Act, 2009')}
+        badge={{ text: `${safeCertificates.length} ${t('common.total', 'Total Issued')}`, variant: 'primary' }}
       />
 
       {/* Summary pills */}
@@ -70,12 +72,12 @@ export default function CertificatesList({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
             <span className="material-symbols-outlined text-[14px]">verified</span>
-            {validCount} Valid
+            {validCount} {t('status.VALID', 'Valid')}
           </span>
           {expiringCount > 0 && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
               <span className="material-symbols-outlined text-[14px]">warning</span>
-              {expiringCount} Expiring Soon
+              {expiringCount} {t('status.EXPIRING', 'Expiring Soon')}
             </span>
           )}
         </div>
@@ -85,26 +87,25 @@ export default function CertificatesList({
       <ListToolbar
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        searchPlaceholder="Search by Certificate No, Token, Manufacturer, Model, Serial No..."
+        searchPlaceholder={t('common.searchPlaceholder', 'Search by Certificate No, Token, Manufacturer, Model, Serial No...')}
         filters={[
           {
             id: 'status',
-            label: 'Status',
+            label: t('common.status', 'Status'),
             value: statusFilter,
             onChange: setStatusFilter,
             options: [
-              { label: 'All Certificates', value: 'ALL' },
-              { label: 'Valid / In Force', value: 'VALID' },
-              { label: 'Expiring Soon', value: 'EXPIRING' },
-              { label: 'Expired', value: 'EXPIRED' },
-              { label: 'Suspended / Revoked', value: 'REVOKED' }
+              { label: t('common.all', 'All Certificates'), value: 'ALL' },
+              { label: t('status.VALID', 'Valid / In Force'), value: 'VALID' },
+              { label: t('status.EXPIRING', 'Expiring Soon'), value: 'EXPIRING' },
+              { label: t('status.EXPIRED', 'Expired'), value: 'EXPIRED' }
             ]
           }
         ]}
         sortOptions={[
-          { label: 'Newest Issue Date', value: 'NEWEST' },
-          { label: 'Expiry Date (Soonest)', value: 'EXPIRY' },
-          { label: 'Certificate No', value: 'CERT_NO' }
+          { label: t('certificate.issueDate', 'Newest Issue Date'), value: 'NEWEST' },
+          { label: t('certificate.validUntil', 'Expiry Date (Soonest)'), value: 'EXPIRY' },
+          { label: t('certificate.certificateNumber', 'Certificate No'), value: 'CERT_NO' }
         ]}
         sortValue={sortOption}
         onSortChange={setSortOption}
@@ -119,12 +120,12 @@ export default function CertificatesList({
           <table className="data-table min-w-[700px]">
             <thead>
               <tr>
-                <th>Certificate No</th>
-                <th>Verified Instrument</th>
-                <th>Issue Date</th>
-                <th>Valid Until</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
+                <th>{t('certificate.certificateNumber', 'Certificate No')}</th>
+                <th>{t('dashboard.instrument', 'Verified Instrument')}</th>
+                <th>{t('certificate.issueDate', 'Issue Date')}</th>
+                <th>{t('certificate.validUntil', 'Valid Until')}</th>
+                <th>{t('common.status', 'Status')}</th>
+                <th className="text-right">{t('table.actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>

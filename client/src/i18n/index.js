@@ -31,16 +31,16 @@ export const SUPPORTED_LANGUAGES = [
 
 export const getInitialLanguage = () => {
   try {
-    const savedUser = localStorage.getItem('auth_user');
-    if (savedUser) {
-      const parsed = JSON.parse(savedUser);
-      if (parsed?.language_preference) {
-        return parsed.language_preference;
-      }
-    }
     const localPref = localStorage.getItem('certifymetric_language');
     if (localPref && SUPPORTED_LANGUAGES.some(l => l.code === localPref)) {
       return localPref;
+    }
+    const savedUser = localStorage.getItem('auth_user');
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser);
+      if (parsed?.language_preference && SUPPORTED_LANGUAGES.some(l => l.code === parsed.language_preference)) {
+        return parsed.language_preference;
+      }
     }
   } catch (e) {}
   return 'en';

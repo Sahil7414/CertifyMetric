@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import StatusBadge from '../components/StatusBadge';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
@@ -11,6 +12,7 @@ export default function InstrumentsList({
   onRequestVerification,
   onOpenQR
 }) {
+  const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
@@ -81,9 +83,9 @@ export default function InstrumentsList({
       {/* Page Header */}
       <PageHeader
         icon="scale"
-        title="Registered Instruments Registry"
-        subtitle="Commercial instruments registered for statutory verification under the Legal Metrology Act"
-        badge={{ text: `${safeInstruments.length} Total`, variant: 'primary' }}
+        title={t('dashboard.registeredInstrumentsTitle', 'Registered Instruments Registry')}
+        subtitle={t('dashboard.registeredInstrumentsSub', 'Commercial instruments registered for statutory verification under the Legal Metrology Act')}
+        badge={{ text: `${safeInstruments.length} ${t('common.total', 'Total')}`, variant: 'primary' }}
         actions={
           <>
             {onOpenApplyModal && (
@@ -92,7 +94,7 @@ export default function InstrumentsList({
                 className="btn btn-warning btn-sm"
               >
                 <span className="material-symbols-outlined text-[15px]">post_add</span>
-                Apply for Verification
+                {t('common.apply', 'Apply for Verification')}
               </button>
             )}
             <button
@@ -100,7 +102,7 @@ export default function InstrumentsList({
               className="btn btn-primary btn-sm"
             >
               <span className="material-symbols-outlined text-[15px]">add_circle</span>
-              Register Instrument
+              {t('dashboard.registerInstrument', 'Register Instrument')}
             </button>
           </>
         }
@@ -110,34 +112,34 @@ export default function InstrumentsList({
       <ListToolbar
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        searchPlaceholder="Search by Serial No, Manufacturer, Model, Location, Category..."
+        searchPlaceholder={t('common.searchPlaceholder', 'Search by Serial No, Manufacturer, Model, Location, Category...')}
         filters={[
           {
             id: 'status',
-            label: 'Status',
+            label: t('common.status', 'Status'),
             value: statusFilter,
             onChange: setStatusFilter,
             options: [
-              { label: 'All Statuses', value: 'ALL' },
-              { label: 'Registered', value: 'REGISTERED' },
-              { label: 'Verified / Certified', value: 'VERIFIED' },
-              { label: 'Expiring Soon', value: 'EXPIRING' },
-              { label: 'Expired', value: 'EXPIRED' }
+              { label: t('common.all', 'All Statuses'), value: 'ALL' },
+              { label: t('status.REGISTERED', 'Registered'), value: 'REGISTERED' },
+              { label: t('status.VERIFIED', 'Verified / Certified'), value: 'VERIFIED' },
+              { label: t('status.EXPIRING', 'Expiring Soon'), value: 'EXPIRING' },
+              { label: t('status.EXPIRED', 'Expired'), value: 'EXPIRED' }
             ]
           },
           ...(categoryOptions.length > 2 ? [{
             id: 'category',
-            label: 'Category',
+            label: t('dashboard.category', 'Category'),
             value: categoryFilter,
             onChange: setCategoryFilter,
             options: categoryOptions
           }] : [])
         ]}
         sortOptions={[
-          { label: 'Default Order', value: 'DEFAULT' },
-          { label: 'Manufacturer (A-Z)', value: 'MANUFACTURER' },
-          { label: 'Serial Number', value: 'SERIAL' },
-          { label: 'Status', value: 'STATUS' }
+          { label: t('common.default', 'Default Order'), value: 'DEFAULT' },
+          { label: t('common.manufacturer', 'Manufacturer (A-Z)'), value: 'MANUFACTURER' },
+          { label: t('table.serialNumber', 'Serial Number'), value: 'SERIAL' },
+          { label: t('common.status', 'Status'), value: 'STATUS' }
         ]}
         sortValue={sortOption}
         onSortChange={setSortOption}
@@ -152,13 +154,13 @@ export default function InstrumentsList({
           <table className="data-table min-w-[720px]">
             <thead>
               <tr>
-                <th>Device & Model</th>
-                <th>Serial Number</th>
-                <th>Category</th>
-                <th>Capacity / Range</th>
-                <th>Location</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
+                <th>{t('table.deviceModel', 'Device & Model')}</th>
+                <th>{t('table.serialNumber', 'Serial Number')}</th>
+                <th>{t('dashboard.category', 'Category')}</th>
+                <th>{t('table.capacityInterval', 'Capacity / Range')}</th>
+                <th>{t('table.location', 'Location')}</th>
+                <th>{t('table.status', 'Status')}</th>
+                <th className="text-right">{t('table.actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody>
