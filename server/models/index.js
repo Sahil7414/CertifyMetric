@@ -109,6 +109,7 @@ const instrumentSchema = new Schema({
   latitude: { type: Number },
   longitude: { type: Number },
   status: { type: String, default: 'REGISTERED', index: true },
+  public_token: { type: String, index: true },
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
 
@@ -174,9 +175,11 @@ const verificationSchema = new Schema({
   application_id: { type: String, required: true, unique: true, index: true },
   appointment_id: { type: String, index: true },
   verifier_id: { type: String, required: true, index: true },
+  verification_type: { type: String, default: 'FIELD' }, // 'FIELD' | 'GATC_LAB'
   status: { type: String, default: 'IN_PROGRESS', index: true },
   result: { type: String },
   remarks: { type: String },
+  lab_parameters: { type: Schema.Types.Mixed, default: {} },
   started_at: { type: String },
   completed_at: { type: String },
   created_at: { type: String, default: () => new Date().toISOString() },
@@ -202,6 +205,9 @@ const verificationReadingSchema = new Schema({
   reference_value: { type: Number },
   observed_value: { type: Number },
   unit: { type: String },
+  error_value: { type: Number },
+  permissible_error: { type: Number },
+  calculated_result: { type: String },
   reading_result: { type: String },
   updated_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
@@ -290,6 +296,20 @@ const geoVisitSchema = new Schema({
   updated_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
 
+// 17. Notification
+const notificationSchema = new Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  recipient_user_id: { type: String, required: true, index: true },
+  type: { type: String, required: true, index: true },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  related_application_id: { type: String, index: true },
+  related_certificate_id: { type: String, index: true },
+  read: { type: Boolean, default: false, index: true },
+  metadata: { type: Schema.Types.Mixed, default: {} },
+  created_at: { type: String, default: () => new Date().toISOString() }
+}, { versionKey: false, timestamps: false });
+
 export const User = mongoose.models.User || mongoose.model('User', userSchema, 'users');
 export const UserSession = mongoose.models.UserSession || mongoose.model('UserSession', userSessionSchema, 'user_sessions');
 export const Organization = mongoose.models.Organization || mongoose.model('Organization', organizationSchema, 'organizations');
@@ -306,4 +326,5 @@ export const VerificationEvidence = mongoose.models.VerificationEvidence || mong
 export const Certificate = mongoose.models.Certificate || mongoose.model('Certificate', certificateSchema, 'certificates');
 export const AuditLog = mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema, 'audit_logs');
 export const GeoVisit = mongoose.models.GeoVisit || mongoose.model('GeoVisit', geoVisitSchema, 'geo_visits');
+export const Notification = mongoose.models.Notification || mongoose.model('Notification', notificationSchema, 'notifications');
 

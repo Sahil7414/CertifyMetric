@@ -201,6 +201,14 @@ export const api = {
     if (!r.ok) throw new Error(json.error || 'Failed to record payment');
     return json;
   }),
+  verifyOfflinePayment: (appId) => fetch(`${API_BASE}/applications/${appId}/verify-payment`, {
+    method: 'POST',
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to verify payment');
+    return json;
+  }),
   resubmitApplication: (appId, data) => fetch(`${API_BASE}/applications/${appId}/resubmit`, {
     method: 'POST',
     headers: getHeaders(),
@@ -357,7 +365,11 @@ export const api = {
   }),
 
   // Public Verification (Slice 4)
-  verifyPublicCertificate: (token) => fetch(`${API_BASE}/public/verify/${token}`).then(async r => {
+  verifyPublicCertificate: (token) => fetch(`${API_BASE}/public/verify/${encodeURIComponent(token)}`).then(async r => {
+    const json = await r.json();
+    return { ok: r.ok, httpStatus: r.status, ...json };
+  }),
+  validatePublicInstrument: (token) => fetch(`${API_BASE}/public/instruments/${encodeURIComponent(token)}`).then(async r => {
     const json = await r.json();
     return { ok: r.ok, httpStatus: r.status, ...json };
   }),
@@ -419,7 +431,6 @@ export const api = {
     const data = await r.json();
     return r.ok ? data : null;
   }).catch(() => null),
-
   // GeoVisit API Methods
   getGeoVisitConfig: () => fetch(`${API_BASE}/geovisit/config`, {
     headers: getHeaders()
@@ -504,5 +515,37 @@ export const api = {
   }).then(async r => {
     const data = await r.json();
     return Array.isArray(data) ? data : [];
-  }).catch(() => [])
+  }).catch(() => []),
+
+  getAdminAnalytics: (range = '30d') => fetch(`${API_BASE}/admin/analytics?range=${range}`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to fetch analytics');
+    return json;
+  }),
+
+  // Notifications (MongoDB Backed)
+  getNotifications: () => fetch(`${API_BASE}/notifications`, {
+    headers: getHeaders()
+  }).then(async r => {
+    const data = await r.json();
+    return r.ok ? data : { notifications: [], unread_count: 0 };
+  }).catch(() => ({ notifications: [], unread_count: 0 })),
+  markNotificationRead: (id) => fetch(`${API_BASE}/notifications/${id}/read`, {
+    method: 'PATCH',
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to mark notification read');
+    return json;
+  }),
+  markAllNotificationsRead: () => fetch(`${API_BASE}/notifications/read-all`, {
+    method: 'PATCH',
+    headers: getHeaders()
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Failed to mark all notifications read');
+    return json;
+  })
 };

@@ -20,6 +20,8 @@ export default function InstrumentDetail({
         .then(setInstrument)
         .catch(console.error)
         .finally(() => setLoading(false));
+    } else {
+      setLoading(false);
     }
   }, [instrumentId]);
 

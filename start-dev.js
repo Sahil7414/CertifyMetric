@@ -20,7 +20,7 @@ function isPortInUse(port) {
 
 async function start() {
   console.log('====================================================');
-  console.log('  CertifyMetric — SIH26036 Legal Metrology Platform');
+  console.log('  CertifyMetric — Legal Metrology Platform');
   console.log('====================================================\n');
 
   const backendRunning = await isPortInUse(4000);
