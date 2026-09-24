@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import SplashIntroAnimation from '../components/SplashIntroAnimation';
 
 const ROLES_DATA = [
   {
@@ -101,6 +102,8 @@ export default function PortalLanding({
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-800 font-sans antialiased selection:bg-amber-400 selection:text-[#002046] overflow-x-hidden w-full max-w-full">
+      {/* 2-second Splash Intro Animation whenever home page loads */}
+      <SplashIntroAnimation duration={2000} />
       
       {/* ====================================================
           1. HEADER
@@ -125,8 +128,9 @@ export default function PortalLanding({
         <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 min-w-0 w-full">
           {/* Logo & Portal Name */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-500 text-[#002046] flex items-center justify-center font-black shadow-xs shrink-0">
-              <span className="material-symbols-outlined text-lg sm:text-2xl font-bold">scale</span>
+            {/* Official Logo */}
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden bg-[#001733] border border-amber-400/40 p-1 flex items-center justify-center shadow-xs shrink-0">
+              <img src="/logo.png" alt="CertifyMetric" className="w-full h-full object-contain" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1 sm:gap-2">

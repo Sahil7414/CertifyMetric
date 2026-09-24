@@ -46,8 +46,8 @@ export default function Navbar({
             className="flex items-center gap-3 cursor-pointer"
             onClick={() => onSelectTab(currentRole === 'TRADER' ? 'dashboard' : currentRole === 'AUTHORITY' ? 'authority-dashboard' : currentRole === 'PLATFORM_ADMIN' ? 'admin-dashboard' : 'verifier-dashboard')}
           >
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white shadow-sm">
-              <span className="material-symbols-outlined text-2xl">gavel</span>
+            <div className="w-10 h-10 rounded-lg bg-[#001733] border border-amber-400/40 p-1 flex items-center justify-center shadow-xs shrink-0">
+              <img src="/logo.png" alt="CertifyMetric" className="w-full h-full object-contain" />
             </div>
             <div>
               <div className="flex items-center gap-2">

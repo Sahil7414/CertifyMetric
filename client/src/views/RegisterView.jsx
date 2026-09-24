@@ -183,8 +183,8 @@ export default function RegisterView({ onRegisterSuccess, onBackToLogin }) {
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
         <div className="w-full max-w-xl bg-white rounded-2xl border border-slate-200/90 shadow-xl p-6 sm:p-8 space-y-5 animate-in fade-in zoom-in-95 duration-200">
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl bg-primary text-white flex items-center justify-center mx-auto shadow-sm">
-              <span className="material-symbols-outlined text-2xl">gavel</span>
+            <div className="w-14 h-14 rounded-2xl bg-[#001733] border border-amber-400/40 p-1.5 flex items-center justify-center mx-auto shadow-sm">
+              <img src="/logo.png" alt="CertifyMetric" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="text-xl font-extrabold text-primary tracking-tight">{t('auth.createAccount', 'Create Account')}</h1>

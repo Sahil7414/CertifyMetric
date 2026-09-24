@@ -157,8 +157,8 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
 
           {/* Platform Identity */}
           <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl bg-primary text-white flex items-center justify-center mx-auto shadow-sm">
-              <span className="material-symbols-outlined text-2xl">gavel</span>
+            <div className="w-14 h-14 rounded-2xl bg-[#001733] border border-amber-400/40 p-1.5 flex items-center justify-center mx-auto shadow-sm">
+              <img src="/logo.png" alt="CertifyMetric" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className="text-xl font-extrabold text-primary tracking-tight">CertifyMetric</h1>
