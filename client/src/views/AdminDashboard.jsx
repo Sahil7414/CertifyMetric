@@ -2,6 +2,95 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 import GeoVisitMap from '../components/GeoVisitMap';
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip
+} from 'recharts';
+
+const STATUS_CONFIG = {
+  SUBMITTED: { label: 'Submitted', color: '#f59e0b', gradient: ['#f59e0b', '#d97706'], bg: 'bg-amber-500', text: 'text-amber-700', border: 'border-amber-200', icon: 'send' },
+  UNDER_REVIEW: { label: 'Under Review', color: '#0284c7', gradient: ['#0284c7', '#0369a1'], bg: 'bg-sky-500', text: 'text-sky-700', border: 'border-sky-200', icon: 'rate_review' },
+  ASSIGNED: { label: 'Assigned / Scheduled', color: '#8b5cf6', gradient: ['#8b5cf6', '#6d28d9'], bg: 'bg-purple-500', text: 'text-purple-700', border: 'border-purple-200', icon: 'event' },
+  IN_VERIFICATION: { label: 'In Progress', color: '#6366f1', gradient: ['#6366f1', '#4338ca'], bg: 'bg-indigo-500', text: 'text-indigo-700', border: 'border-indigo-200', icon: 'schedule' },
+  REPORT_SUBMITTED: { label: 'Report Submitted', color: '#0d9488', gradient: ['#0d9488', '#0f766e'], bg: 'bg-teal-500', text: 'text-teal-700', border: 'border-teal-200', icon: 'description' },
+  APPROVED: { label: 'Approved', color: '#10b981', gradient: ['#10b981', '#047857'], bg: 'bg-emerald-500', text: 'text-emerald-700', border: 'border-emerald-200', icon: 'check_circle' },
+  CERTIFICATE_ISSUED: { label: 'Certified', color: '#059669', gradient: ['#059669', '#065f46'], bg: 'bg-emerald-600', text: 'text-emerald-800', border: 'border-emerald-300', icon: 'verified' },
+  RETURNED: { label: 'Returned', color: '#d97706', gradient: ['#d97706', '#b45309'], bg: 'bg-amber-600', text: 'text-amber-800', border: 'border-amber-300', icon: 'reply' },
+  REJECTED: { label: 'Rejected', color: '#f43f5e', gradient: ['#f43f5e', '#be123c'], bg: 'bg-rose-500', text: 'text-rose-700', border: 'border-rose-200', icon: 'cancel' }
+};
+
+const CERT_COLORS = ['#10b981', '#06b6d4', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1'];
+
+function CustomTrendTooltip({ active, payload, label }) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-[#001733]/95 backdrop-blur-md text-white px-3.5 py-2.5 rounded-xl shadow-xl border border-slate-700/60 text-xs pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center gap-1.5 text-slate-300 text-[11px] mb-1 font-medium">
+          <span className="material-symbols-outlined text-[13px] text-amber-400">calendar_today</span>
+          <span>{data.fullDate || label}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping shrink-0" />
+          <span className="text-slate-300">Filing Volume:</span>
+          <span className="text-sm font-extrabold text-cyan-300 font-mono">{payload[0].value}</span>
+          <span className="text-[10px] text-slate-400">file(s)</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function CustomStatusTooltip({ active, payload }) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-[#001733]/95 backdrop-blur-md text-white px-3.5 py-2 rounded-xl shadow-xl border border-slate-700/60 text-xs pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: data.color }} />
+          <span className="font-bold text-white">{data.label}</span>
+        </div>
+        <div className="text-[11px] text-slate-300 mt-1 font-mono flex items-center justify-between gap-3">
+          <span>Count: <strong className="text-amber-300">{data.count}</strong></span>
+          <span className="text-slate-400">({data.pct}%)</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function CustomCertTooltip({ active, payload }) {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-[#001733]/95 backdrop-blur-md text-white px-3.5 py-2.5 rounded-xl shadow-xl border border-slate-700/60 text-xs pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+        <div className="flex items-center gap-1.5 text-slate-300 text-[11px] mb-1 font-medium">
+          <span className="material-symbols-outlined text-[13px] text-emerald-400">verified</span>
+          <span>{data.fullDate || data.date}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+          <span className="text-slate-300">Issued:</span>
+          <span className="text-sm font-extrabold text-emerald-300 font-mono">{data.count}</span>
+          <span className="text-[10px] text-slate-400">credential(s)</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
 
 export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigateTab }) {
   const [loading, setLoading] = useState(true);
@@ -23,6 +112,12 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
   const [chartViewApps, setChartViewApps] = useState('line');
   // Chart view toggle: 'pie' | 'bar'
   const [chartViewCerts, setChartViewCerts] = useState('pie');
+  // Chart view toggle for Status: 'donut' | 'bars'
+  const [chartViewStatus, setChartViewStatus] = useState('donut');
+  // Hovered status for interactive donut & list
+  const [hoveredStatus, setHoveredStatus] = useState(null);
+  // Hovered slice for certificates donut
+  const [hoveredCertSlice, setHoveredCertSlice] = useState(null);
 
   // Quick Add User Modal state
   const [showQuickAddUser, setShowQuickAddUser] = useState(false);
@@ -130,23 +225,58 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
 
   // Real Application Status Distribution
   const appStatusRaw = analyticsData?.applicationsByStatus || {};
-  const statusItems = useMemo(() => [
-    { key: 'SUBMITTED', label: 'Submitted', count: appStatusRaw.SUBMITTED || 0, color: 'bg-amber-500', text: 'text-amber-700' },
-    { key: 'UNDER_REVIEW', label: 'Under Review', count: appStatusRaw.UNDER_REVIEW || 0, color: 'bg-blue-500', text: 'text-blue-700' },
-    { key: 'ASSIGNED', label: 'Assigned / Scheduled', count: appStatusRaw.ASSIGNED || 0, color: 'bg-purple-500', text: 'text-purple-700' },
-    { key: 'IN_VERIFICATION', label: 'In Progress', count: appStatusRaw.IN_VERIFICATION || 0, color: 'bg-indigo-500', text: 'text-indigo-700' },
-    { key: 'REPORT_SUBMITTED', label: 'Report Submitted', count: appStatusRaw.REPORT_SUBMITTED || 0, color: 'bg-teal-500', text: 'text-teal-700' },
-    { key: 'APPROVED', label: 'Approved', count: appStatusRaw.APPROVED || 0, color: 'bg-emerald-500', text: 'text-emerald-700' },
-    { key: 'CERTIFICATE_ISSUED', label: 'Certified', count: appStatusRaw.CERTIFICATE_ISSUED || 0, color: 'bg-emerald-600', text: 'text-emerald-800' },
-    { key: 'RETURNED', label: 'Returned', count: appStatusRaw.RETURNED || 0, color: 'bg-amber-600', text: 'text-amber-800' },
-    { key: 'REJECTED', label: 'Rejected', count: appStatusRaw.REJECTED || 0, color: 'bg-rose-500', text: 'text-rose-700' }
-  ], [appStatusRaw]);
+  const statusItems = useMemo(() => {
+    const keys = ['SUBMITTED', 'UNDER_REVIEW', 'ASSIGNED', 'IN_VERIFICATION', 'REPORT_SUBMITTED', 'APPROVED', 'CERTIFICATE_ISSUED', 'RETURNED', 'REJECTED'];
+    return keys.map((k) => {
+      const cfg = STATUS_CONFIG[k] || { label: k, color: '#64748b', gradient: ['#64748b', '#475569'], bg: 'bg-slate-500', text: 'text-slate-700', border: 'border-slate-200', icon: 'info' };
+      const count = appStatusRaw[k] || 0;
+      return {
+        key: k,
+        label: cfg.label,
+        count,
+        color: cfg.color,
+        gradient: cfg.gradient,
+        bg: cfg.bg,
+        text: cfg.text,
+        border: cfg.border,
+        icon: cfg.icon
+      };
+    });
+  }, [appStatusRaw]);
 
   const totalStatusApps = useMemo(() => statusItems.reduce((acc, s) => acc + s.count, 0), [statusItems]);
+
+  const activeStatusItems = useMemo(() => {
+    const filtered = statusItems.filter((s) => s.count > 0);
+    return filtered.map((s) => ({
+      ...s,
+      pct: totalStatusApps > 0 ? Math.round((s.count / totalStatusApps) * 100) : 0
+    }));
+  }, [statusItems, totalStatusApps]);
 
   // Real Applications Over Time
   const appsTimeline = useMemo(() => Array.isArray(analyticsData?.applicationsOverTime) ? analyticsData.applicationsOverTime : [], [analyticsData]);
   const maxAppsInTimeline = useMemo(() => Math.max(...appsTimeline.map(d => d.count), 1), [appsTimeline]);
+
+  const formattedAppsTimeline = useMemo(() => {
+    return appsTimeline.map((item) => {
+      let label = item.date;
+      try {
+        const parts = item.date.split('-');
+        if (parts.length === 3) {
+          const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+      } catch {
+        label = item.date.slice(5);
+      }
+      return {
+        ...item,
+        label,
+        fullDate: item.date
+      };
+    });
+  }, [appsTimeline]);
 
   // Real Verification Results
   const verifOutcomes = analyticsData?.verificationOutcomes || { PASS: 0, FAIL: 0, PENDING: 0, total: 0 };
@@ -157,6 +287,29 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
   // Real Certificates Over Time
   const certsTimeline = useMemo(() => Array.isArray(analyticsData?.certificatesOverTime) ? analyticsData.certificatesOverTime : [], [analyticsData]);
   const maxCertsInTimeline = useMemo(() => Math.max(...certsTimeline.map(d => d.count), 1), [certsTimeline]);
+
+  const formattedCertsTimeline = useMemo(() => {
+    const total = certsTimeline.reduce((acc, d) => acc + d.count, 0) || totalCertificatesCount || 1;
+    return certsTimeline.map((item, idx) => {
+      let label = item.date;
+      try {
+        const parts = item.date.split('-');
+        if (parts.length === 3) {
+          const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        }
+      } catch {
+        label = item.date.slice(5);
+      }
+      return {
+        ...item,
+        label,
+        fullDate: item.date,
+        pct: Math.round((item.count / total) * 100),
+        color: CERT_COLORS[idx % CERT_COLORS.length]
+      };
+    });
+  }, [certsTimeline, totalCertificatesCount]);
 
   if (loading && !analyticsData) {
     return (
@@ -454,7 +607,7 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
       {/* 4. REAL OPERATIONAL GRAPHS (Row 1: Application Trends & Status Breakdown) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Graph 1: Application Filing Trend */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
           <div>
             <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2.5">
               <div>
@@ -465,212 +618,307 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
                 <p className="text-[11px] text-slate-500">Real statutory filing volume timeline from MongoDB</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 shadow-2xs">
                   {totalApplicationsCount} Total Files
                 </span>
                 {/* Chart type toggle */}
                 <div className="flex rounded-full border border-slate-200 overflow-hidden text-[10px] font-bold p-0.5 bg-slate-50">
                   <button
                     onClick={() => setChartViewApps('line')}
-                    title="Line Graph"
-                    className={`px-2.5 py-1 rounded-full flex items-center gap-0.5 transition-colors cursor-pointer ${
+                    title="Smooth Area Curve"
+                    className={`px-2.5 py-1 rounded-full flex items-center gap-1 transition-all cursor-pointer ${
                       chartViewApps === 'line' ? 'bg-[#002046] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[13px]">show_chart</span>
+                    <span>Curve</span>
                   </button>
                   <button
                     onClick={() => setChartViewApps('bar')}
                     title="Vertical Bar Chart"
-                    className={`px-2.5 py-1 rounded-full flex items-center gap-0.5 transition-colors cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-full flex items-center gap-1 transition-all cursor-pointer ${
                       chartViewApps === 'bar' ? 'bg-[#002046] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[13px]">bar_chart</span>
+                    <span>Bar</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {appsTimeline.length === 0 ? (
-              <div className="h-44 flex flex-col items-center justify-center text-slate-400 text-xs">
+            {formattedAppsTimeline.length === 0 ? (
+              <div className="h-52 flex flex-col items-center justify-center text-slate-400 text-xs">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300">timeline</span>
                 <span>No application trend records for this range.</span>
               </div>
             ) : chartViewApps === 'line' ? (
-              // SVG Line Graph
-              (() => {
-                const width = 500;
-                const height = 160;
-                const padding = { top: 25, bottom: 30, left: 40, right: 25 };
-                const graphWidth = width - padding.left - padding.right;
-                const graphHeight = height - padding.top - padding.bottom;
-
-                const points = appsTimeline.map((item, idx) => {
-                  const x = appsTimeline.length === 1 
-                    ? padding.left + graphWidth / 2 
-                    : padding.left + (idx / (appsTimeline.length - 1)) * graphWidth;
-                  const yRatio = maxAppsInTimeline > 0 ? item.count / maxAppsInTimeline : 0;
-                  const y = padding.top + graphHeight - (yRatio * graphHeight);
-                  return { x, y, date: item.date, count: item.count };
-                });
-
-                const lineD = points.length === 1
-                  ? `M ${padding.left},${points[0].y} L ${width - padding.right},${points[0].y}`
-                  : `M ${points.map(p => `${p.x},${p.y}`).join(' L ')}`;
-
-                const areaD = points.length === 1
-                  ? `M ${padding.left},${height - padding.bottom} L ${padding.left},${points[0].y} L ${width - padding.right},${points[0].y} L ${width - padding.right},${height - padding.bottom} Z`
-                  : `M ${points[0].x},${height - padding.bottom} L ${points.map(p => `${p.x},${p.y}`).join(' L ')} L ${points[points.length - 1].x},${height - padding.bottom} Z`;
-
-                return (
-                  <div className="h-44 w-full relative pt-1">
-                    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
-                      <defs>
-                        <linearGradient id="appsLineGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#0284c7" stopOpacity="0.4" />
-                          <stop offset="100%" stopColor="#002046" stopOpacity="0.05" />
-                        </linearGradient>
-                      </defs>
-
-                      {/* Grid lines */}
-                      {[0, 0.5, 1].map((ratio, i) => {
-                        const y = padding.top + graphHeight * (1 - ratio);
-                        const val = Math.round(maxAppsInTimeline * ratio);
-                        return (
-                          <g key={i}>
-                            <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} stroke="#e2e8f0" strokeDasharray="3 3" />
-                            <text x={padding.left - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#94a3b8" fontFamily="monospace">
-                              {val}
-                            </text>
-                          </g>
-                        );
-                      })}
-
-                      {/* Area Fill */}
-                      <path d={areaD} fill="url(#appsLineGradient)" />
-
-                      {/* Line */}
-                      <path d={lineD} fill="none" stroke="#002046" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-
-                      {/* Data Dots */}
-                      {points.map((p, i) => (
-                        <g key={i} className="group cursor-pointer">
-                          <circle cx={p.x} cy={p.y} r="5" fill="#002046" stroke="#ffffff" strokeWidth="2.5" className="transition-all group-hover:r-7" />
-                          <text x={p.x} y={p.y - 9} textAnchor="middle" fontSize="10" fontWeight="bold" fill="#002046" fontFamily="monospace">
-                            {p.count}
-                          </text>
-                          <text x={p.x} y={height - 8} textAnchor="middle" fontSize="9" fill="#64748b" fontFamily="monospace">
-                            {p.date.slice(5)}
-                          </text>
-                        </g>
-                      ))}
-                    </svg>
-                  </div>
-                );
-              })()
-            ) : chartViewApps === 'bar' ? (
-              // Vertical bar chart
-              <div className="h-44 flex items-end gap-2 pt-6 pb-2 px-1">
-                {appsTimeline.map((item) => {
-                  const pct = Math.max(12, Math.round((item.count / maxAppsInTimeline) * 100));
-                  return (
-                    <div key={item.date} className="h-full flex-1 flex flex-col justify-end items-center gap-1.5 group min-w-0">
-                      <div className="text-[10px] font-mono font-bold text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {item.count}
-                      </div>
-                      <div
-                        style={{ height: `${pct}%` }}
-                        className="w-full max-w-[28px] bg-gradient-to-t from-[#002046] to-blue-500 rounded-t-md transition-all group-hover:brightness-110"
-                        title={`${item.date}: ${item.count} application(s)`}
-                      />
-                      <span className="text-[9px] font-mono text-slate-400 truncate w-full text-center">
-                        {item.date.slice(5)}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className="h-52 w-full pt-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={formattedAppsTimeline} margin={{ top: 15, right: 15, left: -15, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="appsTrendGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0284c7" stopOpacity={0.45} />
+                        <stop offset="60%" stopColor="#002046" stopOpacity={0.12} />
+                        <stop offset="100%" stopColor="#002046" stopOpacity={0.0} />
+                      </linearGradient>
+                      <filter id="glowLine" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#0284c7" floodOpacity={0.35} />
+                      </filter>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      stroke="#94a3b8"
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={{ stroke: '#e2e8f0' }}
+                    />
+                    <YAxis
+                      stroke="#94a3b8"
+                      fontSize={10}
+                      tickLine={false}
+                      axisLine={false}
+                      allowDecimals={false}
+                      domain={[0, (dataMax) => Math.max(dataMax + 1, 3)]}
+                    />
+                    <RechartsTooltip content={<CustomTrendTooltip />} cursor={{ stroke: '#0284c7', strokeWidth: 1.5, strokeDasharray: '4 4' }} />
+                    <Area
+                      type="monotone"
+                      dataKey="count"
+                      stroke="#002046"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#appsTrendGradient)"
+                      activeDot={{
+                        r: 6,
+                        fill: '#0284c7',
+                        stroke: '#ffffff',
+                        strokeWidth: 3,
+                        className: 'filter drop-shadow-md'
+                      }}
+                      isAnimationActive={true}
+                      animationDuration={1300}
+                      animationEasing="ease-in-out"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
             ) : (
-              // Horizontal bar chart
-              <div className="space-y-1.5 py-1 max-h-44 overflow-y-auto pr-1">
-                {appsTimeline.map((item) => {
-                  const pct = Math.max(4, Math.round((item.count / maxAppsInTimeline) * 100));
-                  return (
-                    <div key={item.date} className="flex items-center gap-2 group">
-                      <span className="text-[9px] font-mono text-slate-500 w-10 shrink-0 text-right">{item.date.slice(5)}</span>
-                      <div className="flex-1 h-5 bg-slate-100 rounded overflow-hidden">
-                        <div
-                          style={{ width: `${pct}%` }}
-                          className="h-full bg-gradient-to-r from-[#002046] to-blue-500 rounded transition-all duration-500 group-hover:brightness-110"
-                          title={`${item.date}: ${item.count} application(s)`}
-                        />
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-slate-700 w-5 shrink-0">{item.count}</span>
-                    </div>
-                  );
-                })}
+              <div className="h-52 w-full pt-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={formattedAppsTimeline} margin={{ top: 15, right: 15, left: -15, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="appsBarGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#0284c7" />
+                        <stop offset="100%" stopColor="#002046" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="label" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
+                    <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} domain={[0, (dataMax) => Math.max(dataMax + 1, 3)]} />
+                    <RechartsTooltip content={<CustomTrendTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.6)' }} />
+                    <Bar
+                      dataKey="count"
+                      fill="url(#appsBarGrad)"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={36}
+                      isAnimationActive={true}
+                      animationDuration={1100}
+                      animationEasing="ease-out"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             )}
           </div>
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Aggregated by submission date</span>
-            <button onClick={() => navigateTo('applications')} className="font-semibold text-primary hover:underline">
-              View Applications Registry →
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Live telemetry feed from MongoDB
+            </span>
+            <button onClick={() => navigateTo('applications')} className="font-semibold text-primary hover:underline flex items-center gap-0.5">
+              <span>View Registry</span>
+              <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
             </button>
           </div>
         </div>
 
         {/* Graph 2: Application Status Breakdown */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
           <div>
             <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2.5">
               <div>
                 <h3 className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-amber-500 text-base">pie_chart</span>
+                  <span className="material-symbols-outlined text-amber-500 text-base">donut_large</span>
                   Application Status Distribution
                 </h3>
                 <p className="text-[11px] text-slate-500">Live operational lifecycle state distribution</p>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300">
-                {totalStatusApps} Active Cases
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs">
+                  {totalStatusApps} Active Cases
+                </span>
+                <div className="flex rounded-full border border-slate-200 overflow-hidden text-[10px] font-bold p-0.5 bg-slate-50">
+                  <button
+                    onClick={() => setChartViewStatus('donut')}
+                    title="Donut Distribution"
+                    className={`px-2 py-1 rounded-full flex items-center gap-1 transition-all cursor-pointer ${
+                      chartViewStatus === 'donut' ? 'bg-amber-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">pie_chart</span>
+                    <span>Donut</span>
+                  </button>
+                  <button
+                    onClick={() => setChartViewStatus('bars')}
+                    title="Progress Trackers"
+                    className={`px-2 py-1 rounded-full flex items-center gap-1 transition-all cursor-pointer ${
+                      chartViewStatus === 'bars' ? 'bg-amber-600 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">view_stream</span>
+                    <span>Bars</span>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {totalStatusApps === 0 ? (
-              <div className="h-44 flex flex-col items-center justify-center text-slate-400 text-xs">
+              <div className="h-52 flex flex-col items-center justify-center text-slate-400 text-xs">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300">donut_large</span>
                 <span>No active verification applications filed yet.</span>
               </div>
-            ) : (
-              <div className="space-y-2 py-1 max-h-44 overflow-y-auto pr-1">
-                {statusItems.filter(s => s.count > 0).map((s) => {
-                  const pct = Math.round((s.count / totalStatusApps) * 100);
-                  return (
-                    <div key={s.key} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-slate-800">{s.label}</span>
-                        <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <strong className={s.text}>{s.count}</strong>
-                          <span className="text-slate-400">({pct}%)</span>
+            ) : chartViewStatus === 'donut' ? (
+              <div className="h-52 flex items-center gap-3 py-1">
+                {/* Donut Chart with Interactive Center */}
+                <div className="w-44 h-48 shrink-0 relative flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={activeStatusItems}
+                        dataKey="count"
+                        nameKey="label"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={46}
+                        outerRadius={hoveredStatus ? 68 : 64}
+                        paddingAngle={3}
+                        cornerRadius={4}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationEasing="ease-out"
+                        onMouseEnter={(_, index) => setHoveredStatus(activeStatusItems[index])}
+                        onMouseLeave={() => setHoveredStatus(null)}
+                      >
+                        {activeStatusItems.map((entry) => (
+                          <Cell
+                            key={entry.key}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={hoveredStatus?.key === entry.key ? 3 : 1.5}
+                            className="transition-all duration-300 cursor-pointer hover:opacity-90"
+                          />
+                        ))}
+                      </Pie>
+                      <RechartsTooltip content={<CustomStatusTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  {/* Interactive Dynamic Center Display */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none transition-all duration-200 px-1">
+                    {hoveredStatus ? (
+                      <div className="animate-in fade-in zoom-in-90 duration-150">
+                        <span className="text-lg font-black block leading-none" style={{ color: hoveredStatus.color }}>
+                          {hoveredStatus.count}
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-600 block uppercase truncate max-w-[70px] mt-0.5">
+                          {hoveredStatus.label}
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 block font-semibold">
+                          {hoveredStatus.pct}%
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xl font-black text-[#002046] block leading-none">
+                          {totalStatusApps}
+                        </span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mt-0.5">
+                          Active Cases
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Interactive Status List */}
+                <div className="flex-1 space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {activeStatusItems.map((s) => {
+                    const isHovered = hoveredStatus?.key === s.key;
+                    return (
+                      <div
+                        key={s.key}
+                        onMouseEnter={() => setHoveredStatus(s)}
+                        onMouseLeave={() => setHoveredStatus(null)}
+                        className={`p-1.5 rounded-xl border transition-all cursor-pointer flex flex-col gap-1 ${
+                          isHovered ? 'bg-slate-50 border-slate-300 shadow-2xs scale-[1.02]' : 'border-slate-100 hover:bg-slate-50/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: s.color }} />
+                            <span className="font-bold text-slate-800 text-[11px] truncate">{s.label}</span>
+                          </div>
+                          <div className="flex items-center gap-1 font-mono text-[11px] shrink-0">
+                            <strong className={s.text}>{s.count}</strong>
+                            <span className="text-slate-400 text-[10px]">({s.pct}%)</span>
+                          </div>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            style={{
+                              width: `${s.pct}%`,
+                              backgroundColor: s.color
+                            }}
+                            className="h-full rounded-full transition-all duration-700"
+                          />
                         </div>
                       </div>
-                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          style={{ width: `${pct}%` }}
-                          className={`h-full ${s.color} rounded-full transition-all duration-500`}
-                        />
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2.5 py-1.5 max-h-52 overflow-y-auto pr-1">
+                {activeStatusItems.map((s) => (
+                  <div key={s.key} className="space-y-1 group">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-sm text-slate-500">{s.icon}</span>
+                        <span className="font-semibold text-slate-800">{s.label}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                        <strong className={s.text}>{s.count}</strong>
+                        <span className="text-slate-400">({s.pct}%)</span>
                       </div>
                     </div>
-                  );
-                })}
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${s.pct}%`, backgroundColor: s.color }}
+                        className="h-full rounded-full transition-all duration-700 group-hover:brightness-110"
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
             <span>Direct state transition metrics</span>
-            <button onClick={() => navigateTo('applications')} className="font-semibold text-primary hover:underline">
-              Inspect Case Files →
+            <button onClick={() => navigateTo('applications')} className="font-semibold text-primary hover:underline flex items-center gap-0.5">
+              <span>Inspect Case Files</span>
+              <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
             </button>
           </div>
         </div>
@@ -679,7 +927,7 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
       {/* 5. REAL OPERATIONAL GRAPHS (Row 2: Verification Outcomes & Certificate Timeline) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Graph 3: Verification Outcomes */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
           <div>
             <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2.5">
               <div>
@@ -689,59 +937,123 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
                 </h3>
                 <p className="text-[11px] text-slate-500">Compliance outcomes against Schedule IV MPE limits</p>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 shadow-2xs">
                 {totalVerifs} Inspections
               </span>
             </div>
 
             {totalVerifs === 0 ? (
-              <div className="h-40 flex flex-col items-center justify-center text-slate-400 text-xs">
+              <div className="h-52 flex flex-col items-center justify-center text-slate-400 text-xs">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300">verified_user</span>
                 <span>No verification inspection records completed yet.</span>
               </div>
             ) : (
-              <div className="space-y-4 py-2">
-                <div className="grid grid-cols-3 gap-2.5 text-center">
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-                    <span className="text-[10px] font-bold uppercase text-emerald-800 block">Pass (Compliant)</span>
-                    <span className="text-xl font-extrabold text-emerald-700">{verifOutcomes.PASS}</span>
-                    <span className="text-[10px] text-emerald-600 block mt-0.5">{passRate}% pass rate</span>
+              <div className="space-y-4 py-1">
+                {/* Hero Compliance Dial + Score Header */}
+                <div className="flex items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50/50 to-blue-50 border border-emerald-200/80 shadow-2xs">
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9.5px] font-extrabold uppercase tracking-wide shadow-2xs">
+                      <span className="material-symbols-outlined text-xs">shield</span>
+                      <span>Schedule IV Compliant</span>
+                    </div>
+                    <div className="text-sm font-extrabold text-slate-900 leading-tight">
+                      Statutory Pass Rate: <span className="text-emerald-700 font-mono text-base">{passRate}%</span>
+                    </div>
+                    <p className="text-[10px] text-slate-600 leading-snug">
+                      Verified within Legal Metrology maximum permissible error thresholds
+                    </p>
                   </div>
 
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
-                    <span className="text-[10px] font-bold uppercase text-rose-800 block">Fail (Deficient)</span>
-                    <span className="text-xl font-extrabold text-rose-700">{verifOutcomes.FAIL}</span>
-                    <span className="text-[10px] text-rose-600 block mt-0.5">{failRate}% rejection</span>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
-                    <span className="text-[10px] font-bold uppercase text-blue-800 block">In Progress</span>
-                    <span className="text-xl font-extrabold text-blue-700">{verifOutcomes.PENDING}</span>
-                    <span className="text-[10px] text-blue-600 block mt-0.5">Under testing</span>
+                  {/* Circular Compliance Meter */}
+                  <div className="w-16 h-16 shrink-0 relative flex items-center justify-center">
+                    <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                      <path
+                        className="text-slate-200"
+                        strokeWidth="3.5"
+                        stroke="currentColor"
+                        fill="none"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                      <path
+                        className="text-emerald-500 transition-all duration-1000 ease-out"
+                        strokeDasharray={`${passRate}, 100`}
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                        stroke="currentColor"
+                        fill="none"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xs font-black text-emerald-800 font-mono">{passRate}%</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
+                {/* 3 Outcome Cards */}
+                <div className="grid grid-cols-3 gap-2.5 text-center">
+                  <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/90 shadow-2xs hover:shadow-xs hover:border-emerald-400 transition-all group">
+                    <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase text-emerald-800 mb-0.5">
+                      <span className="material-symbols-outlined text-xs group-hover:scale-110 transition-transform">check_circle</span>
+                      <span>Pass</span>
+                    </div>
+                    <span className="text-2xl font-black text-emerald-700 font-mono block leading-none my-1">{verifOutcomes.PASS}</span>
+                    <span className="text-[10px] text-emerald-700 font-semibold block">{passRate}% compliant</span>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-rose-50/70 border border-rose-200/90 shadow-2xs hover:shadow-xs hover:border-rose-400 transition-all group">
+                    <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase text-rose-800 mb-0.5">
+                      <span className="material-symbols-outlined text-xs group-hover:scale-110 transition-transform">error</span>
+                      <span>Fail</span>
+                    </div>
+                    <span className="text-2xl font-black text-rose-700 font-mono block leading-none my-1">{verifOutcomes.FAIL}</span>
+                    <span className="text-[10px] text-rose-700 font-semibold block">{failRate}% rejected</span>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200/90 shadow-2xs hover:shadow-xs hover:border-blue-400 transition-all group">
+                    <div className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase text-blue-800 mb-0.5">
+                      <span className="material-symbols-outlined text-xs group-hover:scale-110 transition-transform">hourglass_top</span>
+                      <span>Testing</span>
+                    </div>
+                    <span className="text-2xl font-black text-blue-700 font-mono block leading-none my-1">{verifOutcomes.PENDING}</span>
+                    <span className="text-[10px] text-blue-700 font-semibold block">Under testing</span>
+                  </div>
+                </div>
+
+                {/* Multi-segment MPE bar */}
+                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
                   {verifOutcomes.PASS > 0 && (
-                    <div style={{ width: `${(verifOutcomes.PASS / totalVerifs) * 100}%` }} className="bg-emerald-500 h-full" title={`Pass: ${verifOutcomes.PASS}`} />
+                    <div
+                      style={{ width: `${(verifOutcomes.PASS / totalVerifs) * 100}%` }}
+                      className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-700"
+                      title={`Pass: ${verifOutcomes.PASS}`}
+                    />
                   )}
                   {verifOutcomes.FAIL > 0 && (
-                    <div style={{ width: `${(verifOutcomes.FAIL / totalVerifs) * 100}%` }} className="bg-rose-500 h-full" title={`Fail: ${verifOutcomes.FAIL}`} />
+                    <div
+                      style={{ width: `${(verifOutcomes.FAIL / totalVerifs) * 100}%` }}
+                      className="bg-gradient-to-r from-rose-500 to-red-600 h-full transition-all duration-700"
+                      title={`Fail: ${verifOutcomes.FAIL}`}
+                    />
                   )}
                   {verifOutcomes.PENDING > 0 && (
-                    <div style={{ width: `${(verifOutcomes.PENDING / totalVerifs) * 100}%` }} className="bg-blue-400 h-full" title={`Pending: ${verifOutcomes.PENDING}`} />
+                    <div
+                      style={{ width: `${(verifOutcomes.PENDING / totalVerifs) * 100}%` }}
+                      className="bg-gradient-to-r from-blue-400 to-indigo-500 h-full transition-all duration-700"
+                      title={`Pending: ${verifOutcomes.PENDING}`}
+                    />
                   )}
                 </div>
               </div>
             )}
           </div>
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
             <span>Evaluated according to Legal Metrology General Rules, 2011</span>
           </div>
         </div>
 
         {/* Graph 4: Certificates Issued Timeline */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col justify-between">
+        <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs flex flex-col justify-between hover:shadow-md transition-shadow">
           <div>
             <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2.5">
               <div>
@@ -752,168 +1064,167 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
                 <p className="text-[11px] text-slate-500">Statutory credentials with unique QR verification tokens</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
                   {totalCertificatesCount} Issued
                 </span>
                 {/* Chart type toggle */}
                 <div className="flex rounded-full border border-slate-200 overflow-hidden text-[10px] font-bold p-0.5 bg-slate-50">
                   <button
                     onClick={() => setChartViewCerts('pie')}
-                    title="Pie / Donut Chart"
-                    className={`px-2.5 py-1 rounded-full flex items-center gap-0.5 transition-colors cursor-pointer ${
+                    title="Donut Distribution"
+                    className={`px-2 py-1 rounded-full flex items-center gap-1 transition-all cursor-pointer ${
                       chartViewCerts === 'pie' ? 'bg-emerald-700 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[13px]">pie_chart</span>
+                    <span>Donut</span>
                   </button>
                   <button
                     onClick={() => setChartViewCerts('bar')}
-                    title="Vertical Bar Chart"
-                    className={`px-2.5 py-1 rounded-full flex items-center gap-0.5 transition-colors cursor-pointer ${
+                    title="Issuance Velocity"
+                    className={`px-2 py-1 rounded-full flex items-center gap-1 transition-all cursor-pointer ${
                       chartViewCerts === 'bar' ? 'bg-emerald-700 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     <span className="material-symbols-outlined text-[13px]">bar_chart</span>
+                    <span>Velocity</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            {certsTimeline.length === 0 ? (
-              <div className="h-40 flex flex-col items-center justify-center text-slate-400 text-xs">
+            {formattedCertsTimeline.length === 0 ? (
+              <div className="h-52 flex flex-col items-center justify-center text-slate-400 text-xs">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300">workspace_premium</span>
                 <span>No compliance certificates issued yet.</span>
               </div>
             ) : chartViewCerts === 'pie' ? (
-              // Pie / Donut Chart
-              (() => {
-                const COLORS = ['#10b981', '#06b6d4', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6'];
-                const total = certsTimeline.reduce((acc, d) => acc + d.count, 0) || totalCertificatesCount || 1;
-
-                let cumulativeAngle = 0;
-                const slices = certsTimeline.map((item, idx) => {
-                  const angle = (item.count / total) * 360;
-                  const startAngle = cumulativeAngle;
-                  const endAngle = cumulativeAngle + angle;
-                  cumulativeAngle += angle;
-
-                  const cx = 90, cy = 90, r = 70, innerR = 40;
-                  const startRad = (startAngle - 90) * (Math.PI / 180);
-                  const endRad = (endAngle - 90) * (Math.PI / 180);
-
-                  const x1 = cx + r * Math.cos(startRad);
-                  const y1 = cy + r * Math.sin(startRad);
-                  const x2 = cx + r * Math.cos(endRad);
-                  const y2 = cy + r * Math.sin(endRad);
-
-                  const ix1 = cx + innerR * Math.cos(endRad);
-                  const iy1 = cy + innerR * Math.sin(endRad);
-                  const ix2 = cx + innerR * Math.cos(startRad);
-                  const iy2 = cy + innerR * Math.sin(startRad);
-
-                  const largeArcFlag = angle > 180 ? 1 : 0;
-
-                  let pathD = '';
-                  if (angle >= 359.9) {
-                    pathD = `M ${cx},${cy - r} A ${r},${r} 0 1,1 ${cx - 0.01},${cy - r} L ${cx - 0.01},${cy - innerR} A ${innerR},${innerR} 0 1,0 ${cx},${cy - innerR} Z`;
-                  } else {
-                    pathD = `M ${x1},${y1} A ${r},${r} 0 ${largeArcFlag},1 ${x2},${y2} L ${ix1},${iy1} A ${innerR},${innerR} 0 ${largeArcFlag},0 ${ix2},${iy2} Z`;
-                  }
-
-                  return {
-                    date: item.date,
-                    count: item.count,
-                    pct: Math.round((item.count / total) * 100),
-                    color: COLORS[idx % COLORS.length],
-                    pathD
-                  };
-                });
-
-                return (
-                  <div className="h-40 flex items-center gap-4 py-1 px-2">
-                    <div className="w-36 h-36 shrink-0 relative flex items-center justify-center">
-                      <svg viewBox="0 0 180 180" className="w-full h-full transform -rotate-90">
-                        {slices.map((slice, i) => (
-                          <path
-                            key={i}
-                            d={slice.pathD}
-                            fill={slice.color}
-                            className="transition-all hover:opacity-85 cursor-pointer stroke-white stroke-2"
-                            title={`${slice.date}: ${slice.count} certificate(s) (${slice.pct}%)`}
+              <div className="h-52 flex items-center gap-3 py-1">
+                {/* Donut Chart with Recharts */}
+                <div className="w-44 h-48 shrink-0 relative flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={formattedCertsTimeline}
+                        dataKey="count"
+                        nameKey="label"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={46}
+                        outerRadius={hoveredCertSlice ? 68 : 64}
+                        paddingAngle={4}
+                        cornerRadius={4}
+                        isAnimationActive={true}
+                        animationDuration={1200}
+                        animationEasing="ease-out"
+                        onMouseEnter={(_, index) => setHoveredCertSlice(formattedCertsTimeline[index])}
+                        onMouseLeave={() => setHoveredCertSlice(null)}
+                      >
+                        {formattedCertsTimeline.map((entry) => (
+                          <Cell
+                            key={entry.date}
+                            fill={entry.color}
+                            stroke="#ffffff"
+                            strokeWidth={hoveredCertSlice?.date === entry.date ? 3 : 1.5}
+                            className="transition-all duration-300 cursor-pointer hover:opacity-90"
                           />
                         ))}
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-                        <span className="text-xl font-extrabold text-slate-900">{total}</span>
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Issued</span>
-                      </div>
-                    </div>
+                      </Pie>
+                      <RechartsTooltip content={<CustomCertTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
 
-                    <div className="flex-1 space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {slices.map((slice, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs p-1.5 rounded-lg bg-emerald-50/50 border border-emerald-100 hover:bg-emerald-50 transition-colors">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: slice.color }} />
-                            <span className="font-mono text-[11px] text-slate-700 truncate">{slice.date}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                            <strong className="text-emerald-800">{slice.count}</strong>
-                            <span className="text-slate-400">({slice.pct}%)</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()
-            ) : chartViewCerts === 'bar' ? (
-              // Vertical bar chart
-              <div className="h-40 flex items-end gap-2 pt-6 pb-2 px-1">
-                {certsTimeline.map((item) => {
-                  const pct = Math.max(15, Math.round((item.count / maxCertsInTimeline) * 100));
-                  return (
-                    <div key={item.date} className="h-full flex-1 flex flex-col justify-end items-center gap-1.5 group min-w-0">
-                      <div className="text-[10px] font-mono font-bold text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {item.count}
+                  {/* Interactive Center Readout */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none transition-all duration-200 px-1">
+                    {hoveredCertSlice ? (
+                      <div className="animate-in fade-in zoom-in-90 duration-150">
+                        <span className="text-lg font-black block leading-none" style={{ color: hoveredCertSlice.color }}>
+                          {hoveredCertSlice.count}
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-600 block uppercase truncate max-w-[70px] mt-0.5">
+                          {hoveredCertSlice.label}
+                        </span>
+                        <span className="text-[9px] font-mono text-slate-400 block font-semibold">
+                          {hoveredCertSlice.pct}%
+                        </span>
                       </div>
+                    ) : (
+                      <div>
+                        <span className="text-xl font-black text-[#002046] block leading-none">
+                          {totalCertificatesCount}
+                        </span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block mt-0.5">
+                          Issued
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: Date Breakdown */}
+                <div className="flex-1 space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {formattedCertsTimeline.map((slice) => {
+                    const isHovered = hoveredCertSlice?.date === slice.date;
+                    return (
                       <div
-                        style={{ height: `${pct}%` }}
-                        className="w-full max-w-[28px] bg-gradient-to-t from-emerald-700 to-emerald-400 rounded-t-md transition-all group-hover:brightness-110"
-                        title={`${item.date}: ${item.count} certificate(s)`}
-                      />
-                      <span className="text-[9px] font-mono text-slate-400 truncate w-full text-center">
-                        {item.date.slice(5)}
-                      </span>
-                    </div>
-                  );
-                })}
+                        key={slice.date}
+                        onMouseEnter={() => setHoveredCertSlice(slice)}
+                        onMouseLeave={() => setHoveredCertSlice(null)}
+                        className={`p-2 rounded-xl border transition-all cursor-pointer flex items-center justify-between text-xs ${
+                          isHovered
+                            ? 'bg-emerald-50 border-emerald-300 shadow-2xs scale-[1.02]'
+                            : 'border-slate-100 hover:bg-emerald-50/40'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: slice.color }} />
+                          <span className="font-mono text-[11px] text-slate-700 truncate font-semibold">{slice.label}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 font-mono text-[11px] shrink-0">
+                          <strong className="text-emerald-800">{slice.count}</strong>
+                          <span className="text-slate-400 text-[10px]">({slice.pct}%)</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
-              // Horizontal bar chart
-              <div className="space-y-1.5 py-1 max-h-40 overflow-y-auto pr-1">
-                {certsTimeline.map((item) => {
-                  const pct = Math.max(4, Math.round((item.count / maxCertsInTimeline) * 100));
-                  return (
-                    <div key={item.date} className="flex items-center gap-2 group">
-                      <span className="text-[9px] font-mono text-slate-500 w-10 shrink-0 text-right">{item.date.slice(5)}</span>
-                      <div className="flex-1 h-5 bg-slate-100 rounded overflow-hidden">
-                        <div
-                          style={{ width: `${pct}%` }}
-                          className="h-full bg-gradient-to-r from-emerald-700 to-emerald-400 rounded transition-all duration-500 group-hover:brightness-110"
-                          title={`${item.date}: ${item.count} certificate(s)`}
-                        />
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-emerald-700 w-5 shrink-0">{item.count}</span>
-                    </div>
-                  );
-                })}
+              <div className="h-52 w-full pt-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={formattedCertsTimeline} margin={{ top: 15, right: 15, left: -15, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="certBarGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10b981" />
+                        <stop offset="100%" stopColor="#059669" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="label" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} />
+                    <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} domain={[0, (dataMax) => Math.max(dataMax + 1, 3)]} />
+                    <RechartsTooltip content={<CustomCertTooltip />} cursor={{ fill: 'rgba(241, 245, 249, 0.6)' }} />
+                    <Bar
+                      dataKey="count"
+                      fill="url(#certBarGrad)"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={36}
+                      isAnimationActive={true}
+                      animationDuration={1100}
+                      animationEasing="ease-out"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
             )}
           </div>
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-            <span>Cryptographic verification active</span>
-            <button onClick={() => navigateTo('certificates')} className="font-semibold text-emerald-700 hover:underline">
-              View Issued Registry →
+          <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[13px] text-emerald-600">verified</span>
+              Cryptographic verification active
+            </span>
+            <button onClick={() => navigateTo('certificates')} className="font-semibold text-emerald-700 hover:underline flex items-center gap-0.5">
+              <span>View Issued Registry</span>
+              <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
             </button>
           </div>
         </div>
