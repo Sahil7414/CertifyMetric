@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import PageHeader from '../components/PageHeader';
 import ListToolbar from '../components/ListToolbar';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 
 const ROLES_OPTIONS = [
@@ -18,6 +19,10 @@ export default function AdminUsersView({ currentUser, onBack }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Create User Modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -112,6 +117,17 @@ export default function AdminUsersView({ currentUser, onBack }) {
       return matchesSearch && matchesRole && matchesStatus;
     });
   }, [users, searchTerm, roleFilter, statusFilter]);
+
+  // Reset to page 1 on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, roleFilter, statusFilter]);
+
+  const totalPages = Math.ceil(filteredUsers.length / pageSize) || 1;
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredUsers.slice(startIndex, startIndex + pageSize);
+  }, [filteredUsers, currentPage, pageSize]);
 
   const getRoleBadge = (role) => {
     switch (role) {
@@ -209,7 +225,7 @@ export default function AdminUsersView({ currentUser, onBack }) {
                     Loading user directory...
                   </td>
                 </tr>
-              ) : filteredUsers.length === 0 ? (
+              ) : paginatedUsers.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                     <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">group_off</span>
@@ -217,7 +233,7 @@ export default function AdminUsersView({ currentUser, onBack }) {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((u) => {
+                paginatedUsers.map((u) => {
                   const isActive = u.status === 'ACTIVE' || u.active !== false;
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
@@ -271,6 +287,18 @@ export default function AdminUsersView({ currentUser, onBack }) {
             </tbody>
           </table>
         </div>
+
+        {/* Responsive Pagination Component */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredUsers.length}
+          itemsPerPage={pageSize}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setPageSize}
+          pageSizeOptions={[10, 20, 50]}
+          itemName="users"
+        />
       </div>
 
       {/* Create User Modal */}

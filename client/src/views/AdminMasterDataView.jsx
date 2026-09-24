@@ -1,11 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 
 export default function AdminMasterDataView({ currentUser, onBack }) {
   const [masterData, setMasterData] = useState({ categories: [], rulesets: [] });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('CATEGORIES'); // 'CATEGORIES' | 'RULESETS'
+
+  // Pagination states
+  const [catPage, setCatPage] = useState(1);
+  const [catPageSize, setCatPageSize] = useState(10);
+  const [rulePage, setRulePage] = useState(1);
+  const [rulePageSize, setRulePageSize] = useState(10);
 
   const loadData = async () => {
     setLoading(true);
@@ -26,8 +33,20 @@ export default function AdminMasterDataView({ currentUser, onBack }) {
   const categories = Array.isArray(masterData.categories) ? masterData.categories : [];
   const rulesets = Array.isArray(masterData.rulesets) ? masterData.rulesets : [];
 
+  const totalCatPages = Math.ceil(categories.length / catPageSize) || 1;
+  const paginatedCategories = useMemo(() => {
+    const startIndex = (catPage - 1) * catPageSize;
+    return categories.slice(startIndex, startIndex + catPageSize);
+  }, [categories, catPage, catPageSize]);
+
+  const totalRulePages = Math.ceil(rulesets.length / rulePageSize) || 1;
+  const paginatedRulesets = useMemo(() => {
+    const startIndex = (rulePage - 1) * rulePageSize;
+    return rulesets.slice(startIndex, startIndex + rulePageSize);
+  }, [rulesets, rulePage, rulePageSize]);
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 w-full animate-in fade-in duration-300">
       {/* Page Header */}
       <PageHeader
         icon="tune"
@@ -78,20 +97,20 @@ export default function AdminMasterDataView({ currentUser, onBack }) {
           Loading metrology specifications...
         </div>
       ) : activeTab === 'CATEGORIES' ? (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
+          <div className="w-full overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[650px]">
               <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                 <tr>
-                  <th className="px-5 py-3.5">Category Name</th>
-                  <th className="px-5 py-3.5">Code</th>
-                  <th className="px-5 py-3.5">Accuracy Class</th>
-                  <th className="px-5 py-3.5">Validity Period</th>
-                  <th className="px-5 py-3.5 text-right">Statutory Base Fee</th>
+                  <th className="px-5 py-3.5 w-[35%] min-w-[180px]">Category Name</th>
+                  <th className="px-5 py-3.5 w-[15%] min-w-[100px]">Code</th>
+                  <th className="px-5 py-3.5 w-[18%] min-w-[120px]">Accuracy Class</th>
+                  <th className="px-5 py-3.5 w-[16%] min-w-[110px]">Validity Period</th>
+                  <th className="px-5 py-3.5 text-right min-w-[110px]">Statutory Base Fee</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {categories.map((c) => (
+                {paginatedCategories.map((c) => (
                   <tr key={c.id || c.code} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-5 py-3.5 font-bold text-slate-900">
                       {c.name}
@@ -116,29 +135,41 @@ export default function AdminMasterDataView({ currentUser, onBack }) {
               </tbody>
             </table>
           </div>
+
+          {/* Responsive Pagination Component */}
+          <Pagination
+            currentPage={catPage}
+            totalPages={totalCatPages}
+            totalItems={categories.length}
+            itemsPerPage={catPageSize}
+            onPageChange={setCatPage}
+            onItemsPerPageChange={setCatPageSize}
+            pageSizeOptions={[10, 20, 50]}
+            itemName="categories"
+          />
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden w-full">
+          <div className="w-full overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[700px]">
               <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                 <tr>
-                  <th className="px-5 py-3.5">Ruleset ID</th>
-                  <th className="px-5 py-3.5">Accuracy Class</th>
-                  <th className="px-5 py-3.5">Test Interval (m)</th>
-                  <th className="px-5 py-3.5">MPE Formula</th>
-                  <th className="px-5 py-3.5 text-right">Statutory Reference</th>
+                  <th className="px-5 py-3.5 w-[20%] min-w-[130px]">Ruleset ID</th>
+                  <th className="px-5 py-3.5 w-[18%] min-w-[120px]">Accuracy Class</th>
+                  <th className="px-5 py-3.5 w-[22%] min-w-[140px]">Test Interval (m)</th>
+                  <th className="px-5 py-3.5 w-[22%] min-w-[140px]">MPE Formula</th>
+                  <th className="px-5 py-3.5 text-right min-w-[130px]">Statutory Reference</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {rulesets.length === 0 ? (
+                {paginatedRulesets.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-10 text-center text-slate-400">
                       Schedule IV rulesets actively maintained in statutory engine.
                     </td>
                   </tr>
                 ) : (
-                  rulesets.map((r) => (
+                  paginatedRulesets.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-5 py-3.5 font-mono font-bold text-primary">
                         {r.id}
@@ -163,6 +194,18 @@ export default function AdminMasterDataView({ currentUser, onBack }) {
               </tbody>
             </table>
           </div>
+
+          {/* Responsive Pagination Component */}
+          <Pagination
+            currentPage={rulePage}
+            totalPages={totalRulePages}
+            totalItems={rulesets.length}
+            itemsPerPage={rulePageSize}
+            onPageChange={setRulePage}
+            onItemsPerPageChange={setRulePageSize}
+            pageSizeOptions={[10, 20, 50]}
+            itemName="rulesets"
+          />
         </div>
       )}
     </div>

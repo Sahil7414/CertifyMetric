@@ -112,6 +112,38 @@ export default function AssignmentDecisionSupport({
   const [overrideMode, setOverrideMode] = useState(false);
   const [isOverrideSelection, setIsOverrideSelection] = useState(false);
 
+  const [slotData, setSlotData] = useState({
+    configured_slots: TIME_SLOTS,
+    occupied_slots: [],
+    available_slots: TIME_SLOTS,
+    is_fully_booked: false
+  });
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  // Fetch slot availability when selected officer or date changes
+  useEffect(() => {
+    if (!selectedId || !scheduleDate) return;
+    let cancelled = false;
+    setLoadingSlots(true);
+    api.getSlotAvailability(selectedId, scheduleDate, applicationId)
+      .then((res) => {
+        if (cancelled) return;
+        setSlotData(res);
+        if (res.available_slots && res.available_slots.length > 0) {
+          if (!res.available_slots.includes(scheduleSlot)) {
+            setScheduleSlot(res.available_slots[0]);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch slot availability:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSlots(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedId, scheduleDate, applicationId]);
+
   useEffect(() => {
     if (!applicationId) {
       setLoading(false);
@@ -192,7 +224,8 @@ export default function AssignmentDecisionSupport({
   const deviates = isOverride;
   const needsReason = isOverride && !reason.trim();
   const isInSitu = application.verification_mode === 'IN_SITU';
-  const canSubmit = Boolean(selected) && !needsReason && Boolean(scheduleDate) && !submitting;
+  const isSlotAvailable = Boolean(scheduleSlot) && (slotData.available_slots || []).includes(scheduleSlot);
+  const canSubmit = Boolean(selected) && !needsReason && Boolean(scheduleDate) && isSlotAvailable && !slotData.is_fully_booked && !submitting;
 
   const handleAssign = async () => {
     if (!canSubmit) return;
@@ -503,34 +536,135 @@ export default function AssignmentDecisionSupport({
 
       {/* Schedule */}
       {Boolean(selected) && (
-        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-4">Schedule the inspection</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label htmlFor="schedule-date" className="font-semibold text-slate-700 block mb-1">Date</label>
-              <input
-                id="schedule-date"
-                type="date"
-                value={scheduleDate}
-                min={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setScheduleDate(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary outline-none"
-              />
-            </div>
-            <div>
-              <label htmlFor="schedule-slot" className="font-semibold text-slate-700 block mb-1">Time slot</label>
-              <select
-                id="schedule-slot"
-                value={scheduleSlot}
-                onChange={(e) => setScheduleSlot(e.target.value)}
-                className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary outline-none bg-white"
-              >
-                {TIME_SLOTS.map(slot => <option key={slot} value={slot}>{slot}</option>)}
-              </select>
-            </div>
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Schedule the Inspection</h2>
+            {loadingSlots && (
+              <span className="text-[11px] text-slate-500 flex items-center gap-1 animate-in fade-in">
+                <span className="material-symbols-outlined text-xs animate-spin">sync</span>
+                Checking slot availability...
+              </span>
+            )}
           </div>
+
+          {slotData.is_fully_booked && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start gap-2.5 animate-in fade-in">
+              <span className="material-symbols-outlined text-lg text-rose-600 shrink-0">event_busy</span>
+              <div>
+                <p className="font-bold">No available time slots on this date</p>
+                <p className="mt-0.5 text-rose-700">
+                  All statutory inspection sessions for <strong>{selected.full_name}</strong> on{' '}
+                  <strong>{formatDate(scheduleDate)}</strong> are fully booked. Please choose a different date.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Date Picker */}
+          <div className="max-w-xs">
+            <label htmlFor="schedule-date" className="font-semibold text-slate-700 block mb-1 text-xs">Inspection Date</label>
+            <input
+              id="schedule-date"
+              type="date"
+              value={scheduleDate}
+              min={new Date().toISOString().split('T')[0]}
+              onChange={(e) => setScheduleDate(e.target.value)}
+              className="w-full h-10 px-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-primary outline-none text-xs"
+            />
+          </div>
+
+          {/* Time Slot Cards */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="font-semibold text-slate-700 block text-xs">Available Time Slots</label>
+              {!scheduleDate && (
+                <span className="text-[11px] text-slate-400 italic">Select a date first</span>
+              )}
+            </div>
+
+            {!loadingSlots && scheduleDate && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {(slotData.configured_slots || TIME_SLOTS).map((slot) => {
+                  const isOccupied = (slotData.occupied_slots || []).includes(slot);
+                  const isSelected = scheduleSlot === slot;
+                  return (
+                    <label
+                      key={slot}
+                      className={`flex flex-col rounded-xl border-2 p-3.5 transition-all ${
+                        isOccupied
+                          ? 'border-slate-200 bg-slate-50 opacity-60 cursor-not-allowed'
+                          : isSelected
+                            ? 'border-primary bg-primary/5 shadow-sm cursor-pointer'
+                            : 'border-slate-200 bg-white hover:border-slate-300 cursor-pointer'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="schedule-slot"
+                        value={slot}
+                        checked={isSelected}
+                        disabled={isOccupied}
+                        onChange={() => !isOccupied && setScheduleSlot(slot)}
+                        className="sr-only"
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-bold ${isOccupied ? 'text-slate-400' : isSelected ? 'text-primary' : 'text-slate-800'}`}>
+                          {slot}
+                        </span>
+                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                          isOccupied
+                            ? 'border-slate-300 bg-slate-200'
+                            : isSelected
+                              ? 'border-primary bg-primary'
+                              : 'border-slate-300'
+                        }`}>
+                          {isSelected && !isOccupied && (
+                            <span className="w-2 h-2 rounded-full bg-white block" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-1.5">
+                        {isOccupied ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">
+                            <span className="material-symbols-outlined text-[10px]">block</span>
+                            BOOKED / OCCUPIED
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">
+                            <span className="material-symbols-outlined text-[10px]">check_circle</span>
+                            AVAILABLE
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {loadingSlots && scheduleDate && (
+              <div className="flex items-center justify-center py-6 text-slate-400 text-xs gap-2">
+                <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                Loading slots for {selected?.full_name}...
+              </div>
+            )}
+
+            {!scheduleDate && (
+              <div className="p-4 border border-slate-200 rounded-xl text-center text-slate-400 text-xs">
+                <span className="material-symbols-outlined text-2xl block mb-1 text-slate-300">calendar_today</span>
+                Select a date to see available time slots.
+              </div>
+            )}
+
+            {scheduleDate && !loadingSlots && (slotData.configured_slots || TIME_SLOTS).length === 0 && (
+              <div className="p-4 border border-amber-200 bg-amber-50 rounded-xl text-center text-amber-700 text-xs">
+                No time slots configured for this officer / lab.
+              </div>
+            )}
+          </div>
+
           {selected && (
-            <p className="text-[11px] text-slate-500 mt-3 flex items-center gap-1">
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center gap-1">
               <span className="material-symbols-outlined text-[14px]">info</span>
               {selected.role === 'GATC' && !isInSitu
                 ? 'The trader will present the instrument at the test centre.'
@@ -550,7 +684,8 @@ export default function AssignmentDecisionSupport({
               ) : selected ? (
                 <span className="text-slate-600">
                   Assign <strong className="text-slate-900">{selected.full_name}</strong> on{' '}
-                  <strong className="text-slate-900">{formatDate(scheduleDate)}</strong>, {scheduleSlot}
+                  <strong className="text-slate-900">{formatDate(scheduleDate)}</strong>
+                  {isSlotAvailable ? `, ${scheduleSlot}` : <span className="text-rose-600 font-bold"> (No Slot Available)</span>}
                   {needsReason && <span className="text-amber-700 font-semibold"> · reason required</span>}
                 </span>
               ) : (

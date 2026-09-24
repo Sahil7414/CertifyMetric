@@ -208,7 +208,6 @@ export default function AppSidebar({
   onSelectTab,
   onOpenApplyModal,
   onOpenAddModal,
-  onVerifyPublicToken,
   isCollapsed = false,
   onToggleCollapse,
   mobileOpen = false,
@@ -217,8 +216,7 @@ export default function AppSidebar({
 }) {
   const navItems = getNavigationConfig(currentRole, {
     onSelectTab,
-    onOpenApplyModal,
-    onVerifyPublicToken
+    onOpenApplyModal
   });
 
   return (

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import PageHeader from '../components/PageHeader';
 import ListToolbar from '../components/ListToolbar';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 
 const ORG_TYPES = [
@@ -15,6 +16,10 @@ export default function AdminOrgsView({ currentUser, onBack }) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadOrgs = async () => {
     setLoading(true);
@@ -52,6 +57,17 @@ export default function AdminOrgsView({ currentUser, onBack }) {
       return matchesSearch && matchesType;
     });
   }, [organizations, searchTerm, typeFilter]);
+
+  // Reset to page 1 on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, typeFilter]);
+
+  const totalPages = Math.ceil(filteredOrgs.length / pageSize) || 1;
+  const paginatedOrgs = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredOrgs.slice(startIndex, startIndex + pageSize);
+  }, [filteredOrgs, currentPage, pageSize]);
 
   const getTypeBadge = (type) => {
     switch (type) {
@@ -125,7 +141,7 @@ export default function AdminOrgsView({ currentUser, onBack }) {
                     Loading establishment registry...
                   </td>
                 </tr>
-              ) : filteredOrgs.length === 0 ? (
+              ) : paginatedOrgs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
                     <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">domain_disabled</span>
@@ -133,7 +149,7 @@ export default function AdminOrgsView({ currentUser, onBack }) {
                   </td>
                 </tr>
               ) : (
-                filteredOrgs.map((org) => (
+                paginatedOrgs.map((org) => (
                   <tr key={org.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -177,6 +193,18 @@ export default function AdminOrgsView({ currentUser, onBack }) {
             </tbody>
           </table>
         </div>
+
+        {/* Responsive Pagination Component */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredOrgs.length}
+          itemsPerPage={pageSize}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setPageSize}
+          pageSizeOptions={[10, 20, 50]}
+          itemName="establishments"
+        />
       </div>
     </div>
   );

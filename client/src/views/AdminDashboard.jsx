@@ -131,7 +131,7 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
 
   if (loading && !analyticsData) {
     return (
-      <div className="space-y-4 max-w-7xl mx-auto animate-pulse">
+      <div className="space-y-4 w-full min-w-0 animate-pulse">
         <div className="h-32 skeleton rounded-2xl"></div>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -147,7 +147,7 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 w-full min-w-0 animate-in fade-in duration-300">
       
       {/* 1. Platform Administration Header */}
       <div className="bg-gradient-to-r from-[#001733] via-[#002046] to-[#1b365d] rounded-2xl p-5 sm:p-6 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import QrScannerModal from '../components/QrScannerModal';
+import React from 'react';
 
 const ROLES_DATA = [
   {
@@ -86,59 +85,8 @@ const WORKFLOW_STEPS = [
 export default function PortalLanding({
   onGoToLogin,
   onGoToRegister,
-  onVerifyCertificate,
-  onValidateInstrument,
   onDirectDemoLogin
 }) {
-  const [certToken, setCertToken] = useState('');
-  const [certTokenError, setCertTokenError] = useState('');
-  const [instToken, setInstToken] = useState('');
-  const [instTokenError, setInstTokenError] = useState('');
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [scannerTarget, setScannerTarget] = useState('INSTRUMENT'); // 'CERTIFICATE' | 'INSTRUMENT'
-  // Certificate verify popup modal
-  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
-
-  const handleVerifyCertSubmit = (e) => {
-    e?.preventDefault();
-    const cleanToken = certToken.trim();
-    if (!cleanToken) {
-      setCertTokenError('Please enter a certificate public token or UUID');
-      return;
-    }
-    setCertTokenError('');
-    onVerifyCertificate(cleanToken);
-  };
-
-  const handleValidateInstSubmit = (e) => {
-    e?.preventDefault();
-    const cleanToken = instToken.trim();
-    if (!cleanToken) {
-      setInstTokenError('Please enter an instrument public code or serial number');
-      return;
-    }
-    setInstTokenError('');
-    if (onValidateInstrument) {
-      onValidateInstrument(cleanToken);
-    } else {
-      onVerifyCertificate(cleanToken);
-    }
-  };
-
-  const handleQrScanned = (scannedToken) => {
-    setIsScannerOpen(false);
-    if (!scannedToken) return;
-    if (scannerTarget === 'CERTIFICATE') {
-      onVerifyCertificate(scannedToken);
-    } else {
-      if (onValidateInstrument) {
-        onValidateInstrument(scannedToken);
-      } else {
-        onVerifyCertificate(scannedToken);
-      }
-    }
-  };
-
   const handleRoleAction = (roleItem) => {
     if (onDirectDemoLogin && roleItem.demoUser) {
       onDirectDemoLogin(roleItem.demoUser);
@@ -191,13 +139,7 @@ export default function PortalLanding({
 
           {/* Login & Register CTAs */}
           <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-            <a
-              href="#verify-certificate"
-              className="hidden md:flex items-center gap-1 text-xs font-semibold text-slate-300 hover:text-amber-300 px-3 py-1.5 rounded-lg transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">qr_code_scanner</span>
-              <span>Verify Certificate</span>
-            </a>
+
             <button
               type="button"
               onClick={onGoToLogin}
@@ -345,170 +287,7 @@ export default function PortalLanding({
         </div>
       </section>
 
-      {/* ====================================================
-          5. PUBLIC VERIFICATION ENGINE — DARK BANNER ONLY
-         ==================================================== */}
-      <section id="verify-certificate" className="py-10 sm:py-14 px-3 sm:px-6 max-w-4xl mx-auto w-full overflow-hidden">
 
-        {/* Prominent Legal Metrology Status Banner */}
-        <div className="bg-gradient-to-r from-[#002046] via-[#082a52] to-[#002046] rounded-2xl p-5 sm:p-7 text-white shadow-md border border-[#001733] flex flex-col md:flex-row items-center justify-between gap-5">
-          <div className="space-y-1.5 text-center md:text-left">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 text-[11px] font-bold border border-amber-400/30">
-              <span className="material-symbols-outlined text-xs">shield</span>
-              <span>Open Public Registry</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
-              Verify Legal Metrology Status
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-200 max-w-md leading-relaxed">
-              Check a certificate or scan an instrument QR to verify its current status.
-            </p>
-          </div>
-
-          {/* Quick Action Buttons (No login required) */}
-          <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full md:w-auto shrink-0">
-            {/* Scan QR → opens camera */}
-            <button
-              type="button"
-              onClick={() => {
-                setScannerTarget('INSTRUMENT');
-                setIsScannerOpen(true);
-              }}
-              className="w-full sm:w-auto px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-xs hover:shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-lg">qr_code_scanner</span>
-              <span>Scan Instrument QR</span>
-            </button>
-            {/* Verify Certificate → opens popup */}
-            <button
-              type="button"
-              onClick={() => {
-                setCertToken('');
-                setCertTokenError('');
-                setIsCertModalOpen(true);
-              }}
-              className="w-full sm:w-auto px-5 py-3 bg-white/10 hover:bg-white/20 text-white border border-white/25 font-bold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-lg">verified</span>
-              <span>Verify Certificate</span>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* ==================================================
-          Certificate Verify Popup Modal
-         ================================================== */}
-      {isCertModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={(e) => { if (e.target === e.currentTarget) setIsCertModalOpen(false); }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-emerald-600 text-xl">verified_user</span>
-                <div>
-                  <div className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">Public Verification Engine</div>
-                  <div className="text-sm font-extrabold text-[#002046] leading-tight">Verify Certificate Authenticity</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCertModalOpen(false)}
-                className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="px-6 py-5 space-y-4">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Any citizen, trader, or enforcement officer can verify a digital certificate's statutory validity in real time. Enter the unique public token or scan the QR code printed on the certificate.
-              </p>
-
-              {/* Scan QR option inside modal */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCertModalOpen(false);
-                  setScannerTarget('CERTIFICATE');
-                  setIsScannerOpen(true);
-                }}
-                className="w-full px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-              >
-                <span className="material-symbols-outlined text-base text-emerald-600">qr_code_scanner</span>
-                <span>Scan Certificate QR</span>
-              </button>
-
-              <div className="flex items-center gap-2 text-[11px] text-slate-400 font-semibold">
-                <div className="flex-1 h-px bg-slate-200" />
-                <span>or enter manually</span>
-                <div className="flex-1 h-px bg-slate-200" />
-              </div>
-
-              {/* Manual token form */}
-              <form onSubmit={handleVerifyCertSubmit} className="space-y-3">
-                <div>
-                  <label htmlFor="modal-cert-token-input" className="block text-xs font-bold text-slate-700 mb-1">
-                    Public Certificate Token / UUID
-                  </label>
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-base">vpn_key</span>
-                    <input
-                      id="modal-cert-token-input"
-                      type="text"
-                      autoFocus
-                      value={certToken}
-                      onChange={(e) => {
-                        setCertToken(e.target.value);
-                        if (certTokenError) setCertTokenError('');
-                      }}
-                      placeholder="e.g. 550e8400-e29b-41d4... or LM-2026-..."
-                      className="w-full pl-9 pr-3 py-2.5 text-xs bg-white border border-slate-300 rounded-lg font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#002046]/20 focus:border-[#002046] box-border"
-                    />
-                  </div>
-                  {certTokenError && (
-                    <p className="text-[11px] font-semibold text-rose-600 mt-1">{certTokenError}</p>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={!certToken.trim()}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-base">verified</span>
-                  <span>Verify Certificate</span>
-                </button>
-              </form>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
-              <div className="text-[10px] text-slate-400 text-center">
-                Powered by National Legal Metrology Registry · Legal Metrology Act, 2009
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Live Camera QR Scanner Modal */}
-      <QrScannerModal
-        isOpen={isScannerOpen}
-        title={scannerTarget === 'CERTIFICATE' ? 'Scan Certificate QR' : 'Scan Instrument QR'}
-        description={
-          scannerTarget === 'CERTIFICATE'
-            ? 'Point your camera at the QR code printed on the Legal Metrology Certificate.'
-            : 'Point your camera at the QR code printed on the weighing or measuring instrument.'
-        }
-        onClose={() => setIsScannerOpen(false)}
-        onScan={handleQrScanned}
-        onManualEntry={() => setIsScannerOpen(false)}
-      />
 
       {/* ====================================================
           6. MINIMAL FOOTER
@@ -536,12 +315,7 @@ export default function PortalLanding({
             >
               Register
             </button>
-            <a
-              href="#verify-certificate"
-              className="hover:text-amber-300 transition-colors"
-            >
-              Public Verify
-            </a>
+
           </div>
         </div>
       </footer>

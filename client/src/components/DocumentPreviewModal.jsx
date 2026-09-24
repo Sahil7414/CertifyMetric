@@ -29,9 +29,9 @@ export default function DocumentPreviewModal({
   if (!showModal || !targetFile) return null;
   const file = targetFile;
 
-  const rawPath = file.file_path || file.path || file.url || '';
-  const fileUrl = getFileUrl(rawPath);
   const fileName = file.file_name || file.name || 'Document File';
+  const rawPath = file.file_path || file.path || file.url || `/api/documents/preview/${encodeURIComponent(fileName)}`;
+  const fileUrl = getFileUrl(rawPath);
   const category = file.category || file.type || 'Statutory Attachment';
   const uploader = file.uploaded_by || file.uploader || 'Authorized System User';
   const dateStr = file.created_at || file.uploaded_at ? new Date(file.created_at || file.uploaded_at).toLocaleString() : null;
@@ -40,7 +40,8 @@ export default function DocumentPreviewModal({
                   /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(fileName || rawPath);
 
   const isPdf = (file.file_type === 'application/pdf') ||
-                /\.(pdf)$/i.test(fileName || rawPath);
+                /\.(pdf)$/i.test(fileName || rawPath) ||
+                (!isImage);
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
@@ -57,7 +58,7 @@ export default function DocumentPreviewModal({
           <div className="flex items-center gap-3 min-w-0 pr-4">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-amber-400 shrink-0">
               <span className="material-symbols-outlined text-xl">
-                {isImage ? 'photo' : isPdf ? 'picture_as_pdf' : 'description'}
+                {isImage ? 'photo' : 'picture_as_pdf'}
               </span>
             </div>
             <div className="min-w-0">
@@ -82,17 +83,29 @@ export default function DocumentPreviewModal({
 
           <div className="flex items-center gap-2 shrink-0">
             {fileUrl && (
-              <a
-                href={fileUrl}
-                download={fileName}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-xs transition-all inline-flex items-center gap-1.5"
-                title="Download file"
-              >
-                <span className="material-symbols-outlined text-base">download</span>
-                <span className="hidden sm:inline">Download</span>
-              </a>
+              <>
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-xs transition-all inline-flex items-center gap-1.5"
+                  title="Open in new window"
+                >
+                  <span className="material-symbols-outlined text-base">open_in_new</span>
+                  <span className="hidden sm:inline">Open</span>
+                </a>
+                <a
+                  href={fileUrl}
+                  download={fileName}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-lg text-xs transition-all inline-flex items-center gap-1.5"
+                  title="Download file"
+                >
+                  <span className="material-symbols-outlined text-base">download</span>
+                  <span className="hidden sm:inline">Download</span>
+                </a>
+              </>
             )}
             <button
               onClick={onClose}

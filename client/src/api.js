@@ -11,12 +11,47 @@ export const API_BASE = getApiBase();
 
 export const getFileUrl = (filePath) => {
   if (!filePath) return '';
+  let fullUrl = '';
   if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-    return filePath;
+    fullUrl = filePath;
+  } else {
+    const serverOrigin = API_BASE.replace(/\/api\/?$/, '');
+    const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    fullUrl = `${serverOrigin}${cleanPath}`;
   }
-  const serverOrigin = API_BASE.replace(/\/api\/?$/, '');
-  const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
-  return `${serverOrigin}${cleanPath}`;
+  if (authToken && !fullUrl.includes('token=')) {
+    fullUrl += (fullUrl.includes('?') ? '&' : '?') + `token=${encodeURIComponent(authToken)}`;
+  }
+  return fullUrl;
+};
+
+/**
+ * Ensures Certificate QR always encodes a canonical production HTTPS URL
+ * and never localhost (e.g. for Google Lens, phone cameras, standard QR scanners).
+ */
+export const getCertificateVerificationUrl = (publicToken) => {
+  if (!publicToken) return '';
+  const clean = encodeURIComponent(String(publicToken).trim());
+
+  // 1. Check if VITE_APP_URL is specified and is an HTTPS URL (strictly non-localhost)
+  const envUrl = import.meta.env.VITE_APP_URL;
+  if (envUrl && typeof envUrl === 'string') {
+    const trimmed = envUrl.trim().replace(/\/+$/, '');
+    if (trimmed.startsWith('https://') && !trimmed.includes('localhost') && !trimmed.includes('127.0.0.1')) {
+      return `${trimmed}/verify/${clean}`;
+    }
+  }
+
+  // 2. If running in a live production environment with HTTPS
+  if (typeof window !== 'undefined' && window.location?.protocol === 'https:') {
+    const origin = window.location.origin.replace(/\/+$/, '');
+    if (!origin.includes('localhost') && !origin.includes('127.0.0.1')) {
+      return `${origin}/verify/${clean}`;
+    }
+  }
+
+  // 3. Fallback production HTTPS frontend URL (strictly HTTPS, NEVER localhost)
+  return `https://certifymetric.vercel.app/verify/${clean}`;
 };
 
 let activeUser = null;
@@ -246,6 +281,24 @@ export const api = {
   }).then(async r => {
     const json = await r.json();
     if (!r.ok) throw new Error(json.error || 'Failed to assign verifier');
+    return json;
+  }),
+  getSlotAvailability: (assigneeId, date, applicationId) => {
+    let url = `${API_BASE}/availability/slots?assignee_id=${encodeURIComponent(assigneeId)}&date=${encodeURIComponent(date)}`;
+    if (applicationId) url += `&application_id=${encodeURIComponent(applicationId)}`;
+    return fetch(url, { headers: getHeaders() }).then(async r => {
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || 'Failed to check slot availability');
+      return json;
+    });
+  },
+  uploadDocument: (formData) => fetch(`${API_BASE}/documents/upload`, {
+    method: 'POST',
+    headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+    body: formData
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Document upload failed');
     return json;
   }),
   approveApplication: (id, data = {}) => fetch(`${API_BASE}/applications/${id}/approve`, {

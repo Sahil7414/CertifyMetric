@@ -90,7 +90,7 @@ export default function AuthorityDashboard({
   }, [scheduledVerifications]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 w-full animate-in fade-in duration-300">
       {/* 1. Authority Header / Operational Overview */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white rounded-2xl p-6 border border-slate-200 shadow-xs">
         <div>

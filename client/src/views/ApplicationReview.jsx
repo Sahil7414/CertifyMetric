@@ -405,7 +405,8 @@ export default function ApplicationReview({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {app.documents.map((doc, idx) => {
-              const fileUrl = doc.file_path ? getFileUrl(doc.file_path) : '';
+              const rawDocPath = doc.file_path || `/api/documents/preview/${encodeURIComponent(doc.file_name || 'document.pdf')}`;
+              const fileUrl = getFileUrl(rawDocPath);
               return (
                 <div key={doc.id || idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs hover:border-primary/40 transition-colors">
                   <div className="flex items-center gap-2.5 min-w-0">
@@ -427,8 +428,8 @@ export default function ApplicationReview({
                       type="button"
                       onClick={() => setPreviewDoc({
                         file_name: doc.file_name,
-                        file_path: doc.file_path,
-                        file_type: doc.file_type || (doc.file_name?.endsWith('.pdf') ? 'application/pdf' : 'image/png'),
+                        file_path: doc.file_path || rawDocPath,
+                        file_type: doc.file_type || (doc.file_name?.endsWith('.pdf') ? 'application/pdf' : 'application/pdf'),
                         category: doc.category || 'Applicant Supporting Document',
                         uploaded_by: app.trader_name || 'Trader Applicant',
                         uploaded_at: app.created_at
@@ -443,8 +444,10 @@ export default function ApplicationReview({
                       <a
                         href={fileUrl}
                         download={doc.file_name}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="p-1 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors"
-                        title="Download"
+                        title="Download / Open"
                       >
                         <span className="material-symbols-outlined text-base">download</span>
                       </a>

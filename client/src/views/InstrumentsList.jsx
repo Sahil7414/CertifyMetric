@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import StatusBadge from '../components/StatusBadge';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 
 export default function InstrumentsList({
   instruments = [],
@@ -15,6 +16,10 @@ export default function InstrumentsList({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [sortOption, setSortOption] = useState('DEFAULT');
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const safeInstruments = Array.isArray(instruments) ? instruments : [];
 
@@ -64,6 +69,17 @@ export default function InstrumentsList({
     });
   }, [safeInstruments, searchTerm, statusFilter, categoryFilter, sortOption]);
 
+  // Reset to page 1 on filter/sort change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, categoryFilter, sortOption]);
+
+  const totalPages = Math.ceil(filteredInstruments.length / pageSize) || 1;
+  const paginatedInstruments = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredInstruments.slice(startIndex, startIndex + pageSize);
+  }, [filteredInstruments, currentPage, pageSize]);
+
   const handleApply = (id) => {
     if (onOpenApplyModal) onOpenApplyModal(id);
     else if (onRequestVerification) onRequestVerification(id);
@@ -74,6 +90,7 @@ export default function InstrumentsList({
     setStatusFilter('ALL');
     setCategoryFilter('ALL');
     setSortOption('DEFAULT');
+    setCurrentPage(1);
   };
 
   return (
@@ -147,22 +164,22 @@ export default function InstrumentsList({
       />
 
       {/* Instruments Table */}
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table min-w-[720px]">
+      <div className="card overflow-hidden w-full">
+        <div className="w-full overflow-x-auto">
+          <table className="data-table w-full min-w-[720px]">
             <thead>
               <tr>
-                <th>Device & Model</th>
-                <th>Serial Number</th>
-                <th>Category</th>
-                <th>Capacity / Range</th>
-                <th>Location</th>
-                <th>Status</th>
-                <th className="text-right">Actions</th>
+                <th className="w-[22%] min-w-[150px]">Device & Model</th>
+                <th className="w-[16%] min-w-[120px]">Serial Number</th>
+                <th className="w-[18%] min-w-[130px]">Category</th>
+                <th className="w-[16%] min-w-[110px]">Capacity / Range</th>
+                <th className="w-[14%] min-w-[110px]">Location</th>
+                <th className="w-[14%] min-w-[100px]">Status</th>
+                <th className="text-right min-w-[120px]">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredInstruments.length === 0 ? (
+              {paginatedInstruments.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-0">
                     <div className="empty-state">
@@ -179,7 +196,7 @@ export default function InstrumentsList({
                   </td>
                 </tr>
               ) : (
-                filteredInstruments.map((inst) => (
+                paginatedInstruments.map((inst) => (
                   <tr key={inst.id}>
                     <td>
                       <span className="font-bold text-slate-900 block">{inst.manufacturer}</span>
@@ -249,6 +266,18 @@ export default function InstrumentsList({
             </tbody>
           </table>
         </div>
+
+        {/* Responsive Pagination Component */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredInstruments.length}
+          itemsPerPage={pageSize}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setPageSize}
+          pageSizeOptions={[10, 20, 50]}
+          itemName="instruments"
+        />
       </div>
     </div>
   );

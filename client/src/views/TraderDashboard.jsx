@@ -66,7 +66,7 @@ export default function TraderDashboard({
     .slice(0, 5);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 w-full min-w-0 animate-in fade-in duration-300">
       {/* 1. Header / Welcome Banner */}
       <div className="bg-gradient-to-r from-[#002046] to-[#1b365d] rounded-2xl p-6 md:p-8 text-white shadow-md relative overflow-hidden">
         <div className="absolute -right-8 -bottom-8 opacity-10 text-[200px] leading-none select-none pointer-events-none">

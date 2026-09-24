@@ -109,9 +109,6 @@ export function computePathForState(tab, entityIds = {}, role = null) {
     case 'system-health':
       return '/admin/system-health';
 
-    case 'public-qr-verify':
-      return '/public-qr-verify';
-
     default:
       return '/dashboard';
   }
@@ -121,13 +118,8 @@ export function parseRouteFromUrl(pathname, search, role) {
   const cleanPath = (pathname || window.location.pathname).replace(/\/+$/, '') || '/';
   const params = new URLSearchParams(search !== undefined ? search : window.location.search);
 
-  // 1. Check Public Verify Routes
-  if (cleanPath.startsWith('/public/instrument') || cleanPath.startsWith('/public/instruments') || (cleanPath === '/verify' && params.get('mode') === 'INSTRUMENT')) {
-    const parts = cleanPath.split('/').filter(Boolean);
-    const tok = parts.length > 2 ? decodeURIComponent(parts.slice(2).join('/')).trim() : (params.get('instrument') || params.get('token') || '');
-    return { isPublicVerify: true, publicMode: 'INSTRUMENT', publicToken: tok };
-  }
-  if (cleanPath.startsWith('/verify') || params.has('verify')) {
+  // 1. Check Public Certificate Verify Route
+  if (cleanPath.startsWith('/verify') || params.has('verify') || params.has('token')) {
     const parts = cleanPath.split('/').filter(Boolean);
     const tok = parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')).trim() : (params.get('verify') || params.get('token') || '');
     return { isPublicVerify: true, publicMode: 'CERTIFICATE', publicToken: tok };
@@ -240,9 +232,7 @@ export function parseRouteFromUrl(pathname, search, role) {
     return { tab: 'system-health' };
   }
 
-  if (cleanPath === '/public-qr-verify') {
-    return { tab: 'public-qr-verify' };
-  }
+
 
   // Fallback
   return { tab: getInitialRoleTab(role) };
@@ -260,17 +250,6 @@ const getInitialPreAuthState = () => {
 const getInitialPublicVerifyState = () => {
   const path = window.location.pathname;
   const params = new URLSearchParams(window.location.search);
-
-  // Check instrument routes first: /public/instrument or /public/instrument/:token
-  if (path.startsWith('/public/instrument') || path.startsWith('/public/instruments')) {
-    const parts = path.split('/').filter(Boolean);
-    const tok = parts.length > 2 ? decodeURIComponent(parts.slice(2).join('/')).trim() : (params.get('instrument') || '');
-    return { isRoute: true, mode: 'INSTRUMENT', token: tok };
-  }
-
-  if (params.has('instrument')) {
-    return { isRoute: true, mode: 'INSTRUMENT', token: params.get('instrument') || '' };
-  }
 
   // Check certificate routes: /verify or /verify/:token
   if (path.startsWith('/verify') || params.has('verify') || params.has('token')) {
@@ -506,20 +485,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const handleVerifyPublicToken = (token, mode = 'CERTIFICATE') => {
-    const cleanToken = token ? token.trim() : '';
-    if (mode === 'INSTRUMENT') {
-      window.history.pushState({}, '', cleanToken ? `/public/instrument/${encodeURIComponent(cleanToken)}` : '/public/instrument');
-      setIsPublicVerifyRoute(true);
-      setPublicVerifyMode('INSTRUMENT');
-      setPublicVerifyToken(cleanToken);
-    } else {
-      window.history.pushState({}, '', cleanToken ? `/verify/${encodeURIComponent(cleanToken)}` : '/verify');
-      setIsPublicVerifyRoute(true);
-      setPublicVerifyMode('CERTIFICATE');
-      setPublicVerifyToken(cleanToken);
-    }
-  };
+
 
   const handleLoginSuccess = (authData) => {
     const { user, token } = authData;
@@ -595,7 +561,6 @@ export default function App() {
   if (isPublicVerifyRoute || publicVerifyToken !== null) {
     return (
       <PublicCertificateVerification
-        mode={publicVerifyMode}
         token={publicVerifyToken}
         onExit={() => {
           if (window.history.length > 1) {
@@ -646,8 +611,6 @@ export default function App() {
           onTrackApplication={(appNo) => {
             goToLogin();
           }}
-          onVerifyCertificate={(tok) => handleVerifyPublicToken(tok, 'CERTIFICATE')}
-          onValidateInstrument={(tok) => handleVerifyPublicToken(tok, 'INSTRUMENT')}
           onDirectDemoLogin={handleDirectDemoLogin}
         />
       );
@@ -720,7 +683,6 @@ export default function App() {
         onSelectTab={handleTabChange}
         onOpenApplyModal={handleOpenApplyModal}
         onOpenAddModal={() => setShowAddModal(true)}
-        onVerifyPublicToken={handleVerifyPublicToken}
         onLogout={handleLogout}
         onGoHome={() => navigateTo(getInitialRoleTab(currentRole))}
         onNavigateToApplication={handleNotificationNavigate}
@@ -868,7 +830,6 @@ export default function App() {
               setQrModalInfo(info);
               setShowQrModal(true);
             }}
-            onVerifyPublicToken={handleVerifyPublicToken}
           />
         )}
 
@@ -880,7 +841,6 @@ export default function App() {
               setQrModalInfo(info);
               setShowQrModal(true);
             }}
-            onVerifyPublicToken={handleVerifyPublicToken}
           />
         )}
 
@@ -1001,15 +961,6 @@ export default function App() {
           <AuditLogView />
         )}
 
-        {/* ========================================================
-            PUBLIC VERIFICATION CONSOLE (Authenticated Roles)
-           ======================================================== */}
-        {activeTab === 'public-qr-verify' && (
-          <PublicCertificateVerification
-            mode="CERTIFICATE"
-            onExit={() => navigateTo(getInitialRoleTab(currentRole))}
-          />
-        )}
       </AuthenticatedLayout>
 
       {/* Global Add Instrument Modal */}
@@ -1029,7 +980,6 @@ export default function App() {
         <QRCodeModal
           certificate={qrModalInfo}
           onClose={() => setShowQrModal(false)}
-          onNavigateToVerify={handleVerifyPublicToken}
         />
       )}
     </>

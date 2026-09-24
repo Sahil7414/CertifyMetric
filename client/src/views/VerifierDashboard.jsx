@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import StatusBadge from '../components/StatusBadge';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 
 export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCases, onSelectCertificate }) {
@@ -8,6 +9,10 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
   const [activeTab, setActiveTab] = useState('QUEUE'); // 'QUEUE' | 'HISTORY'
   const [searchQuery, setSearchQuery] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState('ALL'); // 'ALL' | 'PASS' | 'FAIL' | 'IN_PROGRESS'
+
+  // Pagination states
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
 
   const loadCases = () => {
     if (currentUser?.id) {
@@ -67,13 +72,24 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
     return matchQuery && matchOutcome;
   });
 
+  // Reset to page 1 on filter changes
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [searchQuery, outcomeFilter]);
+
+  const totalHistoryPages = Math.ceil(filteredHistory.length / historyPageSize) || 1;
+  const paginatedHistory = useMemo(() => {
+    const startIndex = (historyPage - 1) * historyPageSize;
+    return filteredHistory.slice(startIndex, startIndex + historyPageSize);
+  }, [filteredHistory, historyPage, historyPageSize]);
+
   const passedCount = workedInstruments.filter(c => c.verification_result === 'PASS' || c.application_status === 'APPROVED').length;
   const failedCount = workedInstruments.filter(c => c.verification_result === 'FAIL' || c.application_status === 'VERIFICATION_FAILED').length;
   const certifiedCount = workedInstruments.filter(c => Boolean(c.certificate_no) || c.application_status === 'APPROVED').length;
 
   if (loading) {
     return (
-      <div className="space-y-4 max-w-7xl mx-auto animate-pulse">
+      <div className="space-y-4 w-full animate-pulse">
         <div className="h-32 skeleton rounded-2xl"></div>
         <div className="grid grid-cols-5 gap-4">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -86,7 +102,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-6 w-full animate-in fade-in duration-300">
       {/* ====================================================
           1. Officer Identity Header (No Profile Image)
          ==================================================== */}
@@ -231,13 +247,18 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
             ) : (
               priorityCases.map((c) => {
                 const isInProgress = c.application_status === 'IN_PROGRESS';
+                const hasSchedule = c.scheduled_date || c.time_slot;
+                const isToday = c.scheduled_date && c.scheduled_date.startsWith(todayStr);
+                const scheduleLabel = c.scheduled_date
+                  ? new Date(c.scheduled_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'short' })
+                  : null;
 
                 return (
                   <div
                     key={c.application_id}
                     className="p-4 sm:p-5 hover:bg-slate-50/80 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
                   >
-                    <div className="space-y-1 text-xs flex-1">
+                    <div className="space-y-1.5 text-xs flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
                           {c.application_no}
@@ -250,11 +271,35 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                         </span>
                       </div>
 
-                      <h3 className="font-bold text-slate-900 text-sm pt-0.5">
+                      <h3 className="font-bold text-slate-900 text-sm">
                         {c.manufacturer} {c.model}
                       </h3>
 
-                      <div className="text-slate-600 flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
+                      {/* Scheduled Date / Time — prominently displayed */}
+                      {hasSchedule ? (
+                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11px] font-semibold ${
+                          isToday
+                            ? 'bg-amber-50 border-amber-300 text-amber-900'
+                            : 'bg-blue-50 border-blue-200 text-blue-900'
+                        }`}>
+                          <span className="material-symbols-outlined text-[14px]">
+                            {isToday ? 'today' : 'event'}
+                          </span>
+                          <span>
+                            {isToday ? 'TODAY' : scheduleLabel || 'Scheduled'}
+                            {c.time_slot && (
+                              <> &nbsp;&bull;&nbsp; <strong>{c.time_slot}</strong></>
+                            )}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 italic">
+                          <span className="material-symbols-outlined text-[12px]">schedule</span>
+                          Awaiting schedule from Authority
+                        </span>
+                      )}
+
+                      <div className="text-slate-600 flex flex-wrap gap-x-4 gap-y-1">
                         <span>
                           <strong className="text-slate-700">Serial:</strong>{' '}
                           <span className="font-mono">{c.serial_number}</span>
@@ -367,13 +412,13 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
 
           {/* Worked Instruments History Table / List */}
           <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
-            {filteredHistory.length === 0 ? (
+            {paginatedHistory.length === 0 ? (
               <div className="p-8 text-center text-slate-400">
                 <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">search_off</span>
                 No worked instrument records match the selected criteria.
               </div>
             ) : (
-              filteredHistory.map((item) => {
+              paginatedHistory.map((item) => {
                 const isPassed = item.verification_result === 'PASS' || item.application_status === 'APPROVED';
                 const isFailed = item.verification_result === 'FAIL' || item.application_status === 'VERIFICATION_FAILED';
                 const isInProgress = item.application_status === 'IN_PROGRESS';
@@ -458,6 +503,18 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
               })
             )}
           </div>
+
+          {/* Responsive Pagination Component */}
+          <Pagination
+            currentPage={historyPage}
+            totalPages={totalHistoryPages}
+            totalItems={filteredHistory.length}
+            itemsPerPage={historyPageSize}
+            onPageChange={setHistoryPage}
+            onItemsPerPageChange={setHistoryPageSize}
+            pageSizeOptions={[10, 20, 50]}
+            itemName="records"
+          />
         </div>
       )}
     </div>

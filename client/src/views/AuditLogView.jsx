@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 import { api } from '../api';
 
 export default function AuditLogView() {
@@ -11,6 +12,10 @@ export default function AuditLogView() {
   const [roleFilter, setRoleFilter] = useState('ALL');
   const [sortOption, setSortOption] = useState('NEWEST');
   const [selectedLog, setSelectedLog] = useState(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const loadLogs = () => {
     setLoading(true);
@@ -71,15 +76,27 @@ export default function AuditLogView() {
     });
   }, [safeLogs, searchTerm, actionFilter, roleFilter, sortOption]);
 
+  // Reset to page 1 on filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, actionFilter, roleFilter, sortOption]);
+
+  const totalPages = Math.ceil(filteredLogs.length / pageSize) || 1;
+  const paginatedLogs = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredLogs.slice(startIndex, startIndex + pageSize);
+  }, [filteredLogs, currentPage, pageSize]);
+
   const handleResetFilters = () => {
     setSearchTerm('');
     setActionFilter('ALL');
     setRoleFilter('ALL');
     setSortOption('NEWEST');
+    setCurrentPage(1);
   };
 
   return (
-    <div className="space-y-5 max-w-6xl mx-auto animate-in fade-in duration-300">
+    <div className="space-y-5 w-full animate-in fade-in duration-300">
       {/* Page Header */}
       <PageHeader
         icon="manage_search"
@@ -152,78 +169,92 @@ export default function AuditLogView() {
             <p className="text-xs text-slate-400">No audit events match your search/filter parameters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="data-table min-w-[750px]">
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Action</th>
-                  <th>Target Entity</th>
-                  <th>Actor Particulars</th>
-                  <th>Audit Payload</th>
-                  <th className="text-right">Inspect</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredLogs.map((log) => {
-                  let detailsStr = '';
-                  if (log.details && typeof log.details === 'object') {
-                    detailsStr = JSON.stringify(log.details);
-                  } else if (log.details_json) {
-                    detailsStr = log.details_json;
-                  } else if (log.details) {
-                    detailsStr = String(log.details);
-                  }
+          <>
+            <div className="w-full overflow-x-auto">
+              <table className="data-table w-full min-w-[750px]">
+                <thead>
+                  <tr>
+                    <th className="w-[18%] min-w-[130px]">Timestamp</th>
+                    <th className="w-[18%] min-w-[130px]">Action</th>
+                    <th className="w-[20%] min-w-[140px]">Target Entity</th>
+                    <th className="w-[16%] min-w-[120px]">Actor</th>
+                    <th className="w-[20%] min-w-[140px]">Audit Payload</th>
+                    <th className="text-right min-w-[80px]">Inspect</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedLogs.map((log) => {
+                    let detailsStr = '';
+                    if (log.details && typeof log.details === 'object') {
+                      detailsStr = JSON.stringify(log.details);
+                    } else if (log.details_json) {
+                      detailsStr = log.details_json;
+                    } else if (log.details) {
+                      detailsStr = String(log.details);
+                    }
 
-                  const isOverride = log.action === 'ASSIGNMENT_OVERRIDE';
-                  const isCertificate = log.action === 'ISSUE_CERTIFICATE' || log.action === 'APPROVE_APPLICATION';
+                    const isOverride = log.action === 'ASSIGNMENT_OVERRIDE';
+                    const isCertificate = log.action === 'ISSUE_CERTIFICATE' || log.action === 'APPROVE_APPLICATION';
 
-                  return (
-                    <tr key={log.id} className={`hover:bg-slate-50 transition-colors ${isOverride ? 'bg-amber-50/50' : ''}`}>
-                      <td className="px-5 py-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                        <div>{new Date(log.created_at).toLocaleDateString()}</div>
-                        <div className="text-[10px] text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                          isOverride
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : isCertificate
-                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                            : 'bg-slate-100 text-slate-800'
-                        }`}>
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="font-semibold text-slate-900 block">{log.entity_name}</span>
-                        <span className="block font-mono text-[10px] text-slate-400 truncate max-w-[140px]" title={log.entity_id}>
-                          {log.entity_id}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="font-bold text-slate-800 block">{log.actor_id}</span>
-                        <span className="inline-block text-[10px] uppercase font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
-                          {log.actor_role}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4 font-mono text-[11px] text-slate-600 max-w-xs truncate" title={detailsStr}>
-                        {detailsStr || '—'}
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <button
-                          onClick={() => setSelectedLog(log)}
-                          className="px-2.5 py-1 text-slate-700 hover:text-primary bg-slate-100 hover:bg-slate-200 rounded font-semibold text-xs transition-colors cursor-pointer"
-                        >
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    return (
+                      <tr key={log.id} className={`hover:bg-slate-50 transition-colors ${isOverride ? 'bg-amber-50/50' : ''}`}>
+                        <td className="px-5 py-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                          <div>{new Date(log.created_at).toLocaleDateString()}</div>
+                          <div className="text-[10px] text-slate-400">{new Date(log.created_at).toLocaleTimeString()}</div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                            isOverride
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : isCertificate
+                              ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                              : 'bg-slate-100 text-slate-800'
+                          }`}>
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="font-semibold text-slate-900 block">{log.entity_name}</span>
+                          <span className="block font-mono text-[10px] text-slate-400 truncate max-w-[140px]" title={log.entity_id}>
+                            {log.entity_id}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="font-bold text-slate-800 block">{log.actor_id}</span>
+                          <span className="inline-block text-[10px] uppercase font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                            {log.actor_role}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 font-mono text-[11px] text-slate-600 max-w-xs truncate" title={detailsStr}>
+                          {detailsStr || '—'}
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <button
+                            onClick={() => setSelectedLog(log)}
+                            className="px-2.5 py-1 text-slate-700 hover:text-primary bg-slate-100 hover:bg-slate-200 rounded font-semibold text-xs transition-colors cursor-pointer"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Responsive Pagination Component */}
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={filteredLogs.length}
+              itemsPerPage={pageSize}
+              onPageChange={setCurrentPage}
+              onItemsPerPageChange={setPageSize}
+              pageSizeOptions={[15, 30, 50]}
+              itemName="audit logs"
+            />
+          </>
         )}
       </div>
 

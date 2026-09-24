@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import StatusBadge from '../components/StatusBadge';
 import ApplicationDetailsModal from '../components/ApplicationDetailsModal';
 import ListToolbar from '../components/ListToolbar';
 import PageHeader from '../components/PageHeader';
+import Pagination from '../components/Pagination';
 
 export default function ApplicationsList({
   applications = [],
@@ -21,6 +22,10 @@ export default function ApplicationsList({
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [sortOption, setSortOption] = useState('NEWEST');
   const [selectedDetailApp, setSelectedDetailApp] = useState(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const isAuthority = currentRole === 'AUTHORITY' || currentRole === 'PLATFORM_ADMIN';
   const isTrader = currentRole === 'TRADER';
@@ -96,6 +101,17 @@ export default function ApplicationsList({
     });
   }, [safeApplications, searchTerm, statusFilter, modeFilter, typeFilter, allocationFilter, sortOption]);
 
+  // Reset to page 1 whenever search, filters or sort change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, modeFilter, typeFilter, allocationFilter, sortOption]);
+
+  const totalPages = Math.ceil(filteredApps.length / pageSize) || 1;
+  const paginatedApps = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredApps.slice(startIndex, startIndex + pageSize);
+  }, [filteredApps, currentPage, pageSize]);
+
   const handleResetFilters = () => {
     setSearchTerm('');
     setStatusFilter('ALL');
@@ -103,6 +119,7 @@ export default function ApplicationsList({
     setTypeFilter('ALL');
     setAllocationFilter('ALL');
     setSortOption('NEWEST');
+    setCurrentPage(1);
   };
 
   return (
@@ -199,24 +216,24 @@ export default function ApplicationsList({
       />
 
       {/* Applications Table (LMOMS Format) */}
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="data-table min-w-[1000px]">
+      <div className="card overflow-hidden w-full">
+        <div className="w-full overflow-x-auto">
+          <table className="data-table w-full min-w-[960px]">
             <thead>
               <tr>
-                <th>Application ID</th>
-                <th>Instrument & SN</th>
-                <th>Verification Type</th>
-                <th>Applied Date</th>
-                <th>Total Fee</th>
-                <th>Payment Status</th>
-                <th>Application Status</th>
-                <th>Assigned Office / Verifier</th>
-                <th className="text-right">Actions</th>
+                <th className="w-[14%] min-w-[130px]">Application ID</th>
+                <th className="w-[20%] min-w-[180px]">Instrument & SN</th>
+                <th className="w-[14%] min-w-[140px]">Verification Type</th>
+                <th className="w-[11%] min-w-[110px]">Applied Date</th>
+                <th className="w-[9%] min-w-[90px]">Total Fee</th>
+                <th className="w-[10%] min-w-[100px]">Payment</th>
+                <th className="w-[12%] min-w-[120px]">Status</th>
+                <th className="w-[10%] min-w-[130px]">Assigned Verifier</th>
+                <th className="text-right min-w-[120px]">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filteredApps.length === 0 ? (
+              {paginatedApps.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-0">
                     <div className="empty-state">
@@ -233,7 +250,7 @@ export default function ApplicationsList({
                   </td>
                 </tr>
               ) : (
-                filteredApps.map((app) => {
+                paginatedApps.map((app) => {
                   const isApproved = ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED', 'APPROVED'].includes(app.status);
                   const isReturned = app.status === 'RETURNED';
                   const isPaid = app.fee_status === 'PAID' || app.payment?.payment_status === 'PAID' || app.payment?.payment_status === 'PAYMENT_VERIFIED' || app.status === 'PAYMENT_VERIFIED' || isApproved;
@@ -575,6 +592,18 @@ export default function ApplicationsList({
             </tbody>
           </table>
         </div>
+
+        {/* Responsive Pagination Component */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredApps.length}
+          itemsPerPage={pageSize}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setPageSize}
+          pageSizeOptions={[10, 20, 50]}
+          itemName="applications"
+        />
       </div>
 
       {/* Application Details Modal */}

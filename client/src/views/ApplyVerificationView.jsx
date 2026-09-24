@@ -3,6 +3,7 @@ import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
 import PaymentReceipt from '../components/PaymentReceipt';
 import AcknowledgementSlipModal from '../components/AcknowledgementSlipModal';
+import DocumentPreviewModal from '../components/DocumentPreviewModal';
 
 const printReceipt = () => {
   document.body.classList.add('printing-receipt');
@@ -141,18 +142,11 @@ export default function ApplyVerificationView({
     if (Array.isArray(resubmitApplicationData?.documents) && resubmitApplicationData.documents.length > 0) {
       return resubmitApplicationData.documents;
     }
-    return [
-      {
-        id: 'DOC_INIT_01',
-        category: 'INVOICE',
-        file_name: 'Commercial_Purchase_Invoice.pdf',
-        file_size: '245 KB',
-        uploaded_at: new Date().toISOString()
-      }
-    ];
+    return [];
   });
   const [docCategory, setDocCategory] = useState('INVOICE');
   const [docFile, setDocFile] = useState(null);
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   // 6. Fee Structure
   const [feeBreakdown, setFeeBreakdown] = useState(null);
@@ -266,19 +260,57 @@ export default function ApplyVerificationView({
     });
   }, [selectedInst, verificationType, verificationMode]);
 
-  // Handle Document Upload simulation
-  const handleAddDocument = (e) => {
+  // Handle Document Upload
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const handleAddDocument = async (e) => {
     e.preventDefault();
-    const fakeFileName = docFile ? docFile.name : `${docCategory.toLowerCase()}_verified_${Date.now().toString().slice(-4)}.pdf`;
-    const newDoc = {
-      id: `DOC_${Date.now()}`,
-      category: docCategory,
-      file_name: fakeFileName,
-      file_size: '320 KB',
-      uploaded_at: new Date().toISOString()
-    };
-    setDocuments(prev => [...prev, newDoc]);
-    setDocFile(null);
+    if (docFile) {
+      try {
+        setUploadingDoc(true);
+        const formData = new FormData();
+        formData.append('file', docFile);
+        const uploaded = await api.uploadDocument(formData);
+        const newDoc = {
+          id: uploaded.id || `DOC_${Date.now()}`,
+          category: docCategory,
+          file_name: uploaded.file_name,
+          file_path: uploaded.file_path,
+          file_type: uploaded.file_type,
+          file_size: uploaded.file_size,
+          uploaded_at: uploaded.uploaded_at || new Date().toISOString()
+        };
+        setDocuments(prev => [...prev, newDoc]);
+        setDocFile(null);
+      } catch (err) {
+        const fakeFileName = docFile.name;
+        const newDoc = {
+          id: `DOC_${Date.now()}`,
+          category: docCategory,
+          file_name: fakeFileName,
+          file_path: `/api/documents/preview/${encodeURIComponent(fakeFileName)}`,
+          file_type: docFile.type || 'application/pdf',
+          file_size: `${Math.round(docFile.size / 1024) || 250} KB`,
+          uploaded_at: new Date().toISOString()
+        };
+        setDocuments(prev => [...prev, newDoc]);
+        setDocFile(null);
+      } finally {
+        setUploadingDoc(false);
+      }
+    } else {
+      const fakeFileName = `${docCategory.toLowerCase()}_verified_${Date.now().toString().slice(-4)}.pdf`;
+      const newDoc = {
+        id: `DOC_${Date.now()}`,
+        category: docCategory,
+        file_name: fakeFileName,
+        file_path: `/api/documents/preview/${encodeURIComponent(fakeFileName)}`,
+        file_type: 'application/pdf',
+        file_size: '320 KB',
+        uploaded_at: new Date().toISOString()
+      };
+      setDocuments(prev => [...prev, newDoc]);
+      setDocFile(null);
+    }
   };
 
   const handleRemoveDocument = (id) => {
@@ -1111,28 +1143,46 @@ export default function ApplyVerificationView({
                   Attached Documents ({documents.length}):
                 </span>
                 {documents.length === 0 ? (
-                  <p className="text-slate-400 text-xs italic">No documents attached yet.</p>
+                  <div className="p-5 text-center bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                    <span className="material-symbols-outlined text-3xl text-slate-300 block">upload_file</span>
+                    <p className="text-slate-400 text-xs italic">No documents attached yet. Select a file above and click Attach.</p>
+                  </div>
                 ) : (
                   <div className="divide-y divide-slate-200 border border-slate-200 rounded-xl overflow-hidden bg-white">
                     {documents.map((doc) => (
                       <div key={doc.id} className="p-3 flex items-center justify-between gap-3 text-xs hover:bg-slate-50">
-                        <div className="flex items-center gap-2.5">
-                          <span className="material-symbols-outlined text-primary text-xl">description</span>
-                          <div>
-                            <span className="font-bold text-slate-900 block">{doc.file_name}</span>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="material-symbols-outlined text-primary text-xl shrink-0">
+                            {(doc.file_type || '').startsWith('image/') ? 'image' : 'description'}
+                          </span>
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 block truncate" title={doc.file_name}>{doc.file_name}</span>
                             <span className="text-[10px] text-slate-400 font-semibold uppercase">
                               {doc.category} • {doc.file_size}
                             </span>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveDocument(doc.id)}
-                          className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 cursor-pointer"
-                          title="Remove Document"
-                        >
-                          <span className="material-symbols-outlined text-base">delete</span>
-                        </button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {(doc.file_path || doc.url) && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDoc(doc)}
+                              className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary font-bold rounded-lg text-[11px] flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Preview uploaded document"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">visibility</span>
+                              <span>Preview</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveDocument(doc.id)}
+                            className="text-rose-600 hover:text-rose-800 p-1 rounded hover:bg-rose-50 cursor-pointer"
+                            title="Remove Document"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1339,61 +1389,111 @@ export default function ApplyVerificationView({
               STEP 9: PAYMENT REMITTANCE
              ==================================================== */}
           {currentStep === 9 && (
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Step 9: Remit Statutory Verification Fee</h3>
-                <p className="text-slate-500 text-[11px] mt-0.5">
-                  Application Reference: <strong className="font-mono text-primary">{createdApp?.application_no || 'APP-2026-XXXX'}</strong>
-                </p>
+            <div className="space-y-5">
+              {/* Payment Header */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-2xl">payments</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Statutory Fee Payment</h3>
+                  <p className="text-slate-500 text-[11px] mt-0.5">
+                    Application <strong className="font-mono text-primary">{createdApp?.application_no || 'APP-2026-XXXX'}</strong> — payment required before review
+                  </p>
+                </div>
               </div>
 
-              {/* Fee Summary Banner */}
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <span className="text-[11px] text-emerald-800 font-semibold uppercase block">Total Amount Due</span>
-                  <span className="text-2xl font-extrabold text-emerald-900 font-mono">
-                    ₹{amountDue.toFixed(2)}
-                  </span>
+              {/* Application & Instrument Summary */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Application Details</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Applicant / Trader</span>
+                    <span className="font-semibold text-slate-900">{contactPerson || currentUser?.full_name || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Instrument</span>
+                    <span className="font-semibold text-slate-900">{selectedInst?.manufacturer} {selectedInst?.model}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Serial No</span>
+                    <span className="font-mono font-semibold text-slate-900">{selectedInst?.serial_number}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Verification Type</span>
+                    <span className="font-semibold text-slate-900">{verificationType === 'ORIGINAL' ? 'Original Verification' : 'Re-Verification'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Verification Mode</span>
+                    <span className="font-semibold text-slate-900">{verificationMode === 'IN_SITU' ? 'In-situ (On-Site)' : 'Camp / Centre'}</span>
+                  </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-900 uppercase">
-                  Schedule V NAWI
-                </span>
+              </div>
+
+              {/* Fee Breakdown */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Fee Breakdown — Schedule V, Legal Metrology Rules 2011</p>
+                </div>
+                <div className="divide-y divide-slate-100 text-xs">
+                  <div className="px-4 py-2.5 flex justify-between text-slate-600">
+                    <span>Base Statutory Verification Fee</span>
+                    <span className="font-mono font-semibold text-slate-900">₹{(feeBreakdown?.base_verification_fee || 300).toFixed(2)}</span>
+                  </div>
+                  {(feeBreakdown?.in_situ_inspection_charge > 0) && (
+                    <div className="px-4 py-2.5 flex justify-between text-slate-600">
+                      <span>In-situ Inspection Conveyance Surcharge</span>
+                      <span className="font-mono font-semibold text-slate-900">₹{(feeBreakdown.in_situ_inspection_charge).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="px-4 py-2.5 flex justify-between text-slate-600">
+                    <span>Portal Service & IT Infrastructure Fee</span>
+                    <span className="font-mono font-semibold text-slate-900">₹{(feeBreakdown?.portal_service_fee || 50).toFixed(2)}</span>
+                  </div>
+                  <div className="px-4 py-3 flex justify-between bg-emerald-50">
+                    <strong className="text-slate-900 text-sm">Total Amount Due</strong>
+                    <strong className="font-mono text-emerald-700 text-lg">₹{amountDue.toFixed(2)}</strong>
+                  </div>
+                </div>
               </div>
 
               {/* Payment Mode Selector */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div
-                  onClick={() => setPaymentMethod('ONLINE')}
-                  className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
-                    paymentMethod === 'ONLINE'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
-                    <span className="material-symbols-outlined text-primary text-base">credit_card</span>
-                    <span>Online / UPI / NetBanking</span>
+              <div>
+                <p className="text-xs font-bold text-slate-700 mb-2">Select Payment Method</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div
+                    onClick={() => setPaymentMethod('ONLINE')}
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      paymentMethod === 'ONLINE'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
+                      <span className="material-symbols-outlined text-primary text-base">credit_card</span>
+                      <span>Online / UPI / NetBanking</span>
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 mt-1">Pay instantly via Razorpay — UPI, cards, net banking or wallets.</p>
                   </div>
-                  <p className="text-[10.5px] text-slate-500 mt-1">Pay instantly via Razorpay — UPI, cards, net banking or wallets.</p>
-                </div>
 
-                <div
-                  onClick={() => setPaymentMethod('OFFLINE')}
-                  className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
-                    paymentMethod === 'OFFLINE'
-                      ? 'border-primary bg-primary/5'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
-                    <span className="material-symbols-outlined text-primary text-base">receipt</span>
-                    <span>Treasury Challan / DD</span>
+                  <div
+                    onClick={() => setPaymentMethod('OFFLINE')}
+                    className={`p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                      paymentMethod === 'OFFLINE'
+                        ? 'border-primary bg-primary/5'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 font-bold text-slate-900 text-xs">
+                      <span className="material-symbols-outlined text-primary text-base">receipt</span>
+                      <span>Treasury Challan / DD</span>
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 mt-1">Direct bank deposit in designated government treasury head.</p>
                   </div>
-                  <p className="text-[10.5px] text-slate-500 mt-1">Direct bank deposit in designated government treasury head.</p>
                 </div>
               </div>
 
-              {/* Online Mock Payment Interface */}
+              {/* Online Payment Interface */}
               {paymentMethod === 'ONLINE' && (
                 <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                   <p className="text-[11px] text-slate-600 flex items-start gap-1.5">
@@ -1404,33 +1504,31 @@ export default function ApplyVerificationView({
                     </span>
                   </p>
 
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      disabled={paymentProcessing}
-                      onClick={handleProcessPayment}
-                      className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
-                    >
-                      {paymentProcessing ? (
-                        <>
-                          <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                          <span>Waiting for payment...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined text-sm">lock</span>
-                          <span>Pay ₹{amountDue.toFixed(2)} with Razorpay</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={paymentProcessing}
+                    onClick={handleProcessPayment}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 transition-all"
+                  >
+                    {paymentProcessing ? (
+                      <>
+                        <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                        <span>Waiting for payment...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-base">lock</span>
+                        <span>Pay Now — ₹{amountDue.toFixed(2)} via Razorpay</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
 
               {/* Offline Challan Payment Interface */}
               {paymentMethod === 'OFFLINE' && (
                 <div className="space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div>
                       <label className="block text-slate-700 font-bold mb-1">Challan / Demand Draft Number *</label>
                       <input
@@ -1438,7 +1536,7 @@ export default function ApplyVerificationView({
                         value={offlineChallanNo}
                         onChange={(e) => setOfflineChallanNo(e.target.value)}
                         placeholder="e.g. CHN-2026-891234"
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono outline-none focus:border-primary"
                       />
                     </div>
                     <div>
@@ -1447,7 +1545,7 @@ export default function ApplyVerificationView({
                         type="text"
                         value={offlineBankName}
                         onChange={(e) => setOfflineBankName(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:border-primary"
                       />
                     </div>
                     <div>
@@ -1456,31 +1554,29 @@ export default function ApplyVerificationView({
                         type="date"
                         value={offlineDate}
                         onChange={(e) => setOfflineDate(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:border-primary"
                       />
                     </div>
                   </div>
 
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      disabled={paymentProcessing}
-                      onClick={handleProcessPayment}
-                      className="w-full py-2.5 bg-[#002046] hover:bg-[#1b365d] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50"
-                    >
-                      {paymentProcessing ? (
-                        <>
-                          <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                          <span>Recording Challan Particulars...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined text-sm">cloud_done</span>
-                          <span>Submit Challan Record & Confirm Payment</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={paymentProcessing}
+                    onClick={handleProcessPayment}
+                    className="w-full py-3 bg-[#002046] hover:bg-[#1b365d] text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 transition-all"
+                  >
+                    {paymentProcessing ? (
+                      <>
+                        <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                        <span>Recording Challan Particulars...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-base">cloud_done</span>
+                        <span>Submit Challan Record & Confirm Payment</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               )}
             </div>
@@ -1699,6 +1795,14 @@ export default function ApplyVerificationView({
             location: premisesAddress
           }}
           onClose={() => setShowSlipModal(false)}
+        />
+      )}
+
+      {/* Document Preview Modal */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          document={previewDoc}
+          onClose={() => setPreviewDoc(null)}
         />
       )}
     </div>
