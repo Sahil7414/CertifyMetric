@@ -40,7 +40,7 @@ export default function StatusBadge({ status, className = '', showIcon = true })
   const translatedLabel = t(`status.${status}`, config.label);
 
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${config.bg} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${config.bg} ${className}`}>
       {showIcon && (
         <span className="material-symbols-outlined text-[14px]">
           {config.icon}

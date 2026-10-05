@@ -269,7 +269,7 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
                           {c.application_no}
                         </span>
                         <StatusBadge status={c.application_status} />
-                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap shadow-2xs">
                           {c.verification_mode === 'LABORATORY' || c.arrangement_type === 'LAB_TESTING' ? 'GATC Lab Standards' : 'Direct Testing'}
                         </span>
                       </div>
@@ -436,11 +436,11 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
                         <span className="font-mono font-bold text-[#0c2340] bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-xs">
                           {item.serial_number || item.instrument_id}
                         </span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 whitespace-nowrap shadow-2xs">
                           {item.category_name}
                         </span>
                         {item.certificate_no && (
-                          <span className="font-mono text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded flex items-center gap-1">
+                          <span className="font-mono text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 whitespace-nowrap shadow-2xs">
                             <span className="material-symbols-outlined text-xs">verified</span>
                             <span>{item.certificate_no}</span>
                           </span>

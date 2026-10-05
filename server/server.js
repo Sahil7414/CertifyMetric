@@ -3072,6 +3072,45 @@ app.post('/api/geovisit/:appId/check-in', async (req, res) => {
   }
 });
 
+// 3B. Calibrate Premise Location to Officer Vicinity (for live demo demonstration)
+app.post('/api/geovisit/:appId/calibrate-location', async (req, res) => {
+  const { latitude, longitude } = req.body;
+  if (latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: 'Latitude and longitude coordinates are required.' });
+  }
+
+  const officerLat = Number(latitude);
+  const officerLon = Number(longitude);
+  // Position registered premises ~15m from the officer
+  const newRegLat = Number((officerLat - 0.00010).toFixed(6));
+  const newRegLon = Number((officerLon - 0.00008).toFixed(6));
+  const now = new Date().toISOString();
+
+  const updatedGv = await GeoVisit.findOneAndUpdate(
+    { application_id: req.params.appId },
+    {
+      $set: {
+        registered_latitude: newRegLat,
+        registered_longitude: newRegLon,
+        status: 'NOT_STARTED',
+        updated_at: now
+      }
+    },
+    { new: true, upsert: true }
+  ).lean();
+
+  await Application.updateOne(
+    { id: req.params.appId },
+    { $set: { registered_latitude: newRegLat, registered_longitude: newRegLon, updated_at: now } }
+  );
+
+  return res.json({
+    success: true,
+    message: 'Registered premises calibrated within 15m of device coordinates.',
+    geovisit: updatedGv
+  });
+});
+
 // 4. Authority / Administrator Override
 app.post('/api/geovisit/:appId/override', async (req, res) => {
   const { role, id: actorId } = getActor(req);

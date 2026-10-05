@@ -16,12 +16,14 @@ export default function SmoothSelect({
   placeholder = 'Select option...',
   prefix = '',
   className = '',
-  menuWidth = 'w-56',
+  menuWidth,
   align = 'left',
   disabled = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
+  const isFullWidth = className.includes('w-full');
+  const computedMenuWidth = menuWidth || (isFullWidth ? 'w-full' : 'min-w-[200px] w-56');
 
   const selectedOption = options.find((opt) => String(opt.value) === String(value));
 
@@ -53,7 +55,7 @@ export default function SmoothSelect({
   const isActive = Boolean(value && value !== 'ALL' && value !== '' && value !== 'DEFAULT' && value !== 'NEWEST');
 
   return (
-    <div className="relative inline-block text-left" ref={containerRef}>
+    <div className={`relative ${isFullWidth ? 'w-full block' : 'inline-block'} text-left`} ref={containerRef}>
       {/* Trigger Button */}
       <button
         type="button"
@@ -61,7 +63,9 @@ export default function SmoothSelect({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className={`group text-xs px-3.5 py-2 rounded-xl border font-semibold outline-none transition-all duration-200 flex items-center justify-between gap-2 select-none cursor-pointer shadow-2xs hover:shadow-sm ${
+        className={`group text-xs px-3.5 py-2.5 rounded-xl border font-semibold outline-none transition-all duration-200 flex items-center justify-between gap-2 select-none cursor-pointer shadow-2xs hover:shadow-sm ${
+          isFullWidth ? 'w-full' : ''
+        } ${
           isActive
             ? 'bg-blue-50/90 text-[#002046] border-blue-300 font-bold hover:bg-blue-100/70 hover:border-blue-400'
             : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300/90 hover:border-slate-400'

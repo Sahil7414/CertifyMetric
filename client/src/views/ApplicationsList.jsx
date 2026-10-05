@@ -264,7 +264,7 @@ export default function ApplicationsList({
                     <React.Fragment key={app.id}>
                       <tr className={`hover:bg-slate-50/90 transition-colors border-b border-slate-100 ${isReturned ? 'bg-rose-50/20' : ''}`}>
                         {/* 1. Application ID */}
-                        <td className="px-5 py-3.5 align-middle">
+                        <td className="px-5 py-3.5 align-middle whitespace-nowrap">
                           <button
                             onClick={() => setSelectedDetailApp(app)}
                             className="font-mono font-bold text-[#002046] hover:text-blue-700 hover:underline block text-xs cursor-pointer text-left"
@@ -290,7 +290,7 @@ export default function ApplicationsList({
 
                         {/* 3. Verification Type & Mode */}
                         <td className="px-5 py-3.5 align-middle">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-800 inline-block">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold uppercase bg-slate-100 text-slate-700 border border-slate-200 whitespace-nowrap shadow-2xs">
                             {app.verification_type === 'RE_VERIFICATION' || app.request_type === 'RE_VERIFICATION'
                               ? 'Re-Verification'
                               : 'Original Verification'}

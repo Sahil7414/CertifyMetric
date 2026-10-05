@@ -61,6 +61,20 @@ const DEMO_ROLES = [
   }
 ];
 
+const EXTENDED_DEMO_ACCOUNTS = [
+  { name: 'Rajesh Sharma', role: 'TRADER', tag: 'Thane · Verified', email: 'demo.trader@certifymetric.local', password: 'DemoTrader@2026', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { name: 'Manoj Mehta', role: 'TRADER', tag: 'Mulund · ~13km', email: 'trader.mulund@certifymetric.local', password: 'DemoTrader2@2026', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { name: 'Sunil Varma', role: 'TRADER', tag: 'Vikhroli · ~6km', email: 'trader.vikhroli@certifymetric.local', password: 'DemoTrader3@2026', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { name: 'Deepak Patil', role: 'TRADER', tag: 'Bhandup · ~9km', email: 'trader.bhandup@certifymetric.local', password: 'DemoTrader4@2026', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { name: 'Aakash Gupta', role: 'TRADER', tag: 'Near Me · ~15m', email: 'trader.nearme@certifymetric.local', password: 'DemoTrader5@2026', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { name: 'Vikram Singh (LMO)', role: 'VERIFIER', tag: 'Mumbai Suburban', email: 'demo.verifier@certifymetric.local', password: 'DemoVerifier@2026', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+  { name: 'Anjali Deshmukh (LMO)', role: 'VERIFIER', tag: 'Thane · Top Match', email: 'demo.verifier.anjali@certifymetric.local', password: 'DemoVerifier2@2026', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+  { name: 'Pradeep Sawant (LMO)', role: 'VERIFIER', tag: 'Mumbai City Only', email: 'demo.verifier.pradeep@certifymetric.local', password: 'DemoVerifier3@2026', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+  { name: 'Meera Kulkarni (LMO)', role: 'VERIFIER', tag: 'Asst. Controller (Busy)', email: 'demo.verifier.meera@certifymetric.local', password: 'DemoVerifier4@2026', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+  { name: 'Suresh Patil (LMO)', role: 'VERIFIER', tag: 'Navi Mumbai', email: 'demo.verifier.suresh@certifymetric.local', password: 'DemoVerifier5@2026', color: 'bg-purple-50 text-purple-800 border-purple-200' },
+  { name: 'Dr. S. K. Verma', role: 'AUTHORITY', tag: 'Controller Authority', email: 'demo.authority@certifymetric.local', password: 'DemoAuthority@2026', color: 'bg-blue-50 text-blue-800 border-blue-200' }
+];
+
 export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegister }) {
   const { t } = useTranslation();
   const [email, setEmail] = useState('');
@@ -68,6 +82,7 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingRole, setLoadingRole] = useState(null);
+  const [showAllAccounts, setShowAllAccounts] = useState(false);
   const [error, setError] = useState('');
 
   // 1-Click Direct Demo Login
@@ -208,6 +223,38 @@ export default function LoginView({ onLoginSuccess, onBackToLanding, onGoToRegis
                   </button>
                 );
               })}
+            </div>
+
+            {/* Toggle All Regional Demonstration Accounts */}
+            <div className="pt-1 text-center">
+              <button
+                type="button"
+                onClick={() => setShowAllAccounts(!showAllAccounts)}
+                className="text-[11px] font-bold text-primary hover:text-primary-container flex items-center justify-center gap-1 mx-auto transition-colors cursor-pointer"
+              >
+                <span>{showAllAccounts ? 'Hide' : 'Show'} Regional Accounts (5 Traders & 6 Officers)</span>
+                <span className="material-symbols-outlined text-sm">{showAllAccounts ? 'expand_less' : 'expand_more'}</span>
+              </button>
+
+              {showAllAccounts && (
+                <div className="mt-2.5 pt-2 border-t border-slate-200/80 grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-left animate-in fade-in duration-150">
+                  {EXTENDED_DEMO_ACCOUNTS.map((acc) => (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handleDirectDemoLogin(acc)}
+                      className={`p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all hover:shadow-xs cursor-pointer ${acc.color}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold truncate">{acc.name}</span>
+                        <span className="text-[8.5px] uppercase font-bold px-1 rounded bg-white/70">{acc.role}</span>
+                      </div>
+                      <span className="text-[9px] opacity-80 mt-0.5 truncate">{acc.tag}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

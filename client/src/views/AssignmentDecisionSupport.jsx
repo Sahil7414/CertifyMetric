@@ -532,7 +532,8 @@ export default function AssignmentDecisionSupport({
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="text-sm font-bold text-slate-900">{c.full_name}</p>
                           {isSelected && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 uppercase tracking-wide">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 uppercase tracking-wide whitespace-nowrap shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
                               Selected for Override
                             </span>
                           )}
@@ -785,7 +786,8 @@ export default function AssignmentDecisionSupport({
                 <span className="text-slate-600">
                   Assign <strong className="text-slate-900">{selected.full_name}</strong>
                   {isOverrideAssignment && (
-                    <span className="mx-1.5 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    <span className="mx-1.5 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap shadow-2xs">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
                       Authority Override
                     </span>
                   )}{' '}

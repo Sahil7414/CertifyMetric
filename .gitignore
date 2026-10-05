@@ -26,9 +26,11 @@ DEMO_CREDENTIALS.md
 server/metrology.db
 server/metrology.db*
 
-# User-uploaded physical inspection evidence (keep folder via .gitkeep)
+# User-uploaded physical inspection evidence & documents (keep folder via .gitkeep)
 server/uploads/evidence/*
 !server/uploads/evidence/.gitkeep
+server/uploads/documents/*
+!server/uploads/documents/.gitkeep
 
 # System & Editor Caches
 .DS_Store

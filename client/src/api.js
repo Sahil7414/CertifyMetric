@@ -516,6 +516,16 @@ export const api = {
     return json;
   }),
 
+  calibrateGeoVisitLocation: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/calibrate-location`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(data)
+  }).then(async r => {
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.error || 'Calibration failed');
+    return json;
+  }),
+
   checkOutGeoVisit: (appId, data) => fetch(`${API_BASE}/geovisit/${appId}/check-out`, {
     method: 'POST',
     headers: getHeaders(),

@@ -17,12 +17,12 @@ export default function AuthorityDashboard({
 
   // 8 Canonical Authority KPIs from MongoDB-backed applications
   const awaitingScrutiny = useMemo(
-    () => safeApplications.filter((a) => a.status === 'SUBMITTED'),
+    () => safeApplications.filter((a) => ['SUBMITTED', 'PAYMENT_VERIFIED', 'PENDING_VERIFICATION'].includes(a.status)),
     [safeApplications]
   );
 
   const pendingAssignment = useMemo(
-    () => safeApplications.filter((a) => a.status === 'UNDER_REVIEW' || (['SUBMITTED', 'PENDING_VERIFICATION'].includes(a.status) && !a.assigned_id)),
+    () => safeApplications.filter((a) => a.status === 'UNDER_REVIEW' || (['SUBMITTED', 'PENDING_VERIFICATION', 'PAYMENT_VERIFIED'].includes(a.status) && !a.assigned_id)),
     [safeApplications]
   );
 
@@ -76,10 +76,19 @@ export default function AuthorityDashboard({
     ].filter(s => s.count > 0);
   }, [totalApps, awaitingScrutiny, pendingAssignment, scheduledVerifications, reportsAwaitingReview, recentlyCompleted, returnedApplications, t]);
 
-  // Top 5 priority applications needing officer attention
+  // Top priority applications needing officer attention (including new paid applications)
   const priorityApplications = useMemo(() => {
     return [...safeApplications]
-      .filter((a) => ['SUBMITTED', 'REPORT_SUBMITTED', 'GATC_REPORT_SUBMITTED', 'UNDER_REVIEW', 'VERIFICATION_COMPLETED'].includes(a.status))
+      .filter((a) => [
+        'SUBMITTED',
+        'PAYMENT_VERIFIED',
+        'PENDING_VERIFICATION',
+        'PAYMENT_PENDING',
+        'UNDER_REVIEW',
+        'REPORT_SUBMITTED',
+        'GATC_REPORT_SUBMITTED',
+        'VERIFICATION_COMPLETED'
+      ].includes(a.status))
       .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
       .slice(0, 5);
   }, [safeApplications]);
@@ -360,15 +369,15 @@ export default function AuthorityDashboard({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs min-w-[640px]">
+            <table className="w-full text-left text-xs min-w-[780px]">
               <thead className="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="px-5 py-3">{t('table.applicationNo', 'Application No')}</th>
-                  <th className="px-5 py-3">{t('table.traderEstablishment', 'Trader & Establishment')}</th>
-                  <th className="px-5 py-3">{t('dashboard.instrument', 'Instrument')}</th>
-                  <th className="px-5 py-3">{t('table.status', 'Status')}</th>
-                  <th className="px-5 py-3">{t('table.assignedPersonnel', 'Assigned Personnel')}</th>
-                  <th className="px-5 py-3 text-right">{t('table.actions', 'Action')}</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[140px]">{t('table.applicationNo', 'Application No')}</th>
+                  <th className="px-5 py-3 min-w-[180px]">{t('table.traderEstablishment', 'Trader & Establishment')}</th>
+                  <th className="px-5 py-3 min-w-[180px]">{t('dashboard.instrument', 'Instrument')}</th>
+                  <th className="px-5 py-3 whitespace-nowrap min-w-[140px]">{t('table.status', 'Status')}</th>
+                  <th className="px-5 py-3 min-w-[150px]">{t('table.assignedPersonnel', 'Assigned Personnel')}</th>
+                  <th className="px-5 py-3 text-right whitespace-nowrap min-w-[180px]">{t('table.actions', 'Action')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 text-slate-700">
@@ -382,29 +391,29 @@ export default function AuthorityDashboard({
                 ) : (
                   priorityApplications.map((app) => (
                     <tr key={app.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-5 py-3 font-mono font-bold text-[#002046]">
+                      <td className="px-5 py-3.5 font-mono font-bold text-[#002046] whitespace-nowrap text-xs">
                         {app.application_no}
                       </td>
-                      <td className="px-5 py-3">
-                        <span className="font-bold text-slate-900 block">{app.trader_name}</span>
-                        <span className="text-[10px] text-slate-500">{app.trader_org}</span>
+                      <td className="px-5 py-3.5">
+                        <span className="font-bold text-slate-900 block truncate max-w-[220px]" title={app.trader_name}>{app.trader_name}</span>
+                        <span className="text-[10px] text-slate-500 block truncate max-w-[220px]" title={app.trader_org}>{app.trader_org}</span>
                       </td>
-                      <td className="px-5 py-3">
-                        <span className="font-bold text-slate-900 block">{app.manufacturer} {app.model}</span>
-                        <span className="font-mono text-[10px] text-slate-500">SN: {app.serial_number}</span>
+                      <td className="px-5 py-3.5">
+                        <span className="font-bold text-slate-900 block truncate max-w-[220px]" title={`${app.manufacturer} ${app.model}`}>{app.manufacturer} {app.model}</span>
+                        <span className="font-mono text-[10px] text-slate-500 whitespace-nowrap block">SN: {app.serial_number}</span>
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3.5 whitespace-nowrap">
                         <StatusBadge status={app.status} />
                       </td>
-                      <td className="px-5 py-3 text-slate-600">
+                      <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap">
                         {app.assigned_to_name ? (
                           <span className="font-medium text-slate-900">{app.assigned_to_name}</span>
                         ) : (
                           <span className="text-amber-600 italic">{t('dashboard.unassigned', 'Unassigned')}</span>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-right space-x-1.5 whitespace-nowrap">
-                        {(!app.assigned_id || ['SUBMITTED', 'UNDER_REVIEW', 'PAYMENT_VERIFIED'].includes(app.status)) ? (
+                      <td className="px-5 py-3.5 text-right space-x-1.5 whitespace-nowrap">
+                        {(!app.assigned_id || ['SUBMITTED', 'UNDER_REVIEW', 'PAYMENT_VERIFIED', 'PENDING_VERIFICATION', 'PAYMENT_PENDING'].includes(app.status)) ? (
                           <button
                             onClick={() => onAssignApplication ? onAssignApplication(app.id) : onReviewApplication(app.id)}
                             className="px-3 py-1.5 bg-[#002046] hover:bg-[#001733] text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shadow-2xs border border-[#002046]"
@@ -462,8 +471,8 @@ export default function AuthorityDashboard({
                   className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 hover:bg-slate-100/80 hover:border-primary/40 transition-all cursor-pointer space-y-1.5 text-xs"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-[#002046] text-[11px]">{app.application_no}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800">
+                    <span className="font-mono font-bold text-[#002046] text-[11px] whitespace-nowrap">{app.application_no}</span>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 whitespace-nowrap shadow-2xs">
                       {app.verification_mode === 'IN_SITU' ? t('dashboard.onSiteInspection', 'On-Site Inspection') : t('dashboard.campPresentation', 'Camp / Presentation')}
                     </span>
                   </div>

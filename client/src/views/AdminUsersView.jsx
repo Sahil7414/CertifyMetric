@@ -54,6 +54,15 @@ export default function AdminUsersView({ currentUser, onBack }) {
     loadUsers();
   }, []);
 
+  const counts = useMemo(() => {
+    const total = users.length;
+    const officers = users.filter(u => u.role === 'AUTHORITY' || u.role === 'VERIFIER').length;
+    const gatc = users.filter(u => u.role === 'GATC').length;
+    const traders = users.filter(u => u.role === 'TRADER').length;
+    const active = users.filter(u => u.status === 'ACTIVE' || u.active !== false).length;
+    return { total, officers, gatc, traders, active };
+  }, [users]);
+
   const handleToggleStatus = async (user) => {
     const isCurrentlyActive = user.status === 'ACTIVE' || user.active !== false;
     const newStatus = !isCurrentlyActive;
@@ -132,15 +141,40 @@ export default function AdminUsersView({ currentUser, onBack }) {
   const getRoleBadge = (role) => {
     switch (role) {
       case 'PLATFORM_ADMIN':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Admin</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap bg-rose-50 text-rose-700 border border-rose-200/80 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+            System Admin
+          </span>
+        );
       case 'AUTHORITY':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Authority</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap bg-blue-50 text-blue-700 border border-blue-200/80 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+            Authority Officer
+          </span>
+        );
       case 'VERIFIER':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Field Verifier</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap bg-purple-50 text-purple-700 border border-purple-200/80 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0"></span>
+            Field Verifier
+          </span>
+        );
       case 'GATC':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">GATC Lab</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap bg-amber-50 text-amber-800 border border-amber-200/80 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+            GATC Lab Personnel
+          </span>
+        );
       default:
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Trader</span>;
+        return (
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+            Commercial Trader
+          </span>
+        );
     }
   };
 
@@ -170,6 +204,49 @@ export default function AdminUsersView({ currentUser, onBack }) {
           </div>
         }
       />
+
+      {/* Metric Cards Banner */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white rounded-xl p-4 border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Total Accounts</div>
+            <div className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5 font-mono">{counts.total}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+            <span className="material-symbols-outlined text-xl">group</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-blue-100 bg-gradient-to-br from-white to-blue-50/30 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-blue-700 uppercase tracking-wider">Legal Metrology Officers</div>
+            <div className="text-xl sm:text-2xl font-black text-blue-900 mt-0.5 font-mono">{counts.officers}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-700 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-xl">badge</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-amber-100 bg-gradient-to-br from-white to-amber-50/30 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">GATC Technicians</div>
+            <div className="text-xl sm:text-2xl font-black text-amber-950 mt-0.5 font-mono">{counts.gatc}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-amber-100/70 text-amber-800 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-xl">biotech</span>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-4 border border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">Traders & Owners</div>
+            <div className="text-xl sm:text-2xl font-black text-emerald-950 mt-0.5 font-mono">{counts.traders}</div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-100/70 text-emerald-700 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-xl">store</span>
+          </div>
+        </div>
+      </div>
 
       {/* List Toolbar */}
       <ListToolbar
@@ -204,73 +281,120 @@ export default function AdminUsersView({ currentUser, onBack }) {
       />
 
       {/* Users Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs min-w-[700px]">
-            <thead className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left text-xs min-w-[960px]">
+            <thead className="bg-slate-50/90 text-slate-600 font-semibold border-b border-slate-200 uppercase text-[11px] tracking-wider">
               <tr>
-                <th className="px-5 py-3.5">User</th>
-                <th className="px-5 py-3.5">Role</th>
-                <th className="px-5 py-3.5">Organization</th>
-                <th className="px-5 py-3.5">Contact Details</th>
-                <th className="px-5 py-3.5">Account Status</th>
-                <th className="px-5 py-3.5 text-right">Actions</th>
+                <th className="px-5 py-4 w-[28%] min-w-[260px]">User Particulars</th>
+                <th className="px-5 py-4 w-[16%] min-w-[180px] whitespace-nowrap">Role</th>
+                <th className="px-5 py-4 w-[20%] min-w-[190px]">Organization</th>
+                <th className="px-5 py-4 w-[18%] min-w-[190px]">Contact Details</th>
+                <th className="px-5 py-4 w-[10%] min-w-[120px] whitespace-nowrap">Status</th>
+                <th className="px-5 py-4 w-[8%] min-w-[110px] text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                  <td colSpan={6} className="px-6 py-16 text-center text-slate-400">
                     <span className="material-symbols-outlined text-3xl animate-spin block mb-2 text-primary">progress_activity</span>
                     Loading user directory...
                   </td>
                 </tr>
               ) : paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
-                    <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 block">group_off</span>
-                    No user accounts match current filter criteria.
+                  <td colSpan={6} className="px-6 py-16 text-center text-slate-400">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-300">
+                      <span className="material-symbols-outlined text-3xl">group_off</span>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-600 mb-1">No Accounts Found</p>
+                    <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                      No user accounts match current search and role filters.
+                    </p>
                   </td>
                 </tr>
               ) : (
                 paginatedUsers.map((u) => {
                   const isActive = u.status === 'ACTIVE' || u.active !== false;
+                  const initial = u.full_name ? u.full_name.charAt(0).toUpperCase() : 'U';
+
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-5 py-3.5">
+                      {/* 1. User Particulars */}
+                      <td className="px-5 py-4 align-middle">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-[#002046] shrink-0">
-                            {u.full_name ? u.full_name.charAt(0).toUpperCase() : 'U'}
+                          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-800 shrink-0 shadow-2xs">
+                            {initial}
                           </div>
-                          <div>
-                            <span className="font-bold text-slate-900 block">{u.full_name}</span>
-                            <span className="font-mono text-[10px] text-slate-400">{u.id}</span>
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 block text-xs leading-snug truncate max-w-xs" title={u.full_name}>
+                              {u.full_name}
+                            </span>
+                            <span className="font-mono text-[10px] text-slate-400 block mt-0.5">
+                              ID: {u.id}
+                            </span>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
+
+                      {/* 2. Role Badge (Guaranteed No Awkward Wrap) */}
+                      <td className="px-5 py-4 align-middle whitespace-nowrap">
                         {getRoleBadge(u.role)}
                       </td>
-                      <td className="px-5 py-3.5 text-slate-600">
-                        {u.organization_name || u.organization_id || '—'}
+
+                      {/* 3. Organization */}
+                      <td className="px-5 py-4 align-middle text-slate-600">
+                        {u.organization_name ? (
+                          <div className="flex items-center gap-1.5 truncate max-w-xs" title={u.organization_name}>
+                            <span className="material-symbols-outlined text-[14px] text-slate-400 shrink-0">apartment</span>
+                            <span className="font-medium text-slate-800 text-xs truncate">{u.organization_name}</span>
+                          </div>
+                        ) : u.organization_id ? (
+                          <span className="font-mono text-[11px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                            {u.organization_id}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs italic">— None assigned —</span>
+                        )}
                       </td>
-                      <td className="px-5 py-3.5">
-                        <span className="block font-medium text-slate-900">{u.email}</span>
-                        <span className="text-[10px] text-slate-400 font-mono">{u.phone || 'No phone'}</span>
+
+                      {/* 4. Contact Details */}
+                      <td className="px-5 py-4 align-middle">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-800 font-medium truncate max-w-xs" title={u.email}>
+                            <span className="material-symbols-outlined text-[13px] text-slate-400 shrink-0">mail</span>
+                            <span className="truncate">{u.email}</span>
+                          </div>
+                          {u.phone ? (
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
+                              <span className="material-symbols-outlined text-[13px] text-slate-400 shrink-0">call</span>
+                              <span>{u.phone}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic block pl-4">No phone listed</span>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          isActive ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+
+                      {/* 5. Account Status */}
+                      <td className="px-5 py-4 align-middle whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap border shadow-2xs ${
+                          isActive 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
                         }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
                           {isActive ? 'Active' : 'Deactivated'}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+
+                      {/* 6. Actions */}
+                      <td className="px-5 py-4 align-middle text-right whitespace-nowrap">
                         <button
                           onClick={() => handleToggleStatus(u)}
                           disabled={updatingId === u.id || u.id === currentUser?.id}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                             isActive
                               ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
                               : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
@@ -368,7 +492,7 @@ export default function AdminUsersView({ currentUser, onBack }) {
                   <select
                     value={newUser.role}
                     onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#002046]/20 focus:border-[#002046] outline-none bg-white font-medium"
+                    className="w-full p-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#002046]/20 focus:border-[#002046] outline-none bg-white font-medium cursor-pointer"
                   >
                     <option value="TRADER">Trader / Owner</option>
                     <option value="AUTHORITY">Authority (LMO)</option>
@@ -400,7 +524,7 @@ export default function AdminUsersView({ currentUser, onBack }) {
                 <button
                   type="submit"
                   disabled={creating}
-                  className="px-5 py-2 bg-primary hover:bg-[#001733] text-white font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2 bg-[#002046] hover:bg-[#001733] text-white font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-sm">person_add</span>
                   <span>{creating ? 'Creating Account...' : 'Confirm Account Creation'}</span>

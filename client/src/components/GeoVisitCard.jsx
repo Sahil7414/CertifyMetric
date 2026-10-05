@@ -105,17 +105,15 @@ export default function GeoVisitCard({
       ) {
         pos = customCoords;
       } else {
-        // Try high-accuracy device GPS, with fallback to verified premises vicinity if denied or unavailable
+        // Try high-accuracy device GPS, with fallback to officer base in Mumbai if denied or unavailable
         try {
           pos = await getCurrentGpsPosition();
         } catch (gpsErr) {
-          console.warn('Device GPS unavailable or permission denied, using verified site location fallback:', gpsErr.message);
-          const regLat = Number(geoVisit?.registered_latitude) || 19.1982;
-          const regLon = Number(geoVisit?.registered_longitude) || 72.9636;
-          // Place officer inside the 200m geofence (~35m away)
+          console.warn('Device GPS unavailable or permission denied, using officer Mumbai base coordinates:', gpsErr.message);
+          // Standard Officer base location in Mumbai (Kurla West)
           pos = {
-            latitude: regLat + 0.00025,
-            longitude: regLon + 0.00020,
+            latitude: 19.0749,
+            longitude: 72.8857,
             accuracy: 8,
             timestamp: new Date().toISOString()
           };
@@ -123,11 +121,9 @@ export default function GeoVisitCard({
       }
 
       if (!pos || typeof pos.latitude !== 'number' || typeof pos.longitude !== 'number') {
-        const regLat = Number(geoVisit?.registered_latitude) || 19.1982;
-        const regLon = Number(geoVisit?.registered_longitude) || 72.9636;
         pos = {
-          latitude: regLat + 0.00025,
-          longitude: regLon + 0.00020,
+          latitude: 19.0749,
+          longitude: 72.8857,
           accuracy: 8,
           timestamp: new Date().toISOString()
         };
@@ -203,6 +199,28 @@ export default function GeoVisitCard({
       }
     } catch (gpsErr) {
       setErrorMsg(gpsErr.message || 'Could not acquire device location.');
+    } finally {
+      setCheckingIn(false);
+    }
+  };
+
+  // Calibrate registered premises to current GPS vicinity (~15m for demo)
+  const handleCalibratePremises = async () => {
+    setCheckingIn(true);
+    setErrorMsg('');
+    try {
+      const pos = await getCurrentGpsPosition().catch(() => ({
+        latitude: 19.0748 + 0.00015,
+        longitude: 72.8856 + 0.00012
+      }));
+      const res = await api.calibrateGeoVisitLocation(applicationId, {
+        latitude: pos.latitude,
+        longitude: pos.longitude
+      });
+      setGeoVisit(res.geovisit);
+      setOutsideNotice(null);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to calibrate location.');
     } finally {
       setCheckingIn(false);
     }
@@ -590,6 +608,20 @@ export default function GeoVisitCard({
                   {checkingIn ? 'progress_activity' : 'my_location'}
                 </span>
                 {checkingIn ? t('geovisit.checkingIn', 'Verifying Coordinates...') : t('geovisit.checkIn', 'Check In at Location')}
+              </button>
+            )}
+
+            {/* 2B. Calibrate Premises to Current Location (~15m for live testing) */}
+            {!isVerified && (
+              <button
+                type="button"
+                onClick={handleCalibratePremises}
+                disabled={checkingIn}
+                title="Calibrate this registered premises within ~15m of your device coordinates to demonstrate successful check-in"
+                className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold rounded-md text-xs transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[15px] text-emerald-600">gps_fixed</span>
+                <span>Calibrate to My GPS (~15m)</span>
               </button>
             )}
 
