@@ -329,26 +329,6 @@ export default function App() {
   const [certificates, setCertificates] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [screenTransition, setScreenTransition] = useState(false);
-  const transitionTimerRef = React.useRef(null);
-
-  const startScreenTransition = (duration = 400) => {
-    setScreenTransition(true);
-    if (transitionTimerRef.current) {
-      clearTimeout(transitionTimerRef.current);
-    }
-    transitionTimerRef.current = setTimeout(() => {
-      setScreenTransition(false);
-    }, duration);
-  };
-
-  useEffect(() => {
-    return () => {
-      if (transitionTimerRef.current) {
-        clearTimeout(transitionTimerRef.current);
-      }
-    };
-  }, []);
 
   const refreshAllData = async (user = currentUser) => {
     if (!user) {
@@ -382,10 +362,6 @@ export default function App() {
     const role = currentRole || currentUser?.role;
     const allowed = ROLE_ALLOWED_TABS[role] || [];
     const validTab = allowed.includes(tab) ? tab : getInitialRoleTab(role);
-
-    if (validTab !== activeTab) {
-      startScreenTransition();
-    }
 
     const instId = entityIds.instrumentId !== undefined ? entityIds.instrumentId : (validTab === 'instrument-detail' ? selectedInstrumentId : null);
     const appId = entityIds.applicationId !== undefined ? entityIds.applicationId : (['application-timeline', 'application-review', 'assignment-decision', 'verification-workspace'].includes(validTab) ? selectedApplicationId : null);
@@ -483,7 +459,6 @@ export default function App() {
 
       // 2. Pre-auth screen transitions (Landing / Login / Register)
       if (!user) {
-        startScreenTransition();
         if (path === '/register') {
           setShowLanding(false);
           setShowRegister(true);
@@ -512,10 +487,6 @@ export default function App() {
       const instId = parsed.instrumentId !== undefined ? parsed.instrumentId : (event.state?.instrumentId || null);
       const appId = parsed.applicationId !== undefined ? parsed.applicationId : (event.state?.applicationId || null);
       const certId = parsed.certificateId !== undefined ? parsed.certificateId : (event.state?.certificateId || null);
-
-      if (targetTab !== activeTab) {
-        startScreenTransition();
-      }
 
       setActiveTab(targetTab);
       setSelectedInstrumentId(instId);
@@ -574,18 +545,14 @@ export default function App() {
 
   const handleDirectDemoLogin = async (demo) => {
     try {
-      setLoading(true);
       const data = await api.login(demo.email, demo.password);
       handleLoginSuccess(data);
     } catch (err) {
       alert(`Demo login failed: ${err.message}`);
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    startScreenTransition();
     try {
       await api.logout();
     } catch (e) {}
@@ -642,25 +609,21 @@ export default function App() {
   // Render Landing Page or Login Screen if not authenticated
   if (!currentUser) {
     const goToLogin = () => {
-      startScreenTransition();
       window.history.pushState({}, '', '/login');
       setShowLanding(false);
       setShowRegister(false);
     };
     const goToLanding = () => {
-      startScreenTransition();
       window.history.pushState({}, '', '/');
       setShowLanding(true);
       setShowRegister(false);
     };
     const goToRegister = () => {
-      startScreenTransition();
       window.history.pushState({}, '', '/register');
       setShowLanding(false);
       setShowRegister(true);
     };
     const backToLoginFromRegister = () => {
-      startScreenTransition();
       if (window.history.length > 1) {
         window.history.back();
       } else {
@@ -670,34 +633,37 @@ export default function App() {
       }
     };
 
+    if (showLanding) {
+      return (
+        <PortalLanding
+          key={appLang}
+          onGoToLogin={goToLogin}
+          onGoToRegister={goToRegister}
+          onTrackApplication={(appNo) => {
+            goToLogin();
+          }}
+          onDirectDemoLogin={handleDirectDemoLogin}
+        />
+      );
+    }
+
+    if (showRegister) {
+      return (
+        <RegisterView
+          key={appLang}
+          onRegisterSuccess={handleLoginSuccess}
+          onBackToLogin={backToLoginFromRegister}
+        />
+      );
+    }
+
     return (
-      <>
-        {screenTransition && <LoadingScreen isTransition={true} />}
-        {showLanding ? (
-          <PortalLanding
-            key={appLang}
-            onGoToLogin={goToLogin}
-            onGoToRegister={goToRegister}
-            onTrackApplication={(appNo) => {
-              goToLogin();
-            }}
-            onDirectDemoLogin={handleDirectDemoLogin}
-          />
-        ) : showRegister ? (
-          <RegisterView
-            key={appLang}
-            onRegisterSuccess={handleLoginSuccess}
-            onBackToLogin={backToLoginFromRegister}
-          />
-        ) : (
-          <LoginView
-            key={appLang}
-            onLoginSuccess={handleLoginSuccess}
-            onBackToLanding={goToLanding}
-            onGoToRegister={goToRegister}
-          />
-        )}
-      </>
+      <LoginView
+        key={appLang}
+        onLoginSuccess={handleLoginSuccess}
+        onBackToLanding={goToLanding}
+        onGoToRegister={goToRegister}
+      />
     );
   }
 
@@ -735,7 +701,6 @@ export default function App() {
 
   return (
     <>
-      {screenTransition && <LoadingScreen isTransition={true} />}
       <AuthenticatedLayout
         key={appLang}
         currentUser={currentUser}

@@ -1,35 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
 /**
- * Global Full-Page LoadingScreen Component
- * Source of truth: Existing CertifyMetric Brand Animation (pure code + /logo.png)
- * Used across page reloads and screen transitions.
+ * Global Full-Page Startup Loading Screen Component
+ * Source of truth: Image(7) Legal Metrology Online System Brand Identity (pure code + /logo.png)
+ * Used strictly for initial browser reload / application boot initialization.
  */
-export default function LoadingScreen({ message, isTransition = false, duration = 400 }) {
-  const [phase, setPhase] = useState(isTransition ? 'in' : 'active');
-
-  useEffect(() => {
-    if (isTransition) {
-      const activeTimer = setTimeout(() => setPhase('active'), 50);
-      const exitTimer = setTimeout(() => setPhase('out'), Math.max(duration - 120, 150));
-      return () => {
-        clearTimeout(activeTimer);
-        clearTimeout(exitTimer);
-      };
-    }
-  }, [isTransition, duration]);
-
-  const isEntering = phase === 'in';
-  const isOut = phase === 'out';
-
+export default function LoadingScreen({ message }) {
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label="CertifyMetric Loading"
-      className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center select-none overflow-hidden transition-all duration-300 ease-in-out ${
-        isOut ? 'opacity-0 pointer-events-none' : 'opacity-100'
-      }`}
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center select-none overflow-hidden"
       style={{
         background: 'radial-gradient(circle at center, #0b396e 0%, #002046 50%, #001226 100%)'
       }}
@@ -39,11 +21,7 @@ export default function LoadingScreen({ message, isTransition = false, duration 
       <div className="absolute w-[600px] h-[600px] rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
 
       {/* Main Content Container */}
-      <div
-        className={`relative z-10 flex flex-col items-center text-center px-4 transition-all duration-300 transform ${
-          isEntering ? 'opacity-0 scale-95 translate-y-2' : isOut ? 'opacity-0 scale-105 -translate-y-2' : 'opacity-100 scale-100 translate-y-0'
-        }`}
-      >
+      <div className="relative z-10 flex flex-col items-center text-center px-4">
         {/* Animated Logo Container */}
         <div className="relative mb-5">
           {/* Outer golden halo ring */}

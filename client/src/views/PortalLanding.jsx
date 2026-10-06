@@ -1,7 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
-import SplashIntroAnimation from '../components/SplashIntroAnimation';
 
 const ROLES_DATA = [
   {
@@ -102,9 +101,6 @@ export default function PortalLanding({
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-800 font-sans antialiased selection:bg-amber-400 selection:text-[#002046] overflow-x-hidden w-full max-w-full">
-      {/* 2-second Splash Intro Animation whenever home page loads */}
-      <SplashIntroAnimation duration={2000} />
-      
       {/* ====================================================
           1. HEADER
          ==================================================== */}
