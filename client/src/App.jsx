@@ -1,35 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import AuthenticatedLayout from './layouts/AuthenticatedLayout';
-import TraderDashboard from './views/TraderDashboard';
-import InstrumentsList from './views/InstrumentsList';
-import AddInstrumentModal from './views/AddInstrumentModal';
-import ApplyVerificationView from './views/ApplyVerificationView';
-import ApplicationsList from './views/ApplicationsList';
-import InstrumentDetail from './views/InstrumentDetail';
-import ApplicationTimeline from './views/ApplicationTimeline';
-import AuthorityDashboard from './views/AuthorityDashboard';
-import ApplicationReview from './views/ApplicationReview';
-import AssignmentDecisionSupport from './views/AssignmentDecisionSupport';
-import VerifierDashboard from './views/VerifierDashboard';
-import VerificationWorkspace from './views/VerificationWorkspace';
-import CertificatesList from './views/CertificatesList';
-import OfficialCertificate from './views/OfficialCertificate';
-import PublicCertificateVerification from './views/PublicCertificateVerification';
-import PortalLanding from './views/PortalLanding';
-import VendorApplyVerificationView from './views/VendorApplyVerificationView';
-import QRCodeModal from './components/QRCodeModal';
-import LoginView from './views/LoginView';
-import RegisterView from './views/RegisterView';
-import AuditLogView from './views/AuditLogView';
-import GatcDashboard from './views/GatcDashboard';
-import AdminDashboard from './views/AdminDashboard';
-import AdminUsersView from './views/AdminUsersView';
-import AdminOrgsView from './views/AdminOrgsView';
-import AdminMasterDataView from './views/AdminMasterDataView';
-import AdminSystemHealthView from './views/AdminSystemHealthView';
 import LoadingScreen from './components/LoadingScreen';
 import { useTranslation } from 'react-i18next';
 import { api, setApiUser, getStoredAuth } from './api';
+
+// Code-split views: Only downloaded when the respective role/page is requested
+const TraderDashboard = lazy(() => import('./views/TraderDashboard'));
+const InstrumentsList = lazy(() => import('./views/InstrumentsList'));
+const AddInstrumentModal = lazy(() => import('./views/AddInstrumentModal'));
+const ApplyVerificationView = lazy(() => import('./views/ApplyVerificationView'));
+const ApplicationsList = lazy(() => import('./views/ApplicationsList'));
+const InstrumentDetail = lazy(() => import('./views/InstrumentDetail'));
+const ApplicationTimeline = lazy(() => import('./views/ApplicationTimeline'));
+const AuthorityDashboard = lazy(() => import('./views/AuthorityDashboard'));
+const ApplicationReview = lazy(() => import('./views/ApplicationReview'));
+const AssignmentDecisionSupport = lazy(() => import('./views/AssignmentDecisionSupport'));
+const VerifierDashboard = lazy(() => import('./views/VerifierDashboard'));
+const VerificationWorkspace = lazy(() => import('./views/VerificationWorkspace'));
+const CertificatesList = lazy(() => import('./views/CertificatesList'));
+const OfficialCertificate = lazy(() => import('./views/OfficialCertificate'));
+const PublicCertificateVerification = lazy(() => import('./views/PublicCertificateVerification'));
+const PortalLanding = lazy(() => import('./views/PortalLanding'));
+const VendorApplyVerificationView = lazy(() => import('./views/VendorApplyVerificationView'));
+const QRCodeModal = lazy(() => import('./components/QRCodeModal'));
+const LoginView = lazy(() => import('./views/LoginView'));
+const RegisterView = lazy(() => import('./views/RegisterView'));
+const AuditLogView = lazy(() => import('./views/AuditLogView'));
+const GatcDashboard = lazy(() => import('./views/GatcDashboard'));
+const AdminDashboard = lazy(() => import('./views/AdminDashboard'));
+const AdminUsersView = lazy(() => import('./views/AdminUsersView'));
+const AdminOrgsView = lazy(() => import('./views/AdminOrgsView'));
+const AdminMasterDataView = lazy(() => import('./views/AdminMasterDataView'));
+const AdminSystemHealthView = lazy(() => import('./views/AdminSystemHealthView'));
+
+function ViewLoadingFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center min-h-[360px] w-full p-8">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 rounded-full border-2 border-amber-400/30 border-t-amber-400 animate-spin" />
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider font-mono">Loading module...</span>
+      </div>
+    </div>
+  );
+}
 
 const ROLE_ALLOWED_TABS = {
   TRADER: ['dashboard', 'instruments', 'instrument-detail', 'apply-verification', 'applications', 'application-timeline', 'applications-rejected', 'vendor-apply-tank', 'certificates', 'official-certificate'],
@@ -328,33 +341,111 @@ export default function App() {
   const [applications, setApplications] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
 
-  const refreshAllData = async (user = currentUser) => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+  // Cache tracker to prevent redundant/duplicate API calls
+  const loadedDataRef = useRef({
+    instrumentsUserId: null,
+    applicationsUserId: null,
+    certificatesUserId: null,
+    statsLoaded: false
+  });
+
+  const loadInstruments = async (user = currentUser, force = false) => {
+    if (!user) return;
+    const key = user.role === 'TRADER' ? user.id : 'ALL';
+    if (!force && loadedDataRef.current.instrumentsUserId === key) return;
     try {
-      const [instList, appList, certList, statData] = await Promise.all([
-        api.getInstruments(user?.role === 'TRADER' ? user?.id : undefined),
-        api.getApplications(user?.role === 'TRADER' ? { trader_id: user?.id } : {}),
-        api.getCertificates(user?.role === 'TRADER' ? user?.id : undefined),
-        api.getStats()
-      ]);
-
-      setInstruments(Array.isArray(instList) ? instList : []);
-      setApplications(Array.isArray(appList) ? appList : []);
-      setCertificates(Array.isArray(certList) ? certList : []);
-      setStats(statData && !statData.error ? statData : null);
+      const list = await api.getInstruments(user.role === 'TRADER' ? user.id : undefined);
+      setInstruments(Array.isArray(list) ? list : []);
+      loadedDataRef.current.instrumentsUserId = key;
     } catch (err) {
-      console.error('Failed to load application data:', err);
-      setInstruments([]);
-      setApplications([]);
-      setCertificates([]);
-    } finally {
-      setLoading(false);
+      console.warn('Failed to load instruments:', err);
     }
+  };
+
+  const loadApplications = async (user = currentUser, force = false) => {
+    if (!user) return;
+    const key = user.role === 'TRADER' ? user.id : 'ALL';
+    if (!force && loadedDataRef.current.applicationsUserId === key) return;
+    try {
+      const list = await api.getApplications(user.role === 'TRADER' ? { trader_id: user.id } : {});
+      setApplications(Array.isArray(list) ? list : []);
+      loadedDataRef.current.applicationsUserId = key;
+    } catch (err) {
+      console.warn('Failed to load applications:', err);
+    }
+  };
+
+  const loadCertificates = async (user = currentUser, force = false) => {
+    if (!user) return;
+    const key = user.role === 'TRADER' ? user.id : 'ALL';
+    if (!force && loadedDataRef.current.certificatesUserId === key) return;
+    try {
+      const list = await api.getCertificates(user.role === 'TRADER' ? user.id : undefined);
+      setCertificates(Array.isArray(list) ? list : []);
+      loadedDataRef.current.certificatesUserId = key;
+    } catch (err) {
+      console.warn('Failed to load certificates:', err);
+    }
+  };
+
+  const loadStats = async (force = false) => {
+    if (!force && loadedDataRef.current.statsLoaded) return;
+    try {
+      const statData = await api.getStats();
+      setStats(statData && !statData.error ? statData : null);
+      loadedDataRef.current.statsLoaded = true;
+    } catch (err) {
+      console.warn('Failed to load stats:', err);
+    }
+  };
+
+  // Only load the data genuinely required for the target tab
+  const loadDataForTab = (tab, user = currentUser, force = false) => {
+    if (!user) return;
+    const role = user.role;
+
+    if (role === 'TRADER') {
+      if (tab === 'dashboard') {
+        loadInstruments(user, force);
+        loadApplications(user, force);
+        loadCertificates(user, force);
+      } else if (tab === 'instruments' || tab === 'instrument-detail' || tab === 'apply-verification' || tab === 'vendor-apply-tank') {
+        loadInstruments(user, force);
+      } else if (tab === 'applications' || tab === 'applications-rejected' || tab === 'application-timeline') {
+        loadApplications(user, force);
+      } else if (tab === 'certificates' || tab === 'official-certificate') {
+        loadCertificates(user, force);
+      }
+    } else if (role === 'AUTHORITY') {
+      if (tab === 'authority-dashboard') {
+        loadApplications(user, force);
+        loadStats(force);
+      } else if (tab === 'applications' || tab === 'application-review' || tab === 'assignment-decision') {
+        loadApplications(user, force);
+      } else if (tab === 'certificates' || tab === 'official-certificate') {
+        loadCertificates(user, force);
+      }
+    } else if (role === 'PLATFORM_ADMIN') {
+      if (tab === 'applications') {
+        loadApplications(user, force);
+      } else if (tab === 'instruments') {
+        loadInstruments(user, force);
+      } else if (tab === 'certificates') {
+        loadCertificates(user, force);
+      }
+    }
+  };
+
+  // Full refresh called on explicit mutations (new application, payment, instrument, etc.)
+  const refreshAllData = async (user = currentUser) => {
+    if (!user) return;
+    await Promise.allSettled([
+      loadInstruments(user, true),
+      loadApplications(user, true),
+      loadCertificates(user, true),
+      loadStats(true)
+    ]);
   };
 
   // Central Router: Updates Browser History, URL, and React View State
@@ -403,6 +494,7 @@ export default function App() {
     if (!replace) {
       window.scrollTo({ top: 0, behavior: 'instant' });
     }
+    loadDataForTab(validTab, currentUser);
   };
 
   // Navigates back in browser history if this session has pushed entries,
@@ -416,36 +508,39 @@ export default function App() {
     }
   };
 
+  // 1. Initial auth & session verification on startup (runs once per user)
   useEffect(() => {
     if (currentUser) {
-      // If user is authenticated at root '/', replace with their designated role dashboard
       if (window.location.pathname === '/' || !window.location.pathname) {
         const targetTab = getInitialRoleTab(currentUser.role);
         const path = computePathForState(targetTab, {}, currentUser.role);
         window.history.replaceState({ tab: targetTab }, '', path);
       }
 
+      // Background token verification - does NOT block rendering
       api.getMe().then(res => {
         if (!res || !res.user) {
           handleLogout();
         } else {
           setCurrentUser(res.user);
-          refreshAllData(res.user);
         }
       }).catch(() => {
         handleLogout();
       });
-    } else {
-      setLoading(false);
-    }
 
-    // Listen for browser navigation changes (Back and Forward buttons)
+      // Load initial data genuinely required for the active tab
+      loadDataForTab(activeTab, currentUser);
+    }
+  }, [currentUser?.id]);
+
+  // 2. Browser history popstate navigation listener (Separate from auth checks)
+  useEffect(() => {
     const handlePopState = (event) => {
       const path = window.location.pathname;
       const search = window.location.search;
       const user = getStoredAuth().user;
 
-      // 1. Standalone Public Verify routes (/verify, /public/instrument)
+      // Standalone Public Verify routes (/verify, /public/instrument)
       const publicState = getInitialPublicVerifyState();
       if (publicState.isRoute) {
         setIsPublicVerifyRoute(true);
@@ -457,7 +552,7 @@ export default function App() {
       setPublicVerifyToken(null);
       setPublicVerifyMode('CERTIFICATE');
 
-      // 2. Pre-auth screen transitions (Landing / Login / Register)
+      // Pre-auth screen transitions (Landing / Login / Register)
       if (!user) {
         if (path === '/register') {
           setShowLanding(false);
@@ -472,7 +567,7 @@ export default function App() {
         return;
       }
 
-      // 3. Authenticated routes
+      // Authenticated routes
       const parsed = parseRouteFromUrl(path, search, user.role);
       if (parsed.isPublicVerify) {
         setIsPublicVerifyRoute(true);
@@ -497,11 +592,13 @@ export default function App() {
       }
       setShowAddModal(false);
       setShowQrModal(false);
+
+      loadDataForTab(targetTab, user);
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeTab]);
+  }, []);
 
 
 
@@ -528,6 +625,14 @@ export default function App() {
       }
     }
 
+    // Reset loaded cache for new session
+    loadedDataRef.current = {
+      instrumentsUserId: null,
+      applicationsUserId: null,
+      certificatesUserId: null,
+      statsLoaded: false
+    };
+
     // Determine portal / dashboard strictly based on database role.
     // Use replaceState so the user cannot press Back to return to the
     // login/landing screen after a successful authentication.
@@ -540,7 +645,7 @@ export default function App() {
     setSelectedApplicationId(null);
     setSelectedCertificateId(null);
 
-    refreshAllData(user);
+    loadDataForTab(targetTab, user, true);
   };
 
   const handleDirectDemoLogin = async (demo) => {
@@ -564,6 +669,12 @@ export default function App() {
     // Use replaceState so Forward after logout cannot revisit protected routes.
     window.history.replaceState({}, '', '/');
     navDepthRef.current = 0;
+    loadedDataRef.current = {
+      instrumentsUserId: null,
+      applicationsUserId: null,
+      certificatesUserId: null,
+      statsLoaded: false
+    };
     setInstruments([]);
     setApplications([]);
     setCertificates([]);
@@ -590,19 +701,21 @@ export default function App() {
   // Standalone Public Verification Route (Immediate render, no auth/login or data loading required)
   if (isPublicVerifyRoute || publicVerifyToken !== null) {
     return (
-      <PublicCertificateVerification
-        token={publicVerifyToken}
-        onExit={() => {
-          if (window.history.length > 1) {
-            window.history.back();
-          } else {
-            window.history.pushState({}, '', '/');
-            setIsPublicVerifyRoute(false);
-            setPublicVerifyToken(null);
-            setPublicVerifyMode('CERTIFICATE');
-          }
-        }}
-      />
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <PublicCertificateVerification
+          token={publicVerifyToken}
+          onExit={() => {
+            if (window.history.length > 1) {
+              window.history.back();
+            } else {
+              window.history.pushState({}, '', '/');
+              setIsPublicVerifyRoute(false);
+              setPublicVerifyToken(null);
+              setPublicVerifyMode('CERTIFICATE');
+            }
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -635,40 +748,42 @@ export default function App() {
 
     if (showLanding) {
       return (
-        <PortalLanding
-          key={appLang}
-          onGoToLogin={goToLogin}
-          onGoToRegister={goToRegister}
-          onTrackApplication={(appNo) => {
-            goToLogin();
-          }}
-          onDirectDemoLogin={handleDirectDemoLogin}
-        />
+        <Suspense fallback={<ViewLoadingFallback />}>
+          <PortalLanding
+            key={appLang}
+            onGoToLogin={goToLogin}
+            onGoToRegister={goToRegister}
+            onTrackApplication={(appNo) => {
+              goToLogin();
+            }}
+            onDirectDemoLogin={handleDirectDemoLogin}
+          />
+        </Suspense>
       );
     }
 
     if (showRegister) {
       return (
-        <RegisterView
-          key={appLang}
-          onRegisterSuccess={handleLoginSuccess}
-          onBackToLogin={backToLoginFromRegister}
-        />
+        <Suspense fallback={<ViewLoadingFallback />}>
+          <RegisterView
+            key={appLang}
+            onRegisterSuccess={handleLoginSuccess}
+            onBackToLogin={backToLoginFromRegister}
+          />
+        </Suspense>
       );
     }
 
     return (
-      <LoginView
-        key={appLang}
-        onLoginSuccess={handleLoginSuccess}
-        onBackToLanding={goToLanding}
-        onGoToRegister={goToRegister}
-      />
+      <Suspense fallback={<ViewLoadingFallback />}>
+        <LoginView
+          key={appLang}
+          onLoginSuccess={handleLoginSuccess}
+          onBackToLanding={goToLanding}
+          onGoToRegister={goToRegister}
+        />
+      </Suspense>
     );
-  }
-
-  if (loading) {
-    return <LoadingScreen />;
   }
 
   const handleTabChange = (tab) => {
@@ -713,7 +828,8 @@ export default function App() {
         onGoHome={() => navigateTo(getInitialRoleTab(currentRole))}
         onNavigateToApplication={handleNotificationNavigate}
       >
-        {/* LMOMS Vehicle Tank Verification View */}
+        <Suspense fallback={<ViewLoadingFallback />}>
+          {/* LMOMS Vehicle Tank Verification View */}
         {activeTab === 'vendor-apply-tank' && (
           <VendorApplyVerificationView
             instruments={instruments}
@@ -986,27 +1102,32 @@ export default function App() {
         {activeTab === 'audit-logs' && (
           <AuditLogView />
         )}
+        </Suspense>
 
       </AuthenticatedLayout>
 
       {/* Global Add Instrument Modal */}
       {showAddModal && (
-        <AddInstrumentModal
-          currentUser={currentUser}
-          onClose={() => setShowAddModal(false)}
-          onCreated={async (newId) => {
-            await refreshAllData();
-            navigateTo('instrument-detail', { instrumentId: newId });
-          }}
-        />
+        <Suspense fallback={null}>
+          <AddInstrumentModal
+            currentUser={currentUser}
+            onClose={() => setShowAddModal(false)}
+            onCreated={async (newId) => {
+              await refreshAllData();
+              navigateTo('instrument-detail', { instrumentId: newId });
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Global QR Code Inspection Modal */}
       {showQrModal && (
-        <QRCodeModal
-          certificate={qrModalInfo}
-          onClose={() => setShowQrModal(false)}
-        />
+        <Suspense fallback={null}>
+          <QRCodeModal
+            certificate={qrModalInfo}
+            onClose={() => setShowQrModal(false)}
+          />
+        </Suspense>
       )}
     </>
   );

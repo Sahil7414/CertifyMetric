@@ -310,6 +310,17 @@ const notificationSchema = new Schema({
   created_at: { type: String, default: () => new Date().toISOString() }
 }, { versionKey: false, timestamps: false });
 
+// High-performance compound indexes for production query patterns
+notificationSchema.index({ recipient_user_id: 1, created_at: -1 });
+notificationSchema.index({ recipient_user_id: 1, read: 1 });
+instrumentSchema.index({ owner_id: 1, created_at: -1 });
+applicationSchema.index({ trader_id: 1, created_at: -1 });
+applicationSchema.index({ trader_id: 1, status: 1 });
+applicationSchema.index({ status: 1, created_at: -1 });
+certificateSchema.index({ instrument_id: 1, created_at: -1 });
+assignmentSchema.index({ assigned_id: 1, application_id: 1 });
+userSessionSchema.index({ token: 1, expires_at: 1 });
+
 export const User = mongoose.models.User || mongoose.model('User', userSchema, 'users');
 export const UserSession = mongoose.models.UserSession || mongoose.model('UserSession', userSessionSchema, 'user_sessions');
 export const Organization = mongoose.models.Organization || mongoose.model('Organization', organizationSchema, 'organizations');

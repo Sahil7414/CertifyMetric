@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, Suspense, lazy } from 'react';
 import { api } from '../api';
 import StatusBadge from '../components/StatusBadge';
-import GeoVisitMap from '../components/GeoVisitMap';
+const GeoVisitMap = lazy(() => import('../components/GeoVisitMap'));
 import {
   ResponsiveContainer,
   AreaChart,
@@ -1570,17 +1570,19 @@ export default function AdminDashboard({ currentUser, onViewAuditLogs, onNavigat
               </span>
             </div>
 
-            <GeoVisitMap
-              registeredLat={selectedGeoVisitMap.registered_latitude || 19.1110}
-              registeredLng={selectedGeoVisitMap.registered_longitude || 72.9280}
-              registeredAddress={selectedGeoVisitMap.registered_address || selectedGeoVisitMap.location}
-              officerLat={selectedGeoVisitMap.check_in_latitude}
-              officerLng={selectedGeoVisitMap.check_in_longitude}
-              distance={selectedGeoVisitMap.check_in_distance}
-              accuracy={selectedGeoVisitMap.check_in_accuracy}
-              geofenceRadius={selectedGeoVisitMap.geofence_radius || 200}
-              status={selectedGeoVisitMap.geovisit_status}
-            />
+            <Suspense fallback={<div className="h-80 rounded-xl bg-slate-100 flex items-center justify-center text-xs text-slate-400">Loading map...</div>}>
+              <GeoVisitMap
+                registeredLat={selectedGeoVisitMap.registered_latitude || 19.1110}
+                registeredLng={selectedGeoVisitMap.registered_longitude || 72.9280}
+                registeredAddress={selectedGeoVisitMap.registered_address || selectedGeoVisitMap.location}
+                officerLat={selectedGeoVisitMap.check_in_latitude}
+                officerLng={selectedGeoVisitMap.check_in_longitude}
+                distance={selectedGeoVisitMap.check_in_distance}
+                accuracy={selectedGeoVisitMap.check_in_accuracy}
+                geofenceRadius={selectedGeoVisitMap.geofence_radius || 200}
+                status={selectedGeoVisitMap.geovisit_status}
+              />
+            </Suspense>
 
             <div className="flex justify-end pt-2">
               <button

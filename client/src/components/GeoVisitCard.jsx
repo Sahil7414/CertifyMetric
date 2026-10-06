@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
-import GeoVisitMap from './GeoVisitMap';
-import InAppNavigationModal from './InAppNavigationModal';
+const GeoVisitMap = lazy(() => import('./GeoVisitMap'));
+const InAppNavigationModal = lazy(() => import('./InAppNavigationModal'));
 import { getCurrentGpsPosition, calculateDistanceMeters, getNavigationUrl, saveOfflineVisit, hasOfflinePending, removeOfflineVisit } from '../utils/geoVisitUtils';
 import { api } from '../api';
 
@@ -663,19 +663,21 @@ export default function GeoVisitCard({
 
         {/* Permanent Visual Map (Always visible in assigned verification section) */}
         <div className="pt-2">
-          <GeoVisitMap
-            registeredLat={geoVisit?.registered_latitude || 19.1110}
-            registeredLng={geoVisit?.registered_longitude || 72.9280}
-            registeredAddress={geoVisit?.registered_address || locationAddress}
-            traderName={traderName}
-            officerLat={geoVisit?.check_in_latitude}
-            officerLng={geoVisit?.check_in_longitude}
-            accuracy={geoVisit?.check_in_accuracy}
-            distance={geoVisit?.check_in_distance}
-            geofenceRadius={geoVisit?.geofence_radius || 200}
-            status={currentStatus}
-            onOpenNavigation={() => setShowNavModal(true)}
-          />
+          <Suspense fallback={<div className="h-64 rounded-xl bg-slate-100 flex items-center justify-center text-xs text-slate-400">Loading map...</div>}>
+            <GeoVisitMap
+              registeredLat={geoVisit?.registered_latitude || 19.1110}
+              registeredLng={geoVisit?.registered_longitude || 72.9280}
+              registeredAddress={geoVisit?.registered_address || locationAddress}
+              traderName={traderName}
+              officerLat={geoVisit?.check_in_latitude}
+              officerLng={geoVisit?.check_in_longitude}
+              accuracy={geoVisit?.check_in_accuracy}
+              distance={geoVisit?.check_in_distance}
+              geofenceRadius={geoVisit?.geofence_radius || 200}
+              status={currentStatus}
+              onOpenNavigation={() => setShowNavModal(true)}
+            />
+          </Suspense>
         </div>
       </div>
 
@@ -810,26 +812,28 @@ export default function GeoVisitCard({
 
       {/* IN-APP TURN-BY-TURN NAVIGATION MODAL */}
       {showNavModal && (
-        <InAppNavigationModal
-          isOpen={true}
-          registeredLat={geoVisit?.registered_latitude || 19.1110}
-          registeredLng={geoVisit?.registered_longitude || 72.9280}
-          registeredAddress={geoVisit?.registered_address || locationAddress}
-          traderName={traderName}
-          officerLat={geoVisit?.check_in_latitude}
-          officerLng={geoVisit?.check_in_longitude}
-          distance={geoVisit?.check_in_distance}
-          geofenceRadius={geoVisit?.geofence_radius || 200}
-          onClose={() => setShowNavModal(false)}
-          onCheckInNow={(coords) => {
-            setShowNavModal(false);
-            handleCheckIn(coords);
-          }}
-          onCheckIn={(coords) => {
-            setShowNavModal(false);
-            handleCheckIn(coords);
-          }}
-        />
+        <Suspense fallback={null}>
+          <InAppNavigationModal
+            isOpen={true}
+            registeredLat={geoVisit?.registered_latitude || 19.1110}
+            registeredLng={geoVisit?.registered_longitude || 72.9280}
+            registeredAddress={geoVisit?.registered_address || locationAddress}
+            traderName={traderName}
+            officerLat={geoVisit?.check_in_latitude}
+            officerLng={geoVisit?.check_in_longitude}
+            distance={geoVisit?.check_in_distance}
+            geofenceRadius={geoVisit?.geofence_radius || 200}
+            onClose={() => setShowNavModal(false)}
+            onCheckInNow={(coords) => {
+              setShowNavModal(false);
+              handleCheckIn(coords);
+            }}
+            onCheckIn={(coords) => {
+              setShowNavModal(false);
+              handleCheckIn(coords);
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

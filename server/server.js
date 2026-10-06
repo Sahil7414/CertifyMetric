@@ -244,9 +244,9 @@ async function resolveActor(req) {
   if (token) {
     const session = await UserSession.findOne({ token }).lean();
     if (session && new Date(session.expires_at) > new Date()) {
-      const user = await User.findOne({ id: session.user_id }).lean();
+      const user = await User.findOne({ id: session.user_id }).select('id role email full_name active organization_id designation is_demo').lean();
       if (user && user.active !== false) {
-        return { id: user.id, role: user.role, email: user.email, full_name: user.full_name };
+        return { id: user.id, role: user.role, email: user.email, full_name: user.full_name, organization_id: user.organization_id };
       }
     }
   }
@@ -414,11 +414,11 @@ app.get('/api/auth/me', async (req, res) => {
   if (!actor || actor.role === 'ANONYMOUS') {
     return res.status(401).json({ error: 'Unauthorized or session expired' });
   }
-  const user = await User.findOne({ id: actor.id }).lean();
+  const user = await User.findOne({ id: actor.id }).select('-password_hash').lean();
   if (!user) {
     return res.status(401).json({ error: 'User not found' });
   }
-  const org = user.organization_id ? await Organization.findOne({ id: user.organization_id }).lean() : null;
+  const org = user.organization_id ? await Organization.findOne({ id: user.organization_id }).select('id name type jurisdictions').lean() : null;
   const { password_hash, _id, ...safeUser } = user;
   res.json({ user: safeUser, organization: org });
 });
@@ -783,31 +783,33 @@ app.get('/api/applications', async (req, res) => {
   const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
   const appIds = applications.map(a => a.id);
 
-  const instruments = await Instrument.find({ id: { $in: instIds } }).lean();
+  const [instruments, users, assignments, verifs] = await Promise.all([
+    Instrument.find({ id: { $in: instIds } }).lean(),
+    User.find({ id: { $in: traderIds } }).select('id full_name organization_id email phone').lean(),
+    Assignment.find({ application_id: { $in: appIds } }).lean(),
+    Verification.find({ application_id: { $in: appIds } }).lean()
+  ]);
+
   const instMap = new Map(instruments.map(i => [i.id, i]));
+  const userMap = new Map(users.map(u => [u.id, u]));
+  const asnMap = new Map(assignments.map(a => [a.application_id, a]));
+  const verifMap = new Map(verifs.map(v => [v.application_id, v]));
 
   const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
-  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
-  const catMap = new Map(categories.map(c => [c.id, c.name]));
-
-  const users = await User.find({ id: { $in: traderIds } }).lean();
-  const userMap = new Map(users.map(u => [u.id, u]));
-
   const orgIds = [...new Set(users.map(u => u.organization_id).filter(Boolean))];
-  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
-  const orgMap = new Map(orgs.map(o => [o.id, o.name]));
-
-  const assignments = await Assignment.find({ application_id: { $in: appIds } }).lean();
-  const asnMap = new Map(assignments.map(a => [a.application_id, a]));
-
   const assigneeIds = [...new Set(assignments.map(a => a.assigned_id).filter(Boolean))];
-  const assignees = await User.find({ id: { $in: assigneeIds } }).lean();
-  const assigneeMap = new Map(assignees.map(u => [u.id, u.full_name]));
-
-  const verifs = await Verification.find({ application_id: { $in: appIds } }).lean();
-  const verifMap = new Map(verifs.map(v => [v.application_id, v]));
   const verifIds = verifs.map(v => v.id);
-  const certs = await Certificate.find({ verification_id: { $in: verifIds } }).lean();
+
+  const [categories, orgs, assignees, certs] = await Promise.all([
+    InstrumentCategory.find({ id: { $in: catIds } }).select('id name code').lean(),
+    Organization.find({ id: { $in: orgIds } }).select('id name').lean(),
+    User.find({ id: { $in: assigneeIds } }).select('id full_name').lean(),
+    Certificate.find({ verification_id: { $in: verifIds } }).select('id verification_id certificate_no public_token status issue_date valid_until').lean()
+  ]);
+
+  const catMap = new Map(categories.map(c => [c.id, c.name]));
+  const orgMap = new Map(orgs.map(o => [o.id, o.name]));
+  const assigneeMap = new Map(assignees.map(u => [u.id, u.full_name]));
   const certMap = new Map(certs.map(c => [c.verification_id, c]));
 
   const result = applications.map(a => {
@@ -2315,36 +2317,38 @@ app.get('/api/verifications/cases', async (req, res) => {
     status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED'] }
   }).sort({ updated_at: -1 }).lean();
 
-  const instIds = [...new Set(applications.map(a => a.instrument_id).filter(Boolean))];
-  const instruments = await Instrument.find({ id: { $in: instIds } }).lean();
-  const instMap = new Map(instruments.map(i => [i.id, i]));
-
-  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
-  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
-  const catMap = new Map(categories.map(c => [c.id, c]));
-
-  const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
-  const traders = await User.find({ id: { $in: traderIds } }).lean();
-  const traderMap = new Map(traders.map(u => [u.id, u]));
-
   const asnIds = assignments.map(a => a.id);
-  const appointments = await Appointment.find({ assignment_id: { $in: asnIds } }).lean();
+  const applicationIds = applications.map(a => a.id);
+
+  const [instruments, traders, appointments, verifs, geoVisits] = await Promise.all([
+    Instrument.find({ id: { $in: instIds } }).lean(),
+    User.find({ id: { $in: traderIds } }).select('id full_name organization_id email phone').lean(),
+    Appointment.find({ assignment_id: { $in: asnIds } }).lean(),
+    Verification.find({ application_id: { $in: applicationIds } }).lean(),
+    GeoVisit.find({ application_id: { $in: applicationIds } }).lean()
+  ]);
+
+  const instMap = new Map(instruments.map(i => [i.id, i]));
+  const traderMap = new Map(traders.map(u => [u.id, u]));
   const aptMap = new Map(appointments.map(a => [a.assignment_id, a]));
-
-  const verifs = await Verification.find({ application_id: { $in: applications.map(a => a.id) } }).lean();
   const verifMap = new Map(verifs.map(v => [v.application_id, v]));
-
-  const geoVisits = await GeoVisit.find({ application_id: { $in: applications.map(a => a.id) } }).lean();
   const geoMap = new Map(geoVisits.map(g => [g.application_id, g]));
 
-  // Fetch certificates to track worked instruments history and issued credentials
-  const certs = await Certificate.find({
-    $or: [
-      { instrument_id: { $in: instIds } },
-      { application_id: { $in: applications.map(a => a.id) } },
-      { verification_id: { $in: verifs.map(v => v.id) } }
-    ]
-  }).lean();
+  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
+  const verifIds = verifs.map(v => v.id);
+
+  const [categories, certs] = await Promise.all([
+    InstrumentCategory.find({ id: { $in: catIds } }).lean(),
+    Certificate.find({
+      $or: [
+        { instrument_id: { $in: instIds } },
+        { application_id: { $in: applicationIds } },
+        { verification_id: { $in: verifIds } }
+      ]
+    }).lean()
+  ]);
+
+  const catMap = new Map(categories.map(c => [c.id, c]));
   const certMap = new Map();
   certs.forEach(c => {
     if (c.instrument_id) certMap.set(c.instrument_id, c);
@@ -3790,15 +3794,18 @@ app.get('/api/certificates', async (req, res) => {
   const certificates = await Certificate.find(certFilter).sort({ created_at: -1 }).lean();
 
   const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
-  const categories = await InstrumentCategory.find({ id: { $in: catIds } }).lean();
-  const catMap = new Map(categories.map(c => [c.id, c.name]));
-
   const ownerIds = [...new Set(instruments.map(i => i.owner_id).filter(Boolean))];
-  const traders = await User.find({ id: { $in: ownerIds } }).lean();
+
+  const [categories, traders] = await Promise.all([
+    InstrumentCategory.find({ id: { $in: catIds } }).select('id name code').lean(),
+    User.find({ id: { $in: ownerIds } }).select('id full_name organization_id').lean()
+  ]);
+
+  const catMap = new Map(categories.map(c => [c.id, c.name]));
   const traderMap = new Map(traders.map(u => [u.id, u]));
 
   const orgIds = [...new Set(traders.map(u => u.organization_id).filter(Boolean))];
-  const orgs = await Organization.find({ id: { $in: orgIds } }).lean();
+  const orgs = await Organization.find({ id: { $in: orgIds } }).select('id name').lean();
   const orgMap = new Map(orgs.map(o => [o.id, o.name]));
 
   const result = certificates.map(c => {
@@ -4067,25 +4074,29 @@ app.get('/api/stats', async (req, res) => {
   const targetTraderId = trader_id || (actor.role === ROLES.TRADER ? actor.id : null);
 
   if (targetTraderId) {
-    const totalInstruments = await Instrument.countDocuments({ owner_id: targetTraderId });
-    const pendingApplications = await Application.countDocuments({
-      trader_id: targetTraderId,
-      status: { $in: ['SUBMITTED', 'UNDER_REVIEW', 'ASSIGNED', 'IN_PROGRESS'] }
-    });
-    const approvedApplications = await Application.countDocuments({
-      trader_id: targetTraderId,
-      status: { $in: ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED'] }
-    });
-    const returnedApplications = await Application.countDocuments({
-      trader_id: targetTraderId,
-      status: { $in: ['RETURNED', 'REJECTED', 'VERIFICATION_FAILED'] }
-    });
-    const pendingPayments = await Application.countDocuments({
-      trader_id: targetTraderId,
-      $or: [{ status: 'PAYMENT_PENDING' }, { fee_status: 'PENDING' }]
-    });
+    const [totalInstruments, pendingApplications, approvedApplications, returnedApplications, pendingPayments, traderInsts] = await Promise.all([
+      Instrument.countDocuments({ owner_id: targetTraderId }),
+      Application.countDocuments({
+        trader_id: targetTraderId,
+        status: { $in: ['SUBMITTED', 'UNDER_REVIEW', 'ASSIGNED', 'IN_PROGRESS'] }
+      }),
+      Application.countDocuments({
+        trader_id: targetTraderId,
+        status: { $in: ['VERIFICATION_COMPLETED', 'CERTIFICATE_ISSUED'] }
+      }),
+      Application.countDocuments({
+        trader_id: targetTraderId,
+        status: { $in: ['RETURNED', 'REJECTED', 'VERIFICATION_FAILED'] }
+      }),
+      Application.countDocuments({
+        trader_id: targetTraderId,
+        $or: [{ status: 'PAYMENT_PENDING' }, { fee_status: 'PENDING' }]
+      }),
+      Instrument.find({ owner_id: targetTraderId }).select('id').lean()
+    ]);
+
     const totalCertificates = await Certificate.countDocuments({
-      instrument_id: { $in: (await Instrument.find({ owner_id: targetTraderId }).select('id')).map(i => i.id) }
+      instrument_id: { $in: traderInsts.map(i => i.id) }
     });
 
     return res.json({
@@ -4098,15 +4109,27 @@ app.get('/api/stats', async (req, res) => {
     });
   }
 
-  const totalInstruments = await Instrument.countDocuments();
-  const pendingApplications = await Application.countDocuments({ status: { $in: ['SUBMITTED', 'UNDER_REVIEW'] } });
-  const assignedApplications = await Application.countDocuments({ status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION'] } });
-  const inProgressApplications = await Application.countDocuments({ status: 'IN_PROGRESS' });
-  const reportsSubmitted = await Application.countDocuments({ status: 'REPORT_SUBMITTED' });
-  const completedVerifications = await Application.countDocuments({ status: { $in: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] } });
-  const approvedApplications = await Application.countDocuments({ status: { $in: ['APPROVED', 'CERTIFICATE_ISSUED'] } });
-  const returnedApplications = await Application.countDocuments({ status: { $in: ['RETURNED', 'REJECTED'] } });
-  const pendingPayments = await Application.countDocuments({ fee_status: 'PENDING' });
+  const [
+    totalInstruments,
+    pendingApplications,
+    assignedApplications,
+    inProgressApplications,
+    reportsSubmitted,
+    completedVerifications,
+    approvedApplications,
+    returnedApplications,
+    pendingPayments
+  ] = await Promise.all([
+    Instrument.countDocuments(),
+    Application.countDocuments({ status: { $in: ['SUBMITTED', 'UNDER_REVIEW'] } }),
+    Application.countDocuments({ status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION'] } }),
+    Application.countDocuments({ status: 'IN_PROGRESS' }),
+    Application.countDocuments({ status: 'REPORT_SUBMITTED' }),
+    Application.countDocuments({ status: { $in: ['VERIFICATION_COMPLETED', 'VERIFICATION_FAILED'] } }),
+    Application.countDocuments({ status: { $in: ['APPROVED', 'CERTIFICATE_ISSUED'] } }),
+    Application.countDocuments({ status: { $in: ['RETURNED', 'REJECTED'] } }),
+    Application.countDocuments({ fee_status: 'PENDING' })
+  ]);
 
   res.json({
     totalInstruments,
