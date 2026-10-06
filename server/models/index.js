@@ -319,7 +319,13 @@ applicationSchema.index({ trader_id: 1, status: 1 });
 applicationSchema.index({ status: 1, created_at: -1 });
 certificateSchema.index({ instrument_id: 1, created_at: -1 });
 assignmentSchema.index({ assigned_id: 1, application_id: 1 });
+verificationSchema.index({ verifier_id: 1, status: 1 });
+verificationSchema.index({ application_id: 1 });
+appointmentSchema.index({ scheduled_date: 1 });
+geoVisitSchema.index({ application_id: 1 });
+ruleSetSchema.index({ category_id: 1 });
 userSessionSchema.index({ token: 1, expires_at: 1 });
+
 
 export const User = mongoose.models.User || mongoose.model('User', userSchema, 'users');
 export const UserSession = mongoose.models.UserSession || mongoose.model('UserSession', userSessionSchema, 'user_sessions');

@@ -17,11 +17,12 @@ export default function GeoVisitCard({
   onVerificationUnlocked,
   onCheckOutSuccess,
   compact = false,
-  showMapDefault = true
+  showMapDefault = true,
+  initialGeoVisit = null
 }) {
   const { t } = useTranslation();
-  const [geoVisit, setGeoVisit] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [geoVisit, setGeoVisit] = useState(initialGeoVisit || null);
+  const [loading, setLoading] = useState(!initialGeoVisit);
   const [checkingIn, setCheckingIn] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -60,8 +61,13 @@ export default function GeoVisitCard({
   };
 
   useEffect(() => {
+    if (initialGeoVisit) {
+      setGeoVisit(initialGeoVisit);
+      setLoading(false);
+      return;
+    }
     loadGeoVisit();
-  }, [applicationId]);
+  }, [applicationId, initialGeoVisit]);
 
   // Online auto-sync listener
   useEffect(() => {

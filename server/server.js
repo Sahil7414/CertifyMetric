@@ -2291,213 +2291,243 @@ async function getOrCreateGeoVisit(appId) {
 
 // List Assigned Cases for Verifier & GATC Lab
 app.get('/api/verifications/cases', async (req, res) => {
-  const { role, id: actorId } = getActor(req);
+  try {
+    const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'VIEW_ASSIGNED_CASES') && role !== ROLES.AUTHORITY) {
-    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access verification cases. Platform administration does not conduct inspections.` });
+    if (!hasPermission(role, 'VIEW_ASSIGNED_CASES') && role !== ROLES.AUTHORITY) {
+      return res.status(403).json({ error: `Forbidden: Role '${role}' cannot access verification cases. Platform administration does not conduct inspections.` });
+    }
+
+    const { verifier_id } = req.query;
+    const targetVerifierId = verifier_id || actorId;
+
+    // Filter assignments by verifier or lab
+    const asnFilter = {};
+    if (role === ROLES.VERIFIER || role === ROLES.GATC) {
+      asnFilter.assigned_id = actorId;
+    } else if (targetVerifierId && targetVerifierId !== 'UNKNOWN') {
+      asnFilter.assigned_id = targetVerifierId;
+    }
+
+    const assignments = await Assignment.find(asnFilter).lean();
+    if (!assignments || assignments.length === 0) {
+      return res.json([]);
+    }
+
+    const appIds = assignments.map(a => a.application_id).filter(Boolean);
+    if (appIds.length === 0) {
+      return res.json([]);
+    }
+
+    const asnMap = new Map(assignments.map(a => [a.application_id, a]));
+
+    const applications = await Application.find({
+      id: { $in: appIds },
+      status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED'] }
+    }).sort({ updated_at: -1 }).lean();
+
+    if (!applications || applications.length === 0) {
+      return res.json([]);
+    }
+
+    const asnIds = assignments.map(a => a.id).filter(Boolean);
+    const applicationIds = applications.map(a => a.id).filter(Boolean);
+    const instIds = [...new Set(applications.map(a => a.instrument_id).filter(Boolean))];
+    const traderIds = [...new Set(applications.map(a => a.trader_id).filter(Boolean))];
+
+    const [instruments, traders, appointments, verifs, geoVisits] = await Promise.all([
+      instIds.length > 0 ? Instrument.find({ id: { $in: instIds } }).lean() : [],
+      traderIds.length > 0 ? User.find({ id: { $in: traderIds } }).select('id full_name organization_id email phone').lean() : [],
+      asnIds.length > 0 ? Appointment.find({ assignment_id: { $in: asnIds } }).lean() : [],
+      applicationIds.length > 0 ? Verification.find({ application_id: { $in: applicationIds } }).lean() : [],
+      applicationIds.length > 0 ? GeoVisit.find({ application_id: { $in: applicationIds } }).lean() : []
+    ]);
+
+    const instMap = new Map(instruments.map(i => [i.id, i]));
+    const traderMap = new Map(traders.map(u => [u.id, u]));
+    const aptMap = new Map(appointments.map(a => [a.assignment_id, a]));
+    const verifMap = new Map(verifs.map(v => [v.application_id, v]));
+    const geoMap = new Map(geoVisits.map(g => [g.application_id, g]));
+
+    const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
+    const verifIds = verifs.map(v => v.id).filter(Boolean);
+
+    const [categories, certs] = await Promise.all([
+      catIds.length > 0 ? InstrumentCategory.find({ id: { $in: catIds } }).lean() : [],
+      Certificate.find({
+        $or: [
+          ...(instIds.length > 0 ? [{ instrument_id: { $in: instIds } }] : []),
+          ...(applicationIds.length > 0 ? [{ application_id: { $in: applicationIds } }] : []),
+          ...(verifIds.length > 0 ? [{ verification_id: { $in: verifIds } }] : [])
+        ]
+      }).lean()
+    ]);
+
+    const catMap = new Map(categories.map(c => [c.id, c]));
+    const certMap = new Map();
+    certs.forEach(c => {
+      if (c.instrument_id) certMap.set(c.instrument_id, c);
+      if (c.application_id) certMap.set(c.application_id, c);
+      if (c.verification_id) certMap.set(c.verification_id, c);
+    });
+
+    const cases = applications.map(a => {
+      const asn = asnMap.get(a.id) || {};
+      const inst = instMap.get(a.instrument_id) || {};
+      const cat = catMap.get(inst.category_id);
+      const trader = traderMap.get(a.trader_id) || {};
+      const apt = aptMap.get(asn.id) || {};
+      const verif = verifMap.get(a.id) || {};
+      const gv = geoMap.get(a.id) || null;
+      const cert = certMap.get(a.id) || (verif.id ? certMap.get(verif.id) : null) || certMap.get(inst.id);
+
+      return {
+        application_id: a.id,
+        application_no: a.application_no,
+        request_type: a.request_type,
+        application_status: a.status,
+        instrument_id: inst.id || null,
+        manufacturer: inst.manufacturer || null,
+        model: inst.model || null,
+        serial_number: inst.serial_number || null,
+        category_name: cat ? cat.name : 'Legal Metrology Instrument',
+        max_capacity: inst.max_capacity || null,
+        verification_scale_interval_e: inst.verification_scale_interval_e || null,
+        location: a.location_address || inst.location || null,
+        district: inst.district || null,
+        trader_name: trader.full_name || null,
+        trader_phone: trader.phone || null,
+        assigned_id: asn.assigned_id || null,
+        is_override: asn.is_override || 0,
+        scheduled_date: apt.scheduled_date || null,
+        time_slot: apt.time_slot || null,
+        arrangement_type: apt.arrangement_type || null,
+        verification_id: verif.id || null,
+        verification_status: verif.status || null,
+        verification_result: verif.result || null,
+        geovisit: gv ? {
+          id: gv.id,
+          status: gv.status,
+          registered_latitude: gv.registered_latitude,
+          registered_longitude: gv.registered_longitude,
+          registered_address: gv.registered_address,
+          geofence_radius: gv.geofence_radius || 200,
+          check_in_distance: gv.check_in_distance,
+          check_in_accuracy: gv.check_in_accuracy,
+          check_in_timestamp: gv.check_in_timestamp,
+          check_out_timestamp: gv.check_out_timestamp,
+          is_override: gv.is_override,
+          override_reason: gv.override_reason
+        } : null,
+        tested_at: verif.updated_at || verif.created_at || a.updated_at,
+        certificate_no: cert?.certificate_no || null,
+        certificate_valid_until: cert?.valid_until || null,
+        certificate_status: cert?.status || null
+      };
+    });
+
+    res.json(cases);
+  } catch (err) {
+    console.error('Error fetching verifications cases:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch verification cases' });
   }
-
-  const { verifier_id } = req.query;
-  const targetVerifierId = verifier_id || actorId;
-
-  // Filter assignments by verifier or lab
-  const asnFilter = {};
-  if (role === ROLES.VERIFIER || role === ROLES.GATC) {
-    asnFilter.assigned_id = actorId;
-  } else if (targetVerifierId && targetVerifierId !== 'UNKNOWN') {
-    asnFilter.assigned_id = targetVerifierId;
-  }
-
-  const assignments = await Assignment.find(asnFilter).lean();
-  const appIds = assignments.map(a => a.application_id);
-  const asnMap = new Map(assignments.map(a => [a.application_id, a]));
-
-  const applications = await Application.find({
-    id: { $in: appIds },
-    status: { $in: ['ASSIGNED', 'PENDING_VERIFICATION', 'IN_PROGRESS', 'REPORT_SUBMITTED', 'VERIFICATION_COMPLETED', 'VERIFICATION_FAILED', 'APPROVED'] }
-  }).sort({ updated_at: -1 }).lean();
-
-  const asnIds = assignments.map(a => a.id);
-  const applicationIds = applications.map(a => a.id);
-
-  const [instruments, traders, appointments, verifs, geoVisits] = await Promise.all([
-    Instrument.find({ id: { $in: instIds } }).lean(),
-    User.find({ id: { $in: traderIds } }).select('id full_name organization_id email phone').lean(),
-    Appointment.find({ assignment_id: { $in: asnIds } }).lean(),
-    Verification.find({ application_id: { $in: applicationIds } }).lean(),
-    GeoVisit.find({ application_id: { $in: applicationIds } }).lean()
-  ]);
-
-  const instMap = new Map(instruments.map(i => [i.id, i]));
-  const traderMap = new Map(traders.map(u => [u.id, u]));
-  const aptMap = new Map(appointments.map(a => [a.assignment_id, a]));
-  const verifMap = new Map(verifs.map(v => [v.application_id, v]));
-  const geoMap = new Map(geoVisits.map(g => [g.application_id, g]));
-
-  const catIds = [...new Set(instruments.map(i => i.category_id).filter(Boolean))];
-  const verifIds = verifs.map(v => v.id);
-
-  const [categories, certs] = await Promise.all([
-    InstrumentCategory.find({ id: { $in: catIds } }).lean(),
-    Certificate.find({
-      $or: [
-        { instrument_id: { $in: instIds } },
-        { application_id: { $in: applicationIds } },
-        { verification_id: { $in: verifIds } }
-      ]
-    }).lean()
-  ]);
-
-  const catMap = new Map(categories.map(c => [c.id, c]));
-  const certMap = new Map();
-  certs.forEach(c => {
-    if (c.instrument_id) certMap.set(c.instrument_id, c);
-    if (c.application_id) certMap.set(c.application_id, c);
-    if (c.verification_id) certMap.set(c.verification_id, c);
-  });
-
-  const cases = applications.map(a => {
-    const asn = asnMap.get(a.id) || {};
-    const inst = instMap.get(a.instrument_id) || {};
-    const cat = catMap.get(inst.category_id);
-    const trader = traderMap.get(a.trader_id) || {};
-    const apt = aptMap.get(asn.id) || {};
-    const verif = verifMap.get(a.id) || {};
-    const gv = geoMap.get(a.id) || null;
-    const cert = certMap.get(a.id) || (verif.id ? certMap.get(verif.id) : null) || certMap.get(inst.id);
-
-    return {
-      application_id: a.id,
-      application_no: a.application_no,
-      request_type: a.request_type,
-      application_status: a.status,
-      instrument_id: inst.id || null,
-      manufacturer: inst.manufacturer || null,
-      model: inst.model || null,
-      serial_number: inst.serial_number || null,
-      category_name: cat ? cat.name : 'Legal Metrology Instrument',
-      max_capacity: inst.max_capacity || null,
-      verification_scale_interval_e: inst.verification_scale_interval_e || null,
-      location: a.location_address || inst.location || null,
-      district: inst.district || null,
-      trader_name: trader.full_name || null,
-      trader_phone: trader.phone || null,
-      assigned_id: asn.assigned_id || null,
-      is_override: asn.is_override || 0,
-      scheduled_date: apt.scheduled_date || null,
-      time_slot: apt.time_slot || null,
-      arrangement_type: apt.arrangement_type || null,
-      verification_id: verif.id || null,
-      verification_status: verif.status || null,
-      verification_result: verif.result || null,
-      geovisit: gv ? {
-        id: gv.id,
-        status: gv.status,
-        registered_latitude: gv.registered_latitude,
-        registered_longitude: gv.registered_longitude,
-        registered_address: gv.registered_address,
-        geofence_radius: gv.geofence_radius || 200,
-        check_in_distance: gv.check_in_distance,
-        check_in_accuracy: gv.check_in_accuracy,
-        check_in_timestamp: gv.check_in_timestamp,
-        check_out_timestamp: gv.check_out_timestamp,
-        is_override: gv.is_override,
-        override_reason: gv.override_reason
-      } : null,
-      tested_at: verif.updated_at || verif.created_at || a.updated_at,
-      certificate_no: cert?.certificate_no || null,
-      certificate_valid_until: cert?.valid_until || null,
-      certificate_status: cert?.status || null
-    };
-  });
-
-  res.json(cases);
 });
 
 // Get Verification Workspace Context
 app.get('/api/verifications/cases/:appId', async (req, res) => {
-  const { role, id: actorId } = getActor(req);
+  try {
+    const { role, id: actorId } = getActor(req);
 
-  if (!hasPermission(role, 'OPEN_VERIFICATION_WORKSPACE') && role !== ROLES.AUTHORITY) {
-    return res.status(403).json({ error: `Forbidden: Role '${role}' cannot open verification workspace. Inspections are conducted by Field Verifiers and GATC Labs.` });
+    if (!hasPermission(role, 'OPEN_VERIFICATION_WORKSPACE') && role !== ROLES.AUTHORITY) {
+      return res.status(403).json({ error: `Forbidden: Role '${role}' cannot open verification workspace. Inspections are conducted by Field Verifiers and GATC Labs.` });
+    }
+
+    const a = await Application.findOne({ id: req.params.appId }).lean();
+    if (!a) return res.status(404).json({ error: 'Case not found' });
+
+    // Parallel Wave 1: Fetch direct dependencies of the application
+    const [inst, trader, asn, verif, geoVisit] = await Promise.all([
+      a.instrument_id ? Instrument.findOne({ id: a.instrument_id }).lean() : null,
+      a.trader_id ? User.findOne({ id: a.trader_id }).lean() : null,
+      Assignment.findOne({ application_id: a.id }).lean(),
+      Verification.findOne({ application_id: a.id }).lean(),
+      getOrCreateGeoVisit(a.id)
+    ]);
+
+    // Access validation: verifier/GATC must be the assigned officer (Authority can review any case)
+    if ((role === ROLES.VERIFIER || role === ROLES.GATC) && asn && asn.assigned_id !== actorId) {
+      return res.status(403).json({ error: 'Forbidden: You are not the assigned verifier for this case.' });
+    }
+
+    // Parallel Wave 2: Fetch secondary related records concurrently
+    const [cat, traderOrg, assigner, apt, cert, checklistResponses, readings, evidence] = await Promise.all([
+      inst?.category_id ? InstrumentCategory.findOne({ id: inst.category_id }).lean() : null,
+      trader?.organization_id ? Organization.findOne({ id: trader.organization_id }).lean() : null,
+      asn?.assigned_by ? User.findOne({ id: asn.assigned_by }).lean() : null,
+      asn?.id ? Appointment.findOne({ assignment_id: asn.id }).lean() : null,
+      verif?.id ? Certificate.findOne({ verification_id: verif.id }).lean() : null,
+      verif?.id ? VerificationChecklistResponse.find({ verification_id: verif.id }).lean() : [],
+      verif?.id ? VerificationReading.find({ verification_id: verif.id }).sort({ reference_value: 1 }).lean() : [],
+      verif?.id ? VerificationEvidence.find({ verification_id: verif.id }).sort({ created_at: -1 }).lean() : []
+    ]);
+
+    // Secondary Wave 3: RuleSet based on category
+    const ruleSet = cat?.id ? await RuleSet.findOne({ category_id: cat.id }).lean() : null;
+
+    res.json({
+      application_id: a.id,
+      application_no: a.application_no,
+      status: a.status,
+      application_status: a.status,
+      request_type: a.request_type,
+      instrument_id: inst ? inst.id : null,
+      manufacturer: inst ? inst.manufacturer : null,
+      model: inst ? inst.model : null,
+      serial_number: inst ? inst.serial_number : null,
+      max_capacity: inst ? inst.max_capacity : null,
+      min_capacity: inst ? inst.min_capacity : null,
+      verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
+      location: a.location_address || (inst ? inst.location : null),
+      registered_latitude: a.registered_latitude || (inst ? inst.latitude : null) || (geoVisit ? geoVisit.registered_latitude : null),
+      registered_longitude: a.registered_longitude || (inst ? inst.longitude : null) || (geoVisit ? geoVisit.registered_longitude : null),
+      category_name: cat ? cat.name : null,
+      trader_name: trader ? trader.full_name : null,
+      trader_phone: trader ? trader.phone : null,
+      trader_email: trader ? trader.email : null,
+      trader_org: traderOrg ? traderOrg.name : null,
+      trader_jurisdiction: traderOrg ? (traderOrg.jurisdictions || []).join(', ') : null,
+      assigned_id: asn ? asn.assigned_id : null,
+      assigned_type: asn ? asn.assigned_type : null,
+      assigned_at: asn ? asn.created_at : null,
+      assigned_by_name: assigner ? assigner.full_name : null,
+      scheduled_date: apt ? apt.scheduled_date : null,
+      time_slot: apt ? apt.time_slot : null,
+      arrangement_type: apt ? apt.arrangement_type : null,
+      checklist_schema: ruleSet ? ruleSet.checklist_schema : [],
+      mpe_rules: ruleSet ? ruleSet.mpe_rules : {},
+      verification_id: verif ? verif.id : null,
+      verification_status: verif ? verif.status : null,
+      verification_result: verif ? verif.result : null,
+      observations: verif ? verif.remarks : null,
+      started_at: verif ? verif.started_at : null,
+      completed_at: verif ? verif.completed_at : null,
+      certificate_id: cert ? cert.id : null,
+      certificate_no: cert ? cert.certificate_no : null,
+      certificate_status: cert ? cert.status : null,
+      issue_date: cert ? cert.issue_date : null,
+      valid_until: cert ? cert.valid_until : null,
+      public_token: cert ? cert.public_token : null,
+      checklist_responses: checklistResponses,
+      readings,
+      evidence,
+      geovisit: geoVisit
+    });
+  } catch (err) {
+    console.error('Error opening verification workspace context:', err);
+    res.status(500).json({ error: err.message || 'Failed to open verification workspace' });
   }
-
-  const a = await Application.findOne({ id: req.params.appId }).lean();
-  if (!a) return res.status(404).json({ error: 'Case not found' });
-
-  const inst = await Instrument.findOne({ id: a.instrument_id }).lean();
-  const cat = inst ? await InstrumentCategory.findOne({ id: inst.category_id }).lean() : null;
-  const ruleSet = cat ? await RuleSet.findOne({ category_id: cat.id }).lean() : null;
-  const trader = await User.findOne({ id: a.trader_id }).lean();
-  const traderOrg = trader && trader.organization_id ? await Organization.findOne({ id: trader.organization_id }).lean() : null;
-
-  const asn = await Assignment.findOne({ application_id: a.id }).lean();
-  const assigner = asn && asn.assigned_by ? await User.findOne({ id: asn.assigned_by }).lean() : null;
-  const apt = asn ? await Appointment.findOne({ assignment_id: asn.id }).lean() : null;
-
-  const verif = await Verification.findOne({ application_id: a.id }).lean();
-  const cert = verif ? await Certificate.findOne({ verification_id: verif.id }).lean() : null;
-  const geoVisit = await getOrCreateGeoVisit(a.id);
-
-  // Access validation: verifier/GATC must be the assigned officer (Authority can review any case)
-  if ((role === ROLES.VERIFIER || role === ROLES.GATC) && asn && asn.assigned_id !== actorId) {
-    return res.status(403).json({ error: 'Forbidden: You are not the assigned verifier for this case.' });
-  }
-
-  // Load existing checklist responses, readings, evidence
-  const checklistResponses = verif ? await VerificationChecklistResponse.find({ verification_id: verif.id }).lean() : [];
-  const readings = verif ? await VerificationReading.find({ verification_id: verif.id }).sort({ reference_value: 1 }).lean() : [];
-  const evidence = verif ? await VerificationEvidence.find({ verification_id: verif.id }).sort({ created_at: -1 }).lean() : [];
-
-  res.json({
-    application_id: a.id,
-    application_no: a.application_no,
-    status: a.status,
-    application_status: a.status,
-    request_type: a.request_type,
-    instrument_id: inst ? inst.id : null,
-    manufacturer: inst ? inst.manufacturer : null,
-    model: inst ? inst.model : null,
-    serial_number: inst ? inst.serial_number : null,
-    max_capacity: inst ? inst.max_capacity : null,
-    min_capacity: inst ? inst.min_capacity : null,
-    verification_scale_interval_e: inst ? inst.verification_scale_interval_e : null,
-    location: a.location_address || (inst ? inst.location : null),
-    registered_latitude: a.registered_latitude || (inst ? inst.latitude : null) || (geoVisit ? geoVisit.registered_latitude : null),
-    registered_longitude: a.registered_longitude || (inst ? inst.longitude : null) || (geoVisit ? geoVisit.registered_longitude : null),
-    category_name: cat ? cat.name : null,
-    trader_name: trader ? trader.full_name : null,
-    trader_phone: trader ? trader.phone : null,
-    trader_email: trader ? trader.email : null,
-    trader_org: traderOrg ? traderOrg.name : null,
-    trader_jurisdiction: traderOrg ? (traderOrg.jurisdictions || []).join(', ') : null,
-    assigned_id: asn ? asn.assigned_id : null,
-    assigned_type: asn ? asn.assigned_type : null,
-    assigned_at: asn ? asn.created_at : null,
-    assigned_by_name: assigner ? assigner.full_name : null,
-    scheduled_date: apt ? apt.scheduled_date : null,
-    time_slot: apt ? apt.time_slot : null,
-    arrangement_type: apt ? apt.arrangement_type : null,
-    checklist_schema: ruleSet ? ruleSet.checklist_schema : [],
-    mpe_rules: ruleSet ? ruleSet.mpe_rules : {},
-    verification_id: verif ? verif.id : null,
-    verification_status: verif ? verif.status : null,
-    verification_result: verif ? verif.result : null,
-    observations: verif ? verif.remarks : null,
-    started_at: verif ? verif.started_at : null,
-    completed_at: verif ? verif.completed_at : null,
-    certificate_id: cert ? cert.id : null,
-    certificate_no: cert ? cert.certificate_no : null,
-    certificate_status: cert ? cert.status : null,
-    issue_date: cert ? cert.issue_date : null,
-    valid_until: cert ? cert.valid_until : null,
-    public_token: cert ? cert.public_token : null,
-    checklist_responses: checklistResponses,
-    readings,
-    evidence,
-    geovisit: geoVisit
-  });
 });
+
 
 // Start Verification: ASSIGNED / PENDING_VERIFICATION -> IN_PROGRESS
 app.post('/api/verifications/cases/:appId/start', async (req, res) => {

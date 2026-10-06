@@ -438,12 +438,14 @@ export default function App() {
   const [applications, setApplications] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [stats, setStats] = useState(null);
+  const [verifierCases, setVerifierCases] = useState([]);
 
   // Cache tracker to prevent redundant/duplicate API calls
   const loadedDataRef = useRef({
     instrumentsUserId: null,
     applicationsUserId: null,
     certificatesUserId: null,
+    verifierCasesUserId: null,
     statsLoaded: false
   });
 
@@ -497,6 +499,19 @@ export default function App() {
     }
   };
 
+  const loadVerifierCases = async (user = currentUser, force = false) => {
+    if (!user || !user.id) return;
+    const key = user.id;
+    if (!force && loadedDataRef.current.verifierCasesUserId === key) return;
+    try {
+      const list = await api.getVerifierCases(user.id);
+      setVerifierCases(Array.isArray(list) ? list : []);
+      loadedDataRef.current.verifierCasesUserId = key;
+    } catch (err) {
+      console.warn('Failed to load verifier cases:', err);
+    }
+  };
+
   // Load data for active tab immediately, then prefetch remaining data in idle time
   const loadDataForTab = (tab, user = currentUser, force = false) => {
     if (!user) return;
@@ -516,6 +531,8 @@ export default function App() {
     } else if (tab === 'authority-dashboard') {
       loadApplications(user, force);
       loadStats(force);
+    } else if (tab === 'verifier-dashboard' || tab === 'gatc-dashboard' || tab === 'verification-workspace') {
+      loadVerifierCases(user, force);
     }
 
     // 2. Idle background prefetch so all remaining pages load instantaneously with complete data
@@ -530,6 +547,8 @@ export default function App() {
           loadInstruments(user);
           loadCertificates(user);
           loadStats();
+        } else if (role === 'VERIFIER' || role === 'GATC') {
+          loadVerifierCases(user);
         }
       }, 350);
     }
@@ -542,7 +561,8 @@ export default function App() {
       loadInstruments(user, true),
       loadApplications(user, true),
       loadCertificates(user, true),
-      loadStats(true)
+      loadStats(true),
+      loadVerifierCases(user, true)
     ]);
   };
 
@@ -1133,6 +1153,8 @@ export default function App() {
         {activeTab === 'gatc-dashboard' && (
           <GatcDashboard
             currentUser={currentUser}
+            initialCases={verifierCases}
+            onRefreshCases={() => loadVerifierCases(currentUser, true)}
             onOpenCase={(appId) => navigateTo('verification-workspace', { applicationId: appId })}
             onViewAllCases={() => navigateTo('verification-workspace')}
           />
@@ -1183,6 +1205,8 @@ export default function App() {
         {activeTab === 'verifier-dashboard' && (
           <VerifierDashboard
             currentUser={currentUser}
+            initialCases={verifierCases}
+            onRefreshCases={() => loadVerifierCases(currentUser, true)}
             onOpenCase={(appId) => navigateTo('verification-workspace', { applicationId: appId })}
             onViewAllCases={() => navigateTo('verification-workspace')}
           />
@@ -1192,6 +1216,7 @@ export default function App() {
           <VerificationWorkspace
             applicationId={selectedApplicationId}
             currentUser={currentUser}
+            assignedCasesList={verifierCases}
             onBack={() => navigateBack(currentRole === 'GATC' ? 'gatc-dashboard' : 'verifier-dashboard')}
             onVerificationCompleted={async () => {
               await refreshAllData();

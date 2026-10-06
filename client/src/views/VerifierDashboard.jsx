@@ -5,10 +5,17 @@ import Pagination from '../components/Pagination';
 import GeoVisitCard from '../components/GeoVisitCard';
 import { api } from '../api';
 
-export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCases, onSelectCertificate }) {
+export default function VerifierDashboard({
+  currentUser,
+  onOpenCase,
+  onViewAllCases,
+  onSelectCertificate,
+  initialCases = null,
+  onRefreshCases = null
+}) {
   const { t } = useTranslation();
-  const [cases, setCases] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [cases, setCases] = useState(initialCases || []);
+  const [loading, setLoading] = useState(!initialCases || initialCases.length === 0);
   const [activeTab, setActiveTab] = useState('QUEUE'); // 'QUEUE' | 'HISTORY'
   const [searchQuery, setSearchQuery] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState('ALL'); // 'ALL' | 'PASS' | 'FAIL' | 'IN_PROGRESS'
@@ -17,8 +24,15 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState(10);
 
-  const loadCases = () => {
-    if (currentUser?.id) {
+  const loadCases = async () => {
+    if (onRefreshCases) {
+      setLoading(true);
+      try {
+        await onRefreshCases();
+      } finally {
+        setLoading(false);
+      }
+    } else if (currentUser?.id) {
       setLoading(true);
       api
         .getVerifierCases(currentUser.id)
@@ -29,8 +43,13 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
   };
 
   useEffect(() => {
-    loadCases();
-  }, [currentUser]);
+    if (initialCases && initialCases.length > 0) {
+      setCases(initialCases);
+      setLoading(false);
+    } else {
+      loadCases();
+    }
+  }, [currentUser, initialCases]);
 
   const safeCases = Array.isArray(cases) ? cases : [];
 
@@ -353,6 +372,7 @@ export default function VerifierDashboard({ currentUser, onOpenCase, onViewAllCa
                         timeSlot={c.time_slot ? c.time_slot.replace('_', ' ') : '11:00 AM'}
                         currentUser={currentUser}
                         verificationStatus={c.application_status}
+                        initialGeoVisit={c.geovisit}
                         onCheckInSuccess={() => loadCases()}
                         onVerificationUnlocked={() => onOpenCase(c.application_id)}
                         onCheckOutSuccess={() => loadCases()}

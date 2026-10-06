@@ -42,11 +42,12 @@ export default function VerificationWorkspace({
   currentUser,
   onBack,
   onVerificationCompleted,
-  onViewCertificate
+  onViewCertificate,
+  assignedCasesList = null
 }) {
   const { t } = useTranslation();
   const [selectedAppId, setSelectedAppId] = useState(applicationId || null);
-  const [assignedCases, setAssignedCases] = useState([]);
+  const [assignedCases, setAssignedCases] = useState(assignedCasesList || []);
   const [caseData, setCaseData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -101,6 +102,13 @@ export default function VerificationWorkspace({
 
   // Load list of assigned cases for switcher or fallback
   useEffect(() => {
+    if (assignedCasesList && assignedCasesList.length > 0) {
+      setAssignedCases(assignedCasesList);
+      if (!applicationId && assignedCasesList.length > 0) {
+        setSelectedAppId(assignedCasesList[0].application_id);
+      }
+      return;
+    }
     if (currentUser?.id) {
       api.getVerifierCases(currentUser.id)
         .then(list => {
@@ -114,7 +122,7 @@ export default function VerificationWorkspace({
         })
         .catch(console.error);
     }
-  }, [currentUser, applicationId]);
+  }, [currentUser, applicationId, assignedCasesList]);
 
   const loadCase = async (appIdToFetch) => {
     const idToUse = appIdToFetch || selectedAppId;

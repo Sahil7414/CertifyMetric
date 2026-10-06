@@ -4,10 +4,17 @@ import StatusBadge from '../components/StatusBadge';
 import Pagination from '../components/Pagination';
 import { api } from '../api';
 
-export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases, onSelectCertificate }) {
+export default function GatcDashboard({
+  currentUser,
+  onOpenCase,
+  onViewAllCases,
+  onSelectCertificate,
+  initialCases = null,
+  onRefreshCases = null
+}) {
   const { t } = useTranslation();
-  const [cases, setCases] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [cases, setCases] = useState(initialCases || []);
+  const [loading, setLoading] = useState(!initialCases || initialCases.length === 0);
   const [activeTab, setActiveTab] = useState('QUEUE'); // 'QUEUE' | 'HISTORY'
   const [searchQuery, setSearchQuery] = useState('');
   const [outcomeFilter, setOutcomeFilter] = useState('ALL'); // 'ALL' | 'PASS' | 'FAIL' | 'IN_PROGRESS'
@@ -16,8 +23,15 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState(10);
 
-  const loadCases = () => {
-    if (currentUser?.id) {
+  const loadCases = async () => {
+    if (onRefreshCases) {
+      setLoading(true);
+      try {
+        await onRefreshCases();
+      } finally {
+        setLoading(false);
+      }
+    } else if (currentUser?.id) {
       setLoading(true);
       api
         .getVerifierCases(currentUser.id)
@@ -28,8 +42,13 @@ export default function GatcDashboard({ currentUser, onOpenCase, onViewAllCases,
   };
 
   useEffect(() => {
-    loadCases();
-  }, [currentUser]);
+    if (initialCases && initialCases.length > 0) {
+      setCases(initialCases);
+      setLoading(false);
+    } else {
+      loadCases();
+    }
+  }, [currentUser, initialCases]);
 
   const safeCases = Array.isArray(cases) ? cases : [];
 
