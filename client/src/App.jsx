@@ -4,34 +4,85 @@ import LoadingScreen from './components/LoadingScreen';
 import { useTranslation } from 'react-i18next';
 import { api, setApiUser, getStoredAuth } from './api';
 
-// Code-split views: Only downloaded when the respective role/page is requested
-const TraderDashboard = lazy(() => import('./views/TraderDashboard'));
-const InstrumentsList = lazy(() => import('./views/InstrumentsList'));
-const AddInstrumentModal = lazy(() => import('./views/AddInstrumentModal'));
-const ApplyVerificationView = lazy(() => import('./views/ApplyVerificationView'));
-const ApplicationsList = lazy(() => import('./views/ApplicationsList'));
-const InstrumentDetail = lazy(() => import('./views/InstrumentDetail'));
-const ApplicationTimeline = lazy(() => import('./views/ApplicationTimeline'));
-const AuthorityDashboard = lazy(() => import('./views/AuthorityDashboard'));
-const ApplicationReview = lazy(() => import('./views/ApplicationReview'));
-const AssignmentDecisionSupport = lazy(() => import('./views/AssignmentDecisionSupport'));
-const VerifierDashboard = lazy(() => import('./views/VerifierDashboard'));
-const VerificationWorkspace = lazy(() => import('./views/VerificationWorkspace'));
-const CertificatesList = lazy(() => import('./views/CertificatesList'));
-const OfficialCertificate = lazy(() => import('./views/OfficialCertificate'));
-const PublicCertificateVerification = lazy(() => import('./views/PublicCertificateVerification'));
-const PortalLanding = lazy(() => import('./views/PortalLanding'));
-const VendorApplyVerificationView = lazy(() => import('./views/VendorApplyVerificationView'));
-const QRCodeModal = lazy(() => import('./components/QRCodeModal'));
-const LoginView = lazy(() => import('./views/LoginView'));
-const RegisterView = lazy(() => import('./views/RegisterView'));
-const AuditLogView = lazy(() => import('./views/AuditLogView'));
-const GatcDashboard = lazy(() => import('./views/GatcDashboard'));
-const AdminDashboard = lazy(() => import('./views/AdminDashboard'));
-const AdminUsersView = lazy(() => import('./views/AdminUsersView'));
-const AdminOrgsView = lazy(() => import('./views/AdminOrgsView'));
-const AdminMasterDataView = lazy(() => import('./views/AdminMasterDataView'));
-const AdminSystemHealthView = lazy(() => import('./views/AdminSystemHealthView'));
+// Resilient chunk loader with automatic retry on network blip or bundle redeploy
+function lazyWithRetry(componentImport) {
+  return lazy(async () => {
+    try {
+      return await componentImport();
+    } catch (error) {
+      console.warn('Chunk load error, retrying module import...', error);
+      await new Promise(r => setTimeout(r, 600));
+      return await componentImport();
+    }
+  });
+}
+
+// Code-split views: Downloaded on-demand and preloaded in background idle time
+const TraderDashboard = lazyWithRetry(() => import('./views/TraderDashboard'));
+const InstrumentsList = lazyWithRetry(() => import('./views/InstrumentsList'));
+const AddInstrumentModal = lazyWithRetry(() => import('./views/AddInstrumentModal'));
+const ApplyVerificationView = lazyWithRetry(() => import('./views/ApplyVerificationView'));
+const ApplicationsList = lazyWithRetry(() => import('./views/ApplicationsList'));
+const InstrumentDetail = lazyWithRetry(() => import('./views/InstrumentDetail'));
+const ApplicationTimeline = lazyWithRetry(() => import('./views/ApplicationTimeline'));
+const AuthorityDashboard = lazyWithRetry(() => import('./views/AuthorityDashboard'));
+const ApplicationReview = lazyWithRetry(() => import('./views/ApplicationReview'));
+const AssignmentDecisionSupport = lazyWithRetry(() => import('./views/AssignmentDecisionSupport'));
+const VerifierDashboard = lazyWithRetry(() => import('./views/VerifierDashboard'));
+const VerificationWorkspace = lazyWithRetry(() => import('./views/VerificationWorkspace'));
+const CertificatesList = lazyWithRetry(() => import('./views/CertificatesList'));
+const OfficialCertificate = lazyWithRetry(() => import('./views/OfficialCertificate'));
+const PublicCertificateVerification = lazyWithRetry(() => import('./views/PublicCertificateVerification'));
+const PortalLanding = lazyWithRetry(() => import('./views/PortalLanding'));
+const VendorApplyVerificationView = lazyWithRetry(() => import('./views/VendorApplyVerificationView'));
+const QRCodeModal = lazyWithRetry(() => import('./components/QRCodeModal'));
+const LoginView = lazyWithRetry(() => import('./views/LoginView'));
+const RegisterView = lazyWithRetry(() => import('./views/RegisterView'));
+const AuditLogView = lazyWithRetry(() => import('./views/AuditLogView'));
+const GatcDashboard = lazyWithRetry(() => import('./views/GatcDashboard'));
+const AdminDashboard = lazyWithRetry(() => import('./views/AdminDashboard'));
+const AdminUsersView = lazyWithRetry(() => import('./views/AdminUsersView'));
+const AdminOrgsView = lazyWithRetry(() => import('./views/AdminOrgsView'));
+const AdminMasterDataView = lazyWithRetry(() => import('./views/AdminMasterDataView'));
+const AdminSystemHealthView = lazyWithRetry(() => import('./views/AdminSystemHealthView'));
+
+// Preload all remaining page chunks in idle time so every page loads instantaneously when clicked
+const preloadAllViews = () => {
+  if (typeof window === 'undefined') return;
+  const viewLoaders = [
+    () => import('./views/TraderDashboard'),
+    () => import('./views/InstrumentsList'),
+    () => import('./views/ApplicationsList'),
+    () => import('./views/CertificatesList'),
+    () => import('./views/InstrumentDetail'),
+    () => import('./views/ApplicationTimeline'),
+    () => import('./views/AuthorityDashboard'),
+    () => import('./views/ApplicationReview'),
+    () => import('./views/AssignmentDecisionSupport'),
+    () => import('./views/VerifierDashboard'),
+    () => import('./views/VerificationWorkspace'),
+    () => import('./views/OfficialCertificate'),
+    () => import('./views/AuditLogView'),
+    () => import('./views/GatcDashboard'),
+    () => import('./views/AdminDashboard'),
+    () => import('./views/AdminUsersView'),
+    () => import('./views/AdminOrgsView'),
+    () => import('./views/AdminMasterDataView'),
+    () => import('./views/AdminSystemHealthView')
+  ];
+
+  const runPreload = () => {
+    viewLoaders.forEach(loader => {
+      try { loader(); } catch (e) {}
+    });
+  };
+
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(runPreload, { timeout: 3000 });
+  } else {
+    setTimeout(runPreload, 1000);
+  }
+};
 
 function ViewLoadingFallback() {
   return (
@@ -45,10 +96,48 @@ function ViewLoadingFallback() {
 }
 
 const ROLE_ALLOWED_TABS = {
-  TRADER: ['dashboard', 'instruments', 'instrument-detail', 'apply-verification', 'applications', 'application-timeline', 'applications-rejected', 'vendor-apply-tank', 'certificates', 'official-certificate'],
-  AUTHORITY: ['authority-dashboard', 'applications', 'application-timeline', 'application-review', 'assignment-decision', 'certificates', 'official-certificate', 'audit-logs'],
-  VERIFIER: ['verifier-dashboard', 'verification-workspace'],
-  GATC: ['gatc-dashboard', 'verification-workspace'],
+  TRADER: [
+    'dashboard',
+    'instruments',
+    'instrument-detail',
+    'apply-verification',
+    'applications',
+    'application-timeline',
+    'applications-rejected',
+    'vendor-apply-tank',
+    'certificates',
+    'official-certificate'
+  ],
+  AUTHORITY: [
+    'authority-dashboard',
+    'applications',
+    'application-timeline',
+    'application-review',
+    'assignment-decision',
+    'certificates',
+    'official-certificate',
+    'instruments',
+    'instrument-detail',
+    'audit-logs'
+  ],
+  VERIFIER: [
+    'verifier-dashboard',
+    'verification-workspace',
+    'applications',
+    'application-timeline',
+    'official-certificate',
+    'instruments',
+    'instrument-detail'
+  ],
+  GATC: [
+    'gatc-dashboard',
+    'verification-workspace',
+    'applications',
+    'application-timeline',
+    'official-certificate',
+    'instruments',
+    'instrument-detail'
+  ],
   PLATFORM_ADMIN: [
     'admin-dashboard',
     'admin-users',
@@ -57,8 +146,16 @@ const ROLE_ALLOWED_TABS = {
     'audit-logs',
     'system-health',
     'applications',
+    'application-timeline',
+    'application-review',
+    'assignment-decision',
+    'instruments',
+    'instrument-detail',
     'certificates',
-    'instruments'
+    'official-certificate',
+    'verification-workspace',
+    'apply-verification',
+    'vendor-apply-tank'
   ]
 };
 
@@ -400,40 +497,41 @@ export default function App() {
     }
   };
 
-  // Only load the data genuinely required for the target tab
+  // Load data for active tab immediately, then prefetch remaining data in idle time
   const loadDataForTab = (tab, user = currentUser, force = false) => {
     if (!user) return;
     const role = user.role;
 
-    if (role === 'TRADER') {
-      if (tab === 'dashboard') {
-        loadInstruments(user, force);
-        loadApplications(user, force);
-        loadCertificates(user, force);
-      } else if (tab === 'instruments' || tab === 'instrument-detail' || tab === 'apply-verification' || tab === 'vendor-apply-tank') {
-        loadInstruments(user, force);
-      } else if (tab === 'applications' || tab === 'applications-rejected' || tab === 'application-timeline') {
-        loadApplications(user, force);
-      } else if (tab === 'certificates' || tab === 'official-certificate') {
-        loadCertificates(user, force);
-      }
-    } else if (role === 'AUTHORITY') {
-      if (tab === 'authority-dashboard') {
-        loadApplications(user, force);
-        loadStats(force);
-      } else if (tab === 'applications' || tab === 'application-review' || tab === 'assignment-decision') {
-        loadApplications(user, force);
-      } else if (tab === 'certificates' || tab === 'official-certificate') {
-        loadCertificates(user, force);
-      }
-    } else if (role === 'PLATFORM_ADMIN') {
-      if (tab === 'applications') {
-        loadApplications(user, force);
-      } else if (tab === 'instruments') {
-        loadInstruments(user, force);
-      } else if (tab === 'certificates') {
-        loadCertificates(user, force);
-      }
+    // 1. Immediately fetch primary data required for this view
+    if (tab === 'instruments' || tab === 'instrument-detail' || tab === 'apply-verification' || tab === 'vendor-apply-tank') {
+      loadInstruments(user, force);
+    } else if (tab === 'applications' || tab === 'applications-rejected' || tab === 'application-timeline' || tab === 'application-review' || tab === 'assignment-decision') {
+      loadApplications(user, force);
+    } else if (tab === 'certificates' || tab === 'official-certificate') {
+      loadCertificates(user, force);
+    } else if (tab === 'dashboard') {
+      loadInstruments(user, force);
+      loadApplications(user, force);
+      loadCertificates(user, force);
+    } else if (tab === 'authority-dashboard') {
+      loadApplications(user, force);
+      loadStats(force);
+    }
+
+    // 2. Idle background prefetch so all remaining pages load instantaneously with complete data
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        if (role === 'TRADER') {
+          loadInstruments(user);
+          loadApplications(user);
+          loadCertificates(user);
+        } else if (role === 'AUTHORITY' || role === 'PLATFORM_ADMIN') {
+          loadApplications(user);
+          loadInstruments(user);
+          loadCertificates(user);
+          loadStats();
+        }
+      }, 350);
     }
   };
 
@@ -523,6 +621,9 @@ export default function App() {
           handleLogout();
         } else {
           setCurrentUser(res.user);
+          if (res.user.role) {
+            setCurrentRole(res.user.role);
+          }
         }
       }).catch(() => {
         handleLogout();
@@ -530,6 +631,9 @@ export default function App() {
 
       // Load initial data genuinely required for the active tab
       loadDataForTab(activeTab, currentUser);
+
+      // Preload all remaining page modules in browser idle time
+      preloadAllViews();
     }
   }, [currentUser?.id]);
 
