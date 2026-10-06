@@ -28,8 +28,11 @@ export default function InAppNavigationModal({
   const [loadingRoute, setLoadingRoute] = useState(true);
   const [refreshingGps, setRefreshingGps] = useState(false);
   const [isSimulated, setIsSimulated] = useState(false);
-  
-  // Mobile UI States
+
+  // Turn-by-Turn Panel State (Desktop & Mobile)
+  const [showDirectionsPanel, setShowDirectionsPanel] = useState(true);
+
+  // Mobile Navigation States
   const [mobileTab, setMobileTab] = useState('map'); // 'map' | 'steps'
   const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const [showGpsTooltip, setShowGpsTooltip] = useState(false);
@@ -162,8 +165,10 @@ export default function InAppNavigationModal({
     });
     mapInstanceRef.current = map;
 
-    // Add Zoom Control at bottom-right on desktop, or leave clean for mobile FABs
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    // Zoom control on desktop only to preserve mobile screen real-estate
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+    }
 
     // OpenStreetMap clean tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -301,15 +306,26 @@ export default function InAppNavigationModal({
     };
   }, [isOpen, currentLat, currentLng, registeredLat, registeredLng, geofenceRadius]);
 
-  // Invalidate map size on layout/tab changes so tiles render perfectly
+  // Invalidate map size on panel, tab, or screen layout transitions
   useEffect(() => {
     const timer = setTimeout(() => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();
       }
-    }, 150);
+    }, 120);
     return () => clearTimeout(timer);
-  }, [mobileTab, isSheetExpanded]);
+  }, [showDirectionsPanel, mobileTab, isSheetExpanded]);
+
+  // Handle window resizing smoothly across mobile, tablet, and desktop
+  useEffect(() => {
+    const handleResize = () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Recenter Actions
   const handleCenterOfficer = () => {
@@ -373,12 +389,14 @@ export default function InAppNavigationModal({
   const nextStep = routeSteps.length > 0 ? routeSteps[0] : null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-0 md:p-5 animate-in fade-in">
-      {/* Outer Modal Container: Full Screen on Mobile, Elegant Modal on Desktop */}
-      <div className="bg-slate-900 text-slate-100 w-full h-full md:h-[90vh] md:max-h-[820px] md:max-w-5xl md:rounded-2xl flex flex-col shadow-2xl border-0 md:border md:border-slate-800 overflow-hidden relative">
+    <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-0 md:p-4 lg:p-6 animate-in fade-in">
+      {/* Outer Modal Container: 100% Full Screen on Mobile, Adaptive Pro Modal on Desktop */}
+      <div className={`bg-slate-900 text-slate-100 w-full h-full md:h-[90vh] md:max-h-[860px] md:rounded-2xl flex flex-col shadow-2xl border-0 md:border md:border-slate-800 overflow-hidden relative transition-all duration-300 ${
+        showDirectionsPanel ? 'md:max-w-5xl lg:max-w-6xl' : 'md:max-w-6xl lg:max-w-7xl'
+      }`}>
 
         {/* ========================================================================= */}
-        {/* DESKTOP HEADER (Hidden on mobile) */}
+        {/* DESKTOP HEADER (Hidden on mobile < 768px) */}
         {/* ========================================================================= */}
         <div className="hidden md:flex px-5 py-3.5 bg-gradient-to-r from-slate-950 via-[#002046] to-slate-950 text-white items-center justify-between gap-3 shrink-0 border-b border-slate-800">
           <div className="flex items-center gap-3 min-w-0">
@@ -406,14 +424,33 @@ export default function InAppNavigationModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white flex items-center justify-center transition-all shrink-0 cursor-pointer border border-white/10 shadow-xs"
-            title="Close Window"
-          >
-            <span className="material-symbols-outlined text-xl">close</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Toggle button to reopen/hide Turn-by-Turn panel on desktop */}
+            <button
+              type="button"
+              onClick={() => setShowDirectionsPanel(!showDirectionsPanel)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border cursor-pointer ${
+                showDirectionsPanel
+                  ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 shadow-xs'
+                  : 'bg-white/10 hover:bg-white/20 text-slate-200 border-white/15 shadow-sm'
+              }`}
+              title={showDirectionsPanel ? 'Hide Directions Panel (Full Map View)' : 'Show Turn-by-Turn Directions Panel'}
+            >
+              <span className="material-symbols-outlined text-[16px]">directions</span>
+              <span>{showDirectionsPanel ? 'Directions Open' : 'Show Directions'}</span>
+            </button>
+
+            {/* Modal Close Window Button */}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center transition-all shrink-0 cursor-pointer border border-white/10 shadow-xs"
+              title="Close Navigation Window"
+              aria-label="Close navigation window"
+            >
+              <span className="material-symbols-outlined text-xl">close</span>
+            </button>
+          </div>
         </div>
 
         {/* ========================================================================= */}
@@ -481,41 +518,43 @@ export default function InAppNavigationModal({
         {/* ========================================================================= */}
         {/* MAIN STAGE (Adaptive: Full Screen Map on Mobile with HUD, Split on Desktop) */}
         {/* ========================================================================= */}
-        <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full">
+        <div className="flex-1 flex flex-col md:flex-row min-h-0 relative w-full h-full overflow-hidden">
 
           {/* ----------------------------------------------------------------------- */}
-          {/* MAP CANVAS (Fills whole area on mobile, Left 65% on Desktop) */}
+          {/* MAP CANVAS (Expands to 100% when directions closed, or split on Desktop) */}
           {/* ----------------------------------------------------------------------- */}
           <div className="flex-1 relative w-full h-full bg-slate-950 overflow-hidden">
             <div ref={mapContainerRef} className="w-full h-full" style={{ zIndex: 1 }} />
 
             {/* =================================================================== */}
-            {/* MOBILE FLOATING TOP BAR & TELEMETRY ISLAND (< md screen) */}
+            {/* MOBILE FLOATING TOP BAR & TELEMETRY ISLAND (< md screens: 360-767px) */}
             {/* =================================================================== */}
-            <div className="md:hidden absolute top-0 left-0 right-0 z-20 p-2.5 pointer-events-none space-y-2">
+            <div className="md:hidden absolute top-0 left-0 right-0 z-20 p-2 sm:p-2.5 pointer-events-none space-y-1.5">
               {/* Glass Top Bar */}
-              <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md text-white rounded-2xl border border-slate-700/60 shadow-2xl p-2.5 flex items-center justify-between gap-2">
+              <div className="pointer-events-auto bg-slate-950/90 backdrop-blur-md text-white rounded-2xl border border-slate-700/60 shadow-2xl p-2 sm:p-2.5 flex items-center justify-between gap-1.5">
+                {/* Back / Close Navigation Button */}
                 <button
                   type="button"
                   onClick={onClose}
-                  className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer border border-white/10 shrink-0"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white flex items-center justify-center transition-all cursor-pointer border border-white/10 shrink-0"
                   title="Close Navigation"
+                  aria-label="Back to visit view"
                 >
-                  <span className="material-symbols-outlined text-xl">arrow_back</span>
+                  <span className="material-symbols-outlined text-lg sm:text-xl">arrow_back</span>
                 </button>
 
                 <div className="flex-1 min-w-0 px-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-extrabold text-xs text-white truncate max-w-[150px]">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-extrabold text-xs text-white truncate">
                       {traderName}
                     </span>
-                    <span className={`text-[9px] font-extrabold tracking-wider px-1.5 py-0.5 rounded-full border font-['JetBrains_Mono'] flex items-center gap-1 ${
+                    <span className={`shrink-0 text-[8.5px] sm:text-[9px] font-extrabold tracking-wider px-1.5 py-0.5 rounded-full border font-['JetBrains_Mono'] flex items-center gap-1 ${
                       isInside
                         ? 'bg-emerald-950 text-emerald-300 border-emerald-500/60 shadow-xs'
                         : 'bg-amber-950 text-amber-300 border-amber-500/60'
                     }`}>
                       <span className={`w-1 h-1 rounded-full ${isInside ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-                      {isInside ? 'INSIDE GEOFENCE' : 'EN ROUTE'}
+                      {isInside ? 'GEOFENCE' : 'EN ROUTE'}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-300 truncate mt-0.5">
@@ -531,13 +570,14 @@ export default function InAppNavigationModal({
                       setMobileTab('map');
                       setIsSheetExpanded(false);
                     }}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all ${
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                       mobileTab === 'map' && !isSheetExpanded
                         ? 'bg-sky-500 text-white shadow-xs'
                         : 'text-slate-300 hover:text-white'
                     }`}
+                    aria-label="Show Map"
                   >
-                    <span className="material-symbols-outlined text-[14px]">map</span>
+                    <span className="material-symbols-outlined text-[13px]">map</span>
                     <span>Map</span>
                   </button>
                   <button
@@ -546,84 +586,106 @@ export default function InAppNavigationModal({
                       setMobileTab('steps');
                       setIsSheetExpanded(true);
                     }}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all ${
+                    className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${
                       mobileTab === 'steps' || isSheetExpanded
                         ? 'bg-sky-500 text-white shadow-xs'
                         : 'text-slate-300 hover:text-white'
                     }`}
+                    aria-label="Show Steps"
                   >
-                    <span className="material-symbols-outlined text-[14px]">format_list_bulleted</span>
+                    <span className="material-symbols-outlined text-[13px]">format_list_bulleted</span>
                     <span>Steps</span>
                   </button>
                 </div>
               </div>
 
-              {/* Floating Compact Telemetry Strip (Mobile Dynamic Island) */}
-              <div className="pointer-events-auto bg-slate-950/80 backdrop-blur-md rounded-xl border border-slate-700/60 shadow-lg px-3 py-1.5 flex items-center justify-between text-xs">
+              {/* Floating Compact Telemetry Strip (Mobile Dynamic Island - 360px Safe Grid) */}
+              <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md rounded-xl border border-slate-700/60 shadow-lg px-2 py-1.5 grid grid-cols-3 divide-x divide-slate-700/60 text-center">
                 {/* Distance */}
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Distance</span>
-                    <span className="font-['JetBrains_Mono'] text-xs font-bold text-white leading-none">
-                      {formatDistance(liveDistance)}
-                    </span>
-                  </div>
+                <div className="flex flex-col items-center justify-center px-0.5">
+                  <span className="text-[8.5px] uppercase tracking-wider text-slate-400 font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400"></span>
+                    DISTANCE
+                  </span>
+                  <span className="font-['JetBrains_Mono'] text-xs font-bold text-white leading-tight truncate max-w-full">
+                    {formatDistance(liveDistance)}
+                  </span>
                 </div>
-
-                <div className="h-6 w-px bg-slate-700/60"></div>
 
                 {/* ETA */}
-                <div className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">ETA</span>
-                    <span className="font-['JetBrains_Mono'] text-xs font-bold text-amber-300 leading-none">
-                      {formatEta(etaMinutes)}
-                    </span>
-                  </div>
+                <div className="flex flex-col items-center justify-center px-0.5">
+                  <span className="text-[8.5px] uppercase tracking-wider text-slate-400 font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    ETA
+                  </span>
+                  <span className="font-['JetBrains_Mono'] text-xs font-bold text-amber-300 leading-tight truncate max-w-full">
+                    {formatEta(etaMinutes)}
+                  </span>
                 </div>
-
-                <div className="h-6 w-px bg-slate-700/60"></div>
 
                 {/* Geofence */}
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isInside ? 'bg-emerald-400' : 'bg-emerald-500'}`}></span>
-                  <div className="flex flex-col">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Geofence</span>
-                    <span className="font-['JetBrains_Mono'] text-xs font-bold text-emerald-400 leading-none">
-                      {geofenceRadius}m
-                    </span>
-                  </div>
-                </div>
-
-                {/* Simulated Indicator */}
-                {isSimulated && (
-                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-sky-950 text-sky-300 border border-sky-600/40">
-                    DEMO
+                <div className="flex flex-col items-center justify-center px-0.5">
+                  <span className="text-[8.5px] uppercase tracking-wider text-slate-400 font-bold flex items-center gap-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isInside ? 'bg-emerald-400' : 'bg-emerald-500'}`}></span>
+                    GEOFENCE
                   </span>
-                )}
+                  <span className="font-['JetBrains_Mono'] text-xs font-bold text-emerald-400 leading-tight truncate max-w-full">
+                    {geofenceRadius}m
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* =================================================================== */}
+            {/* FLOATING ACTION BUTTON TO REOPEN DIRECTIONS (Desktop Full Map View) */}
+            {/* =================================================================== */}
+            {!showDirectionsPanel && (
+              <div className="hidden md:flex absolute top-3.5 right-16 z-20 animate-in fade-in">
+                <button
+                  type="button"
+                  onClick={() => setShowDirectionsPanel(true)}
+                  className="px-3.5 py-2 bg-slate-900/95 hover:bg-slate-800 active:scale-95 text-sky-400 hover:text-sky-300 rounded-xl border border-sky-500/40 shadow-xl backdrop-blur-md font-bold text-xs flex items-center gap-2 cursor-pointer transition-all"
+                  title="Open Turn-by-Turn Directions Panel"
+                >
+                  <span className="material-symbols-outlined text-base">directions</span>
+                  <span>Route Directions ({routeSteps.length})</span>
+                </button>
+              </div>
+            )}
+
+            {/* Floating External Google Maps Pill on Desktop when Directions Panel is closed */}
+            {!showDirectionsPanel && (
+              <div className="hidden md:flex absolute bottom-4 left-4 z-20 animate-in fade-in">
+                <a
+                  href={getNavigationUrl(registeredLat, registeredLng, registeredAddress)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="py-2 px-3 bg-slate-900/95 hover:bg-slate-800 text-slate-200 hover:text-white font-semibold rounded-xl text-xs transition-all flex items-center gap-1.5 border border-slate-700/80 shadow-lg backdrop-blur-md"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-sky-400">open_in_new</span>
+                  <span>Open External Google Maps App</span>
+                </a>
+              </div>
+            )}
+
+            {/* =================================================================== */}
             {/* FLOATING QUICK-ACTION CONTROLS ON MAP (Both Mobile and Desktop) */}
             {/* =================================================================== */}
-            {/* Left/Top: GPS & Simulation Mode Switcher */}
-            <div className="absolute top-28 md:top-3 left-3 z-10 flex flex-col items-start gap-1.5 max-w-[280px] sm:max-w-sm pointer-events-auto">
-              <div className="flex items-center bg-slate-900/90 backdrop-blur-md p-1 rounded-xl shadow-lg border border-slate-700/80 gap-1">
+            {/* Left: GPS & Simulation Mode Switcher */}
+            <div className="absolute top-[108px] md:top-3 left-2.5 sm:left-3 z-10 flex flex-col items-start gap-1.5 max-w-[280px] sm:max-w-sm pointer-events-auto">
+              <div className="flex items-center bg-slate-900/90 backdrop-blur-md p-0.5 sm:p-1 rounded-xl shadow-lg border border-slate-700/80 gap-1">
                 <button
                   type="button"
                   onClick={handleRefreshGps}
                   disabled={refreshingGps}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-2 sm:px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     !isSimulated
                       ? 'bg-sky-600 text-white shadow-xs'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800'
                   }`}
                   title="Detect real device GPS"
                 >
-                  <span className={`material-symbols-outlined text-[15px] ${refreshingGps ? 'animate-spin' : ''}`}>
+                  <span className={`material-symbols-outlined text-[14px] sm:text-[15px] ${refreshingGps ? 'animate-spin' : ''}`}>
                     my_location
                   </span>
                   <span className="hidden sm:inline">{refreshingGps ? 'Locating...' : 'Device GPS'}</span>
@@ -633,14 +695,14 @@ export default function InAppNavigationModal({
                 <button
                   type="button"
                   onClick={isSimulated ? handleRefreshGps : handleSimulateArrival}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-2 sm:px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     isSimulated
                       ? 'bg-emerald-600 text-white shadow-xs font-bold'
                       : 'text-slate-300 hover:text-white hover:bg-slate-800'
                   }`}
                   title="Simulate arrival inside 200m geofence"
                 >
-                  <span className="material-symbols-outlined text-[15px]">
+                  <span className="material-symbols-outlined text-[14px] sm:text-[15px]">
                     {isSimulated ? 'verified' : 'pin_drop'}
                   </span>
                   <span>{isSimulated ? '✓ At Shop' : 'Demo: Arrive'}</span>
@@ -649,8 +711,9 @@ export default function InAppNavigationModal({
                 <button
                   type="button"
                   onClick={() => setShowGpsTooltip(!showGpsTooltip)}
-                  className="w-6 h-6 rounded-md text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+                  className="w-6 h-6 rounded-md text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
                   title="GPS Information"
+                  aria-label="GPS Information"
                 >
                   <span className="material-symbols-outlined text-[14px]">help</span>
                 </button>
@@ -664,7 +727,7 @@ export default function InAppNavigationModal({
                       <span className="material-symbols-outlined text-[13px]">info</span>
                       GPS Mode Guidance
                     </strong>
-                    <button onClick={() => setShowGpsTooltip(false)} className="text-slate-400 hover:text-white">✕</button>
+                    <button onClick={() => setShowGpsTooltip(false)} className="text-slate-400 hover:text-white cursor-pointer">✕</button>
                   </div>
                   <p className="leading-relaxed text-slate-300">
                     Click <strong>Demo: Arrive</strong> to simulate officer location at the shop within 200m to test the statutory check-in flow.
@@ -673,42 +736,45 @@ export default function InAppNavigationModal({
               )}
             </div>
 
-            {/* Right: Map Centering & Layer Controls */}
-            <div className="absolute top-28 md:top-3 right-3 z-10 flex flex-col gap-2 pointer-events-auto">
+            {/* Right: Map Centering & Viewport Controls */}
+            <div className="absolute top-[108px] md:top-3 right-2.5 sm:right-3 z-10 flex flex-col gap-1.5 sm:gap-2 pointer-events-auto">
               {/* Recenter on Officer */}
               <button
                 type="button"
                 onClick={handleCenterOfficer}
-                className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-sky-400 hover:text-sky-300 flex items-center justify-center shadow-lg border border-slate-700/80 backdrop-blur-md transition-all cursor-pointer"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-sky-400 hover:text-sky-300 flex items-center justify-center shadow-lg border border-slate-700/80 backdrop-blur-md transition-all cursor-pointer"
                 title="Center on My Location (Officer)"
+                aria-label="Center on officer location"
               >
-                <span className="material-symbols-outlined text-lg">my_location</span>
+                <span className="material-symbols-outlined text-base sm:text-lg">my_location</span>
               </button>
 
               {/* Recenter on Target Premises */}
               <button
                 type="button"
                 onClick={handleCenterDestination}
-                className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-rose-400 hover:text-rose-300 flex items-center justify-center shadow-lg border border-slate-700/80 backdrop-blur-md transition-all cursor-pointer"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-rose-400 hover:text-rose-300 flex items-center justify-center shadow-lg border border-slate-700/80 backdrop-blur-md transition-all cursor-pointer"
                 title="Center on Registered Premises"
+                aria-label="Center on registered premises"
               >
-                <span className="material-symbols-outlined text-lg">store</span>
+                <span className="material-symbols-outlined text-base sm:text-lg">store</span>
               </button>
 
               {/* Fit Entire Route Bounds */}
               <button
                 type="button"
                 onClick={handleFitRouteBounds}
-                className="w-9 h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-slate-300 hover:text-white flex items-center justify-center shadow-lg border border-slate-700/80 backdrop-blur-md transition-all cursor-pointer"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 text-slate-300 hover:text-white flex items-center justify-center shadow-lg border border-slate-700/80 backdrop-blur-md transition-all cursor-pointer"
                 title="Fit Entire Route"
+                aria-label="Fit entire route bounds"
               >
-                <span className="material-symbols-outlined text-lg">fit_screen</span>
+                <span className="material-symbols-outlined text-base sm:text-lg">fit_screen</span>
               </button>
             </div>
 
             {/* Loading Route Badge */}
             {loadingRoute && (
-              <div className="absolute bottom-24 md:bottom-4 left-3 z-10 px-3 py-1.5 bg-slate-950/90 text-white rounded-xl text-[11px] font-semibold flex items-center gap-2 backdrop-blur-md shadow-lg border border-slate-800">
+              <div className="absolute bottom-28 md:bottom-4 left-3 z-10 px-3 py-1.5 bg-slate-950/90 text-white rounded-xl text-[11px] font-semibold flex items-center gap-2 backdrop-blur-md shadow-lg border border-slate-800">
                 <span className="material-symbols-outlined text-[15px] animate-spin text-sky-400">progress_activity</span>
                 <span>Calculating road trajectory...</span>
               </div>
@@ -719,39 +785,69 @@ export default function InAppNavigationModal({
             {/* =================================================================== */}
             <div className="md:hidden absolute bottom-0 left-0 right-0 z-30 pointer-events-auto">
               <div className={`bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 rounded-t-3xl shadow-2xl transition-all duration-300 flex flex-col ${
-                isSheetExpanded ? 'h-[65vh] max-h-[500px]' : 'h-auto'
+                isSheetExpanded || mobileTab === 'steps' ? 'h-[68vh] max-h-[520px]' : 'h-auto'
               }`}>
-                {/* Drag Handle & Toggle Header */}
+                {/* Drag Handle & Drawer Header */}
                 <div
-                  onClick={() => setIsSheetExpanded(!isSheetExpanded)}
+                  onClick={() => {
+                    const next = !isSheetExpanded;
+                    setIsSheetExpanded(next);
+                    setMobileTab(next ? 'steps' : 'map');
+                  }}
                   className="pt-2.5 pb-2 px-4 cursor-pointer flex flex-col items-center select-none"
                 >
                   <div className="w-12 h-1 bg-slate-700 rounded-full mb-1"></div>
                   <div className="w-full flex items-center justify-between text-xs text-slate-400">
-                    <span className="font-extrabold uppercase tracking-wider text-[10px] text-slate-400 flex items-center gap-1.5">
+                    <span className="font-extrabold uppercase tracking-wider text-[10px] text-slate-300 flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[15px] text-sky-400">directions</span>
-                      {routeSteps.length} Route Steps
+                      Route Directions ({routeSteps.length})
                     </span>
-                    <span className="text-[10px] font-bold text-sky-400 flex items-center gap-0.5">
-                      {isSheetExpanded ? 'Tap to minimize' : 'Tap for full steps'}
-                      <span className="material-symbols-outlined text-[14px]">
-                        {isSheetExpanded ? 'expand_more' : 'expand_less'}
+
+                    {/* Responsive Close / Minimize toggle button */}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] font-bold text-sky-400 flex items-center gap-0.5">
+                        {isSheetExpanded || mobileTab === 'steps' ? 'Close to Map' : 'View Full Steps'}
                       </span>
-                    </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsSheetExpanded(false);
+                          setMobileTab('map');
+                        }}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center transition-all ${
+                          isSheetExpanded || mobileTab === 'steps'
+                            ? 'bg-slate-800 text-slate-200 hover:text-white'
+                            : 'text-slate-400'
+                        }`}
+                        title={isSheetExpanded || mobileTab === 'steps' ? 'Close Directions to Full Map' : 'Expand Steps'}
+                        aria-label="Toggle navigation drawer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">
+                          {isSheetExpanded || mobileTab === 'steps' ? 'close' : 'expand_less'}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {/* Collapsed Next Step Preview (Shown when collapsed) */}
-                {!isSheetExpanded && nextStep && (
-                  <div className="px-4 pb-3">
-                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30">
-                        <span className="material-symbols-outlined text-lg">
+                {/* Collapsed Next Step Preview (Shown when collapsed in map mode) */}
+                {(!isSheetExpanded && mobileTab !== 'steps') && nextStep && (
+                  <div className="px-3 pb-2.5">
+                    <div
+                      onClick={() => {
+                        setIsSheetExpanded(true);
+                        setMobileTab('steps');
+                      }}
+                      className="p-2 sm:p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center gap-2.5 cursor-pointer hover:border-slate-700 transition-colors"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30">
+                        <span className="material-symbols-outlined text-base">
                           {getManeuverIcon(nextStep)}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Next Maneuver</span>
+                        <span className="text-[8.5px] font-bold uppercase tracking-wider text-slate-400 block">Next Maneuver</span>
                         <p className="text-xs font-bold text-white truncate capitalize">
                           {nextStep.instruction}
                         </p>
@@ -767,9 +863,9 @@ export default function InAppNavigationModal({
                   </div>
                 )}
 
-                {/* Expanded Turn-by-Turn List (Shown when expanded) */}
-                {isSheetExpanded && (
-                  <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 text-xs divide-y divide-slate-800/60">
+                {/* Expanded Turn-by-Turn Maneuvers List (Shown when drawer expanded) */}
+                {(isSheetExpanded || mobileTab === 'steps') && (
+                  <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 text-xs divide-y divide-slate-800/60 overscroll-contain">
                     {routeSteps.map((step, idx) => {
                       const isFinal = idx === routeSteps.length - 1;
                       return (
@@ -797,21 +893,21 @@ export default function InAppNavigationModal({
                   </div>
                 )}
 
-                {/* Mobile Bottom Actions (Always visible at bottom of drawer) */}
-                <div className="p-3 bg-slate-950 border-t border-slate-800 space-y-2 shrink-0">
+                {/* Mobile Bottom Actions (Always accessible at bottom) */}
+                <div className="p-2.5 sm:p-3 bg-slate-950 border-t border-slate-800 space-y-2 shrink-0">
                   {/* Glowing Check-In Action Button (When inside geofence) */}
                   {isInside && (onCheckInNow || onCheckIn) ? (
                     <button
                       type="button"
                       onClick={handleCheckInAction}
-                      className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-emerald-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/40"
+                      className="w-full py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-emerald-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer border border-emerald-400/40"
                     >
                       <span className="material-symbols-outlined text-[18px]">verified</span>
                       <span>You Are Within 200m Geofence • Check In Now</span>
                     </button>
                   ) : null}
 
-                  {/* Secondary Row: External Maps + Close */}
+                  {/* Secondary Row: External Maps + Close Button */}
                   <div className="flex items-center gap-2">
                     <a
                       href={getNavigationUrl(registeredLat, registeredLng, registeredAddress)}
@@ -826,7 +922,7 @@ export default function InAppNavigationModal({
                     <button
                       type="button"
                       onClick={onClose}
-                      className="py-2 px-4 bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 hover:text-white font-semibold rounded-xl text-xs transition-all border border-slate-700 shadow-sm"
+                      className="py-2 px-4 bg-slate-900 hover:bg-slate-800 active:scale-95 text-slate-300 hover:text-white font-semibold rounded-xl text-xs transition-all border border-slate-700 shadow-sm cursor-pointer"
                     >
                       Close
                     </button>
@@ -838,68 +934,84 @@ export default function InAppNavigationModal({
           </div>
 
           {/* ----------------------------------------------------------------------- */}
-          {/* DESKTOP SIDE DRAWER: Turn-by-Turn Maneuvers (Hidden on mobile) */}
+          {/* DESKTOP SIDE DRAWER: Turn-by-Turn Maneuvers (Visible on desktop when open) */}
           {/* ----------------------------------------------------------------------- */}
-          <div className="hidden md:flex w-84 bg-slate-950 border-l border-slate-800 flex-col shrink-0">
-            <div className="p-3.5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between text-xs">
-              <span className="font-extrabold text-white uppercase tracking-wider text-[11px] flex items-center gap-2">
-                <span className="material-symbols-outlined text-sky-400 text-base">directions</span>
-                Route Directions ({routeSteps.length})
-              </span>
-              <span className="text-[10px] text-slate-400 font-['JetBrains_Mono']">OSRM ENGINE</span>
-            </div>
+          {showDirectionsPanel && (
+            <div className="hidden md:flex w-80 lg:w-96 bg-slate-950 border-l border-slate-800 flex-col shrink-0 transition-all duration-300">
+              {/* Turn-by-Turn Header with Close (X) button */}
+              <div className="p-3.5 border-b border-slate-800 bg-slate-900/60 flex items-center justify-between text-xs shrink-0">
+                <span className="font-extrabold text-white uppercase tracking-wider text-[11px] flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sky-400 text-base">directions</span>
+                  Route Directions ({routeSteps.length})
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 font-['JetBrains_Mono']">OSRM ENGINE</span>
+                  {/* Close button: Hides directions panel and expands map to full width */}
+                  <button
+                    type="button"
+                    onClick={() => setShowDirectionsPanel(false)}
+                    className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-slate-700/80 shadow-xs"
+                    title="Close Directions Panel (Full Map View)"
+                    aria-label="Close directions panel to full map"
+                  >
+                    <span className="material-symbols-outlined text-base">close</span>
+                  </button>
+                </div>
+              </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs">
-              {routeSteps.map((step, idx) => {
-                const isFinal = idx === routeSteps.length - 1;
-                return (
-                  <div key={idx} className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-900 transition-colors flex items-start gap-2.5">
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                      isFinal ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-sky-400 border border-slate-700'
-                    }`}>
-                      <span className="material-symbols-outlined text-[15px]">
-                        {isFinal ? 'flag' : getManeuverIcon(step)}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`capitalize ${isFinal ? 'font-bold text-emerald-400' : 'text-slate-200 font-medium'}`}>
-                        {step.instruction}
-                      </p>
-                      {step.distanceMeters > 0 && (
-                        <span className="text-[10px] text-slate-400 font-['JetBrains_Mono'] block mt-0.5">
-                          {formatDistance(step.distanceMeters)}
+              {/* Maneuvers List */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs">
+                {routeSteps.map((step, idx) => {
+                  const isFinal = idx === routeSteps.length - 1;
+                  return (
+                    <div key={idx} className="p-2.5 rounded-xl border border-slate-800 bg-slate-900/60 hover:bg-slate-900 transition-colors flex items-start gap-2.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                        isFinal ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-sky-400 border border-slate-700'
+                      }`}>
+                        <span className="material-symbols-outlined text-[15px]">
+                          {isFinal ? 'flag' : getManeuverIcon(step)}
                         </span>
-                      )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`capitalize ${isFinal ? 'font-bold text-emerald-400' : 'text-slate-200 font-medium'}`}>
+                          {step.instruction}
+                        </p>
+                        {step.distanceMeters > 0 && (
+                          <span className="text-[10px] text-slate-400 font-['JetBrains_Mono'] block mt-0.5">
+                            {formatDistance(step.distanceMeters)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
 
-            {/* Bottom Actions inside drawer */}
-            <div className="p-3.5 bg-slate-900/90 border-t border-slate-800 space-y-2 shrink-0">
-              {isInside && (onCheckInNow || onCheckIn) && (
-                <button
-                  type="button"
-                  onClick={handleCheckInAction}
-                  className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-emerald-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-400/40"
+              {/* Bottom Actions inside desktop drawer */}
+              <div className="p-3.5 bg-slate-900/90 border-t border-slate-800 space-y-2 shrink-0">
+                {isInside && (onCheckInNow || onCheckIn) && (
+                  <button
+                    type="button"
+                    onClick={handleCheckInAction}
+                    className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-white font-extrabold rounded-xl text-xs shadow-lg shadow-emerald-950 transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-400/40"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">verified</span>
+                    You Are Here • Check In Now
+                  </button>
+                )}
+
+                <a
+                  href={getNavigationUrl(registeredLat, registeredLng, registeredAddress)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 border border-slate-700 shadow-sm"
                 >
-                  <span className="material-symbols-outlined text-[16px]">verified</span>
-                  You Are Here • Check In Now
-                </button>
-              )}
-
-              <a
-                href={getNavigationUrl(registeredLat, registeredLng, registeredAddress)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 border border-slate-700 shadow-sm"
-              >
-                <span className="material-symbols-outlined text-[16px] text-sky-400">open_in_new</span>
-                Open External Google Maps App
-              </a>
+                  <span className="material-symbols-outlined text-[16px] text-sky-400">open_in_new</span>
+                  Open External Google Maps App
+                </a>
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
 

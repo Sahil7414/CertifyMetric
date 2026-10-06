@@ -27,6 +27,7 @@ import AdminUsersView from './views/AdminUsersView';
 import AdminOrgsView from './views/AdminOrgsView';
 import AdminMasterDataView from './views/AdminMasterDataView';
 import AdminSystemHealthView from './views/AdminSystemHealthView';
+import LoadingScreen from './components/LoadingScreen';
 import { useTranslation } from 'react-i18next';
 import { api, setApiUser, getStoredAuth } from './api';
 
@@ -328,6 +329,26 @@ export default function App() {
   const [certificates, setCertificates] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [screenTransition, setScreenTransition] = useState(false);
+  const transitionTimerRef = React.useRef(null);
+
+  const startScreenTransition = (duration = 400) => {
+    setScreenTransition(true);
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+    }
+    transitionTimerRef.current = setTimeout(() => {
+      setScreenTransition(false);
+    }, duration);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current);
+      }
+    };
+  }, []);
 
   const refreshAllData = async (user = currentUser) => {
     if (!user) {
@@ -361,6 +382,10 @@ export default function App() {
     const role = currentRole || currentUser?.role;
     const allowed = ROLE_ALLOWED_TABS[role] || [];
     const validTab = allowed.includes(tab) ? tab : getInitialRoleTab(role);
+
+    if (validTab !== activeTab) {
+      startScreenTransition();
+    }
 
     const instId = entityIds.instrumentId !== undefined ? entityIds.instrumentId : (validTab === 'instrument-detail' ? selectedInstrumentId : null);
     const appId = entityIds.applicationId !== undefined ? entityIds.applicationId : (['application-timeline', 'application-review', 'assignment-decision', 'verification-workspace'].includes(validTab) ? selectedApplicationId : null);
@@ -458,6 +483,7 @@ export default function App() {
 
       // 2. Pre-auth screen transitions (Landing / Login / Register)
       if (!user) {
+        startScreenTransition();
         if (path === '/register') {
           setShowLanding(false);
           setShowRegister(true);
@@ -487,6 +513,10 @@ export default function App() {
       const appId = parsed.applicationId !== undefined ? parsed.applicationId : (event.state?.applicationId || null);
       const certId = parsed.certificateId !== undefined ? parsed.certificateId : (event.state?.certificateId || null);
 
+      if (targetTab !== activeTab) {
+        startScreenTransition();
+      }
+
       setActiveTab(targetTab);
       setSelectedInstrumentId(instId);
       setSelectedApplicationId(appId);
@@ -500,7 +530,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [activeTab]);
 
 
 
@@ -555,6 +585,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    startScreenTransition();
     try {
       await api.logout();
     } catch (e) {}
@@ -611,21 +642,25 @@ export default function App() {
   // Render Landing Page or Login Screen if not authenticated
   if (!currentUser) {
     const goToLogin = () => {
+      startScreenTransition();
       window.history.pushState({}, '', '/login');
       setShowLanding(false);
       setShowRegister(false);
     };
     const goToLanding = () => {
+      startScreenTransition();
       window.history.pushState({}, '', '/');
       setShowLanding(true);
       setShowRegister(false);
     };
     const goToRegister = () => {
+      startScreenTransition();
       window.history.pushState({}, '', '/register');
       setShowLanding(false);
       setShowRegister(true);
     };
     const backToLoginFromRegister = () => {
+      startScreenTransition();
       if (window.history.length > 1) {
         window.history.back();
       } else {
@@ -635,50 +670,39 @@ export default function App() {
       }
     };
 
-    if (showLanding) {
-      return (
-        <PortalLanding
-          key={appLang}
-          onGoToLogin={goToLogin}
-          onGoToRegister={goToRegister}
-          onTrackApplication={(appNo) => {
-            goToLogin();
-          }}
-          onDirectDemoLogin={handleDirectDemoLogin}
-        />
-      );
-    }
-
-    if (showRegister) {
-      return (
-        <RegisterView
-          key={appLang}
-          onRegisterSuccess={handleLoginSuccess}
-          onBackToLogin={backToLoginFromRegister}
-        />
-      );
-    }
-
     return (
-      <LoginView
-        key={appLang}
-        onLoginSuccess={handleLoginSuccess}
-        onBackToLanding={goToLanding}
-        onGoToRegister={goToRegister}
-      />
+      <>
+        {screenTransition && <LoadingScreen isTransition={true} />}
+        {showLanding ? (
+          <PortalLanding
+            key={appLang}
+            onGoToLogin={goToLogin}
+            onGoToRegister={goToRegister}
+            onTrackApplication={(appNo) => {
+              goToLogin();
+            }}
+            onDirectDemoLogin={handleDirectDemoLogin}
+          />
+        ) : showRegister ? (
+          <RegisterView
+            key={appLang}
+            onRegisterSuccess={handleLoginSuccess}
+            onBackToLogin={backToLoginFromRegister}
+          />
+        ) : (
+          <LoginView
+            key={appLang}
+            onLoginSuccess={handleLoginSuccess}
+            onBackToLanding={goToLanding}
+            onGoToRegister={goToRegister}
+          />
+        )}
+      </>
     );
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-surface flex flex-col items-center justify-center text-slate-500">
-        <div className="w-12 h-12 rounded-xl bg-primary text-white flex items-center justify-center mb-3 shadow-md animate-bounce">
-          <span className="material-symbols-outlined text-2xl">gavel</span>
-        </div>
-        <h2 className="text-base font-bold text-primary">CertifyMetric Verification System</h2>
-        <p className="text-xs text-slate-400 mt-1">Initializing Legal Metrology Foundation & Rules...</p>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   const handleTabChange = (tab) => {
@@ -711,6 +735,7 @@ export default function App() {
 
   return (
     <>
+      {screenTransition && <LoadingScreen isTransition={true} />}
       <AuthenticatedLayout
         key={appLang}
         currentUser={currentUser}

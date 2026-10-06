@@ -35,8 +35,24 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
   </head>
-  <body class="bg-surface text-on-surface antialiased">
-    <div id="root"></div>
+  <body class="bg-[#001226] text-on-surface antialiased">
+    <div id="root">
+      <div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(circle at center, #0b396e 0%, #002046 50%, #001226 100%);color:white;padding:16px;user-select:none;">
+        <div style="width:112px;height:112px;border-radius:9999px;padding:10px;background:rgba(255,255,255,0.08);border:1px solid rgba(251,191,36,0.3);box-shadow:0 0 35px rgba(251,191,36,0.35);display:flex;align-items:center;justify-content:center;margin-bottom:20px;">
+          <img src="/logo.png" alt="CertifyMetric" style="width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 4px 16px rgba(0,0,0,0.4));" />
+        </div>
+        <div style="font-size:32px;font-weight:900;letter-spacing:-0.03em;display:flex;align-items:center;gap:4px;font-family:Inter,system-ui,sans-serif;">
+          <span style="color:#fbbf24;">Certify</span><span style="color:#ffffff;">Metric</span>
+        </div>
+        <div style="font-size:11px;font-weight:600;color:#cbd5e1;letter-spacing:0.18em;text-transform:uppercase;margin-top:6px;font-family:monospace;">
+          Legal Metrology Online System
+        </div>
+        <div style="width:160px;height:3px;background:rgba(255,255,255,0.15);border-radius:9999px;margin-top:24px;overflow:hidden;position:relative;">
+          <div style="width:50%;height:100%;background:linear-gradient(90deg, #fbbf24, #fef08a);border-radius:9999px;animation:p 1.4s ease-in-out infinite;"></div>
+        </div>
+        <style>@keyframes p{0%{transform:translateX(-100%);}100%{transform:translateX(200%);}}</style>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
