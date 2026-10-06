@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import AuthenticatedLayout from './layouts/AuthenticatedLayout';
 import LoadingScreen from './components/LoadingScreen';
+import PortalLanding from './views/PortalLanding';
 import { useTranslation } from 'react-i18next';
 import { api, setApiUser, getStoredAuth } from './api';
 
@@ -33,7 +34,6 @@ const VerificationWorkspace = lazyWithRetry(() => import('./views/VerificationWo
 const CertificatesList = lazyWithRetry(() => import('./views/CertificatesList'));
 const OfficialCertificate = lazyWithRetry(() => import('./views/OfficialCertificate'));
 const PublicCertificateVerification = lazyWithRetry(() => import('./views/PublicCertificateVerification'));
-const PortalLanding = lazyWithRetry(() => import('./views/PortalLanding'));
 const VendorApplyVerificationView = lazyWithRetry(() => import('./views/VendorApplyVerificationView'));
 const QRCodeModal = lazyWithRetry(() => import('./components/QRCodeModal'));
 const LoginView = lazyWithRetry(() => import('./views/LoginView'));
@@ -85,14 +85,7 @@ const preloadAllViews = () => {
 };
 
 function ViewLoadingFallback() {
-  return (
-    <div className="flex-1 flex items-center justify-center min-h-[360px] w-full p-8">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-full border-2 border-amber-400/30 border-t-amber-400 animate-spin" />
-        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider font-mono">Loading module...</span>
-      </div>
-    </div>
-  );
+  return null;
 }
 
 const ROLE_ALLOWED_TABS = {
@@ -872,17 +865,15 @@ export default function App() {
 
     if (showLanding) {
       return (
-        <Suspense fallback={<ViewLoadingFallback />}>
-          <PortalLanding
-            key={appLang}
-            onGoToLogin={goToLogin}
-            onGoToRegister={goToRegister}
-            onTrackApplication={(appNo) => {
-              goToLogin();
-            }}
-            onDirectDemoLogin={handleDirectDemoLogin}
-          />
-        </Suspense>
+        <PortalLanding
+          key={appLang}
+          onGoToLogin={goToLogin}
+          onGoToRegister={goToRegister}
+          onTrackApplication={(appNo) => {
+            goToLogin();
+          }}
+          onDirectDemoLogin={handleDirectDemoLogin}
+        />
       );
     }
 
